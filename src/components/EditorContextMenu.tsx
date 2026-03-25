@@ -114,31 +114,34 @@ export function EditorContextMenu() {
     return null;
   }
 
+  const activeMenuState = menuState;
+  const activeSelectionDetails = selectionDetails;
+
   function closeMenu() {
     setMenuState(null);
   }
 
   function handleCondenseSelection() {
-    const { selectionStart, selectionEnd, selectedText } = selectionDetails;
-    replaceTextareaRange(menuState.target, selectionStart, selectionEnd, condenseStrayLineBreaks(selectedText));
+    const { selectionStart, selectionEnd, selectedText } = activeSelectionDetails;
+    replaceTextareaRange(activeMenuState.target, selectionStart, selectionEnd, condenseStrayLineBreaks(selectedText));
     closeMenu();
   }
 
   function handleCondenseField() {
-    const nextValue = condenseStrayLineBreaks(menuState.target.value);
-    setNativeTextareaValue(menuState.target, nextValue);
+    const nextValue = condenseStrayLineBreaks(activeMenuState.target.value);
+    setNativeTextareaValue(activeMenuState.target, nextValue);
 
     requestAnimationFrame(() => {
-      menuState.target.focus();
-      menuState.target.setSelectionRange(0, nextValue.length);
+      activeMenuState.target.focus();
+      activeMenuState.target.setSelectionRange(0, nextValue.length);
     });
 
     closeMenu();
   }
 
   function handleSelectAll() {
-    menuState.target.focus();
-    menuState.target.setSelectionRange(0, menuState.target.value.length);
+    activeMenuState.target.focus();
+    activeMenuState.target.setSelectionRange(0, activeMenuState.target.value.length);
     closeMenu();
   }
 
@@ -149,18 +152,18 @@ export function EditorContextMenu() {
       role="menu"
       aria-label="Text tools"
       style={{
-        left: `${menuState.x}px`,
-        top: `${menuState.y}px`,
+        left: `${activeMenuState.x}px`,
+        top: `${activeMenuState.y}px`,
       }}
     >
       <div className="editor-context-menu__label">Text Tools</div>
-      {selectionDetails.hasSelection ? (
+      {activeSelectionDetails.hasSelection ? (
         <button
           className="editor-context-menu__item"
           type="button"
           role="menuitem"
           onClick={handleCondenseSelection}
-          disabled={!selectionDetails.selectionHasStrayLineBreaks}
+          disabled={!activeSelectionDetails.selectionHasStrayLineBreaks}
         >
           Remove Stray Line Breaks in Selection
         </button>
@@ -170,7 +173,7 @@ export function EditorContextMenu() {
         type="button"
         role="menuitem"
         onClick={handleCondenseField}
-        disabled={!selectionDetails.fieldHasStrayLineBreaks}
+        disabled={!activeSelectionDetails.fieldHasStrayLineBreaks}
       >
         Remove Stray Line Breaks in Field
       </button>
