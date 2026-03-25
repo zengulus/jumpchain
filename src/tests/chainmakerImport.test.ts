@@ -1,4 +1,4 @@
-import ericaAndAshlyn from '../../Erica and Ashlyn.json';
+import ericaAndAshlyn from '../fixtures/chainmaker/erica-and-ashlyn.sample.json';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION } from '../app/config';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';

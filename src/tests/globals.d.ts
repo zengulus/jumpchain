@@ -8,5 +8,7 @@ declare const expect: {
     toEqual(expected: unknown): void;
     toHaveLength(expected: number): void;
     toBeTruthy(): void;
+    toBeNull(): void;
+    toContain(expected: unknown): void;
   };
 };
