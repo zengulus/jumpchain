@@ -4,6 +4,7 @@ export * from './attachments/types';
 export * from './bodymod/types';
 export * from './branch/types';
 export * from './chain/types';
+export * from './chain/selectors';
 export * from './effects/types';
 export * from './import/types';
 export * from './jumper/types';

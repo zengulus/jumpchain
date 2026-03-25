@@ -5,11 +5,14 @@ import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
 import { db } from '../db/database';
 import {
+  createSnapshotForBranch,
   createBlankChain,
+  exportBranchSave,
   exportNativeSave,
   getChainBundle,
   importNativeSave,
   listChainOverviews,
+  restoreSnapshotAsBranch,
   saveImportedChainBundle,
 } from '../db/persistence';
 import { CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION, APP_VERSION } from '../app/config';
@@ -155,6 +158,42 @@ describe('native persistence and round-trip safety', () => {
     expect(reloadedBundle.importReports[0].unresolvedMappings.length).toBe(
       session.importReport.unresolvedMappings.length,
     );
+  });
+
+  it('exports a filtered single-branch native save', async () => {
+    await resetDatabase();
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const savedBundle = await saveImportedChainBundle(session.bundle);
+    const branchEnvelope = await exportBranchSave(savedBundle.chain.id, savedBundle.chain.activeBranchId);
+
+    expect(branchEnvelope.chains).toHaveLength(1);
+    expect(branchEnvelope.chains[0].branches).toHaveLength(1);
+    expect(branchEnvelope.chains[0].branches[0].id).toBe(savedBundle.chain.activeBranchId);
+    expect(branchEnvelope.chains[0].jumps).toHaveLength(savedBundle.jumps.length);
+  });
+
+  it('creates a snapshot and restores it into a new active branch', async () => {
+    await resetDatabase();
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const savedBundle = await saveImportedChainBundle(session.bundle);
+    const snapshot = await createSnapshotForBranch(
+      savedBundle.chain.id,
+      savedBundle.chain.activeBranchId,
+      'Checkpoint',
+      'Test restore point',
+    );
+    const restoredBranch = await restoreSnapshotAsBranch(savedBundle.chain.id, snapshot.id, 'Restored Timeline');
+    const reloadedBundle = await getChainBundle(savedBundle.chain.id);
+
+    expect(Boolean(reloadedBundle)).toBe(true);
+
+    if (!reloadedBundle) {
+      throw new Error('Expected reloaded bundle after snapshot restore.');
+    }
+
+    expect(reloadedBundle.branches).toHaveLength(2);
+    expect(reloadedBundle.chain.activeBranchId).toBe(restoredBranch.id);
+    expect(restoredBranch.id === savedBundle.chain.activeBranchId).toBe(false);
   });
 
   it('renders the home page with persisted chain list data after reload', async () => {

@@ -11,6 +11,7 @@ import type { Note } from '../domain/notes/types';
 import type { PresetProfile } from '../domain/presets/types';
 import type { HouseRuleProfile, JumpRulesContext } from '../domain/rules/types';
 import type { Snapshot } from '../domain/snapshot/types';
+import { buildBranchWorkspace, getCurrentJump, type BranchWorkspace } from '../domain/chain/selectors';
 import { validateNativeChainBundle, validateNativeSaveEnvelope } from '../schemas';
 import { createId } from '../utils/id';
 import { migrateNativeSaveEnvelope } from '../migrations';
@@ -42,6 +43,22 @@ interface EntityIdMaps {
   note: Map<string, string>;
   attachment: Map<string, string>;
   importReport: Map<string, string>;
+}
+
+interface ClonedBranchBundle {
+  branch: Branch;
+  jumpers: Jumper[];
+  companions: Companion[];
+  jumps: Jump[];
+  participations: JumperParticipation[];
+  effects: Effect[];
+  bodymodProfiles: BodymodProfile[];
+  jumpRulesContexts: JumpRulesContext[];
+  houseRuleProfiles: HouseRuleProfile[];
+  presetProfiles: PresetProfile[];
+  notes: Note[];
+  attachments: AttachmentRef[];
+  activeJumpId: string | null;
 }
 
 function remapId(id: string, map: Map<string, string>): string {
@@ -106,6 +123,46 @@ function createBundleIdMaps(bundle: NativeChainBundle): EntityIdMaps {
     attachment: createEntityIdMap(bundle.attachments, 'attachment'),
     importReport: createEntityIdMap(bundle.importReports, 'report'),
   };
+}
+
+function filterBranchBundleToJump(branchBundle: NativeChainBundle, selectedJumpId: string): NativeChainBundle {
+  const selectedJump = branchBundle.jumps.find((jump) => jump.id === selectedJumpId);
+
+  if (!selectedJump) {
+    return branchBundle;
+  }
+
+  const keptJumps = branchBundle.jumps.filter((jump) => jump.orderIndex <= selectedJump.orderIndex);
+  const keptJumpIds = new Set(keptJumps.map((jump) => jump.id));
+  const keptParticipations = branchBundle.participations.filter((participation) => keptJumpIds.has(participation.jumpId));
+  const keptParticipationIds = new Set(keptParticipations.map((participation) => participation.id));
+
+  const shouldKeepOwnedRecord = (ownerEntityType: Note['ownerEntityType'] | Effect['ownerEntityType'] | AttachmentRef['ownerEntityType'], ownerEntityId: string) => {
+    if (ownerEntityType === 'jump') {
+      return keptJumpIds.has(ownerEntityId);
+    }
+
+    if (ownerEntityType === 'participation') {
+      return keptParticipationIds.has(ownerEntityId);
+    }
+
+    return true;
+  };
+
+  return validateNativeChainBundle({
+    ...branchBundle,
+    chain: {
+      ...branchBundle.chain,
+      activeJumpId: selectedJump.id,
+    },
+    jumps: keptJumps,
+    participations: keptParticipations,
+    jumpRulesContexts: branchBundle.jumpRulesContexts.filter((context) => context.jumpId === null || context.jumpId === undefined || keptJumpIds.has(context.jumpId)),
+    effects: branchBundle.effects.filter((effect) => shouldKeepOwnedRecord(effect.ownerEntityType, effect.ownerEntityId)),
+    notes: branchBundle.notes.filter((note) => shouldKeepOwnedRecord(note.ownerEntityType, note.ownerEntityId)),
+    attachments: branchBundle.attachments.filter((attachment) => shouldKeepOwnedRecord(attachment.ownerEntityType, attachment.ownerEntityId)),
+    snapshots: [],
+  });
 }
 
 function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundle {
@@ -192,11 +249,11 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
   }));
 
   const clonedSnapshots: Snapshot[] = validatedBundle.snapshots.map((snapshot) => ({
-    ...snapshot,
-    id: remapId(snapshot.id, maps.snapshot),
-    chainId,
-    branchId: remapId(snapshot.branchId, maps.branch),
-    createdFromJumpId: remapOptionalId(snapshot.createdFromJumpId, maps.jump),
+      ...snapshot,
+      id: remapId(snapshot.id, maps.snapshot),
+      chainId,
+      branchId: remapId(snapshot.branchId, maps.branch),
+      createdFromJumpId: remapOptionalId(snapshot.createdFromJumpId, maps.jump),
   }));
 
   const clonedNotes: Note[] = validatedBundle.notes.map((note) => ({
@@ -243,6 +300,181 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     attachments: clonedAttachments,
     importReports: clonedImportReports,
   });
+}
+
+function cloneBranchBundleToExistingChain(
+  branchBundle: NativeChainBundle,
+  targetChain: NativeChainBundle['chain'],
+  options: {
+    branchTitle: string;
+    sourceBranchId?: string | null;
+    forkedFromJumpId?: string | null;
+    preferredActiveJumpId?: string | null;
+  },
+): ClonedBranchBundle {
+  const sourceBranch = branchBundle.branches[0];
+
+  if (!sourceBranch) {
+    throw new Error('Branch bundle must contain exactly one branch.');
+  }
+
+  const maps = createBundleIdMaps(branchBundle);
+  const now = new Date().toISOString();
+  const newBranchId = createId('branch');
+  const chainId = targetChain.id;
+
+  maps.branch = new Map([[sourceBranch.id, newBranchId]]);
+
+  const jumpers: Jumper[] = branchBundle.jumpers.map((jumper) => ({
+    ...jumper,
+    id: remapId(jumper.id, maps.jumper),
+    chainId,
+    branchId: newBranchId,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const companions: Companion[] = branchBundle.companions.map((companion) => ({
+    ...companion,
+    id: remapId(companion.id, maps.companion),
+    chainId,
+    branchId: newBranchId,
+    parentJumperId: remapOptionalId(companion.parentJumperId, maps.jumper),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const jumps: Jump[] = branchBundle.jumps.map((jump) => ({
+    ...jump,
+    id: remapId(jump.id, maps.jump),
+    chainId,
+    branchId: newBranchId,
+    participantJumperIds: jump.participantJumperIds.map((jumperId) => remapId(jumperId, maps.jumper)),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const participations: JumperParticipation[] = branchBundle.participations.map((participation) => ({
+    ...participation,
+    id: remapId(participation.id, maps.participation),
+    chainId,
+    branchId: newBranchId,
+    jumpId: remapId(participation.jumpId, maps.jump),
+    jumperId: remapId(participation.jumperId, maps.jumper),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const effects: Effect[] = branchBundle.effects.map((effect) => ({
+    ...effect,
+    id: remapId(effect.id, maps.effect),
+    chainId,
+    branchId: newBranchId,
+    ownerEntityId: remapOwnerEntityId(effect.ownerEntityType, effect.ownerEntityId, maps),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const bodymodProfiles: BodymodProfile[] = branchBundle.bodymodProfiles.map((profile) => ({
+    ...profile,
+    id: remapId(profile.id, maps.bodymodProfile),
+    chainId,
+    branchId: newBranchId,
+    jumperId: remapId(profile.jumperId, maps.jumper),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const jumpRulesContexts: JumpRulesContext[] = branchBundle.jumpRulesContexts.map((context) => ({
+    ...context,
+    id: remapId(context.id, maps.jumpRulesContext),
+    chainId,
+    branchId: newBranchId,
+    jumpId: remapOptionalId(context.jumpId, maps.jump),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const houseRuleProfiles: HouseRuleProfile[] = branchBundle.houseRuleProfiles.map((profile) => ({
+    ...profile,
+    id: remapId(profile.id, maps.houseRuleProfile),
+    chainId,
+    branchId: newBranchId,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const presetProfiles: PresetProfile[] = branchBundle.presetProfiles.map((profile) => ({
+    ...profile,
+    id: remapId(profile.id, maps.presetProfile),
+    chainId,
+    branchId: newBranchId,
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const notes: Note[] = branchBundle.notes.map((note) => ({
+    ...note,
+    id: remapId(note.id, maps.note),
+    chainId,
+    branchId: newBranchId,
+    ownerEntityId: remapOwnerEntityId(note.ownerEntityType, note.ownerEntityId, maps),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const attachments: AttachmentRef[] = branchBundle.attachments.map((attachment) => ({
+    ...attachment,
+    id: remapId(attachment.id, maps.attachment),
+    chainId,
+    branchId: newBranchId,
+    ownerEntityId: remapOwnerEntityId(attachment.ownerEntityType, attachment.ownerEntityId, maps),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const remappedPreferredActiveJumpId = remapOptionalId(
+    options.preferredActiveJumpId ?? branchBundle.chain.activeJumpId,
+    maps.jump,
+  );
+  const activeJumpId =
+    remappedPreferredActiveJumpId ??
+    getCurrentJump(
+      {
+        ...targetChain,
+        activeJumpId: null,
+      },
+      jumps,
+    )?.id ??
+    null;
+
+  const branch: Branch = {
+    ...sourceBranch,
+    id: newBranchId,
+    chainId,
+    title: options.branchTitle,
+    sourceBranchId: options.sourceBranchId ?? sourceBranch.id,
+    forkedFromJumpId: remapOptionalId(options.forkedFromJumpId ?? sourceBranch.forkedFromJumpId, maps.jump),
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  return {
+    branch,
+    jumpers,
+    companions,
+    jumps,
+    participations,
+    effects,
+    bodymodProfiles,
+    jumpRulesContexts,
+    houseRuleProfiles,
+    presetProfiles,
+    notes,
+    attachments,
+    activeJumpId,
+  };
 }
 
 async function writeBundle(bundle: NativeChainBundle) {
@@ -477,6 +709,52 @@ export async function getChainBundle(chainId: string): Promise<NativeChainBundle
   });
 }
 
+export async function getBranchWorkspace(chainId: string, activeBranchId: string): Promise<BranchWorkspace | undefined> {
+  const bundle = await getChainBundle(chainId);
+
+  if (!bundle) {
+    return undefined;
+  }
+
+  return buildBranchWorkspace(bundle, activeBranchId);
+}
+
+export async function getBranchBundle(chainId: string, branchId: string): Promise<NativeChainBundle | undefined> {
+  const bundle = await getChainBundle(chainId);
+
+  if (!bundle) {
+    return undefined;
+  }
+
+  const workspace = buildBranchWorkspace(bundle, branchId);
+
+  if (!workspace.activeBranch) {
+    return undefined;
+  }
+
+  return validateNativeChainBundle({
+    chain: {
+      ...bundle.chain,
+      activeBranchId: workspace.activeBranch.id,
+      activeJumpId: workspace.currentJump?.id ?? null,
+    },
+    branches: [workspace.activeBranch],
+    jumpers: workspace.jumpers,
+    companions: workspace.companions,
+    jumps: workspace.jumps,
+    participations: workspace.participations,
+    effects: workspace.effects,
+    bodymodProfiles: workspace.bodymodProfiles,
+    jumpRulesContexts: workspace.jumpRulesContexts,
+    houseRuleProfiles: workspace.houseRuleProfiles,
+    presetProfiles: workspace.presetProfiles,
+    snapshots: workspace.snapshots,
+    notes: workspace.notes,
+    attachments: workspace.attachments,
+    importReports: workspace.importReports,
+  });
+}
+
 export async function listChainOverviews(): Promise<ChainOverview[]> {
   const chains = await db.chains.orderBy('updatedAt').reverse().toArray();
 
@@ -532,6 +810,16 @@ export async function exportNativeSave(chainId?: string): Promise<NativeSaveEnve
   return createNativeSaveEnvelope(bundles.filter((bundle): bundle is NativeChainBundle => Boolean(bundle)));
 }
 
+export async function exportBranchSave(chainId: string, branchId: string): Promise<NativeSaveEnvelope> {
+  const branchBundle = await getBranchBundle(chainId, branchId);
+
+  if (!branchBundle) {
+    throw new Error('Branch not found.');
+  }
+
+  return createNativeSaveEnvelope([branchBundle]);
+}
+
 export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope> {
   const migratedEnvelope = migrateNativeSaveEnvelope(raw);
   const importedEnvelope = validateNativeSaveEnvelope({
@@ -544,4 +832,235 @@ export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope
   }
 
   return importedEnvelope;
+}
+
+export async function switchActiveBranch(chainId: string, branchId: string): Promise<void> {
+  const bundle = await getChainBundle(chainId);
+
+  if (!bundle) {
+    throw new Error('Chain not found.');
+  }
+
+  const workspace = buildBranchWorkspace(bundle, branchId);
+
+  if (!workspace.activeBranch) {
+    throw new Error('Branch not found.');
+  }
+
+  await db.transaction('rw', [db.chains, db.branches], async () => {
+    await db.chains.update(chainId, {
+      activeBranchId: branchId,
+      activeJumpId: workspace.currentJump?.id ?? null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await Promise.all(
+      bundle.branches.map((branch) =>
+        db.branches.update(branch.id, {
+          isActive: branch.id === branchId,
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    );
+  });
+}
+
+export async function switchActiveJump(chainId: string, jumpId: string | null): Promise<void> {
+  await db.chains.update(chainId, {
+    activeJumpId: jumpId,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function createBranchFromJump(
+  chainId: string,
+  sourceBranchId: string,
+  jumpId: string,
+  title: string,
+): Promise<Branch> {
+  const bundle = await getBranchBundle(chainId, sourceBranchId);
+  const fullBundle = await getChainBundle(chainId);
+
+  if (!bundle || !fullBundle) {
+    throw new Error('Source branch not found.');
+  }
+
+  const trimmedBundle = filterBranchBundleToJump(bundle, jumpId);
+  const clonedBranch = cloneBranchBundleToExistingChain(trimmedBundle, fullBundle.chain, {
+    branchTitle: title.trim() || 'Forked Branch',
+    sourceBranchId,
+    forkedFromJumpId: jumpId,
+    preferredActiveJumpId: jumpId,
+  });
+  const now = new Date().toISOString();
+
+  await db.transaction(
+    'rw',
+    [
+      db.chains,
+      db.branches,
+      db.jumpers,
+      db.companions,
+      db.jumps,
+      db.participations,
+      db.effects,
+      db.bodymodProfiles,
+      db.jumpRulesContexts,
+      db.houseRuleProfiles,
+      db.presetProfiles,
+      db.notes,
+      db.attachments,
+    ],
+    async () => {
+      await Promise.all(
+        fullBundle.branches.map((branch) =>
+          db.branches.update(branch.id, {
+            isActive: false,
+            updatedAt: now,
+          }),
+        ),
+      );
+
+      await db.branches.put(clonedBranch.branch);
+      await db.jumpers.bulkPut(clonedBranch.jumpers);
+      await db.companions.bulkPut(clonedBranch.companions);
+      await db.jumps.bulkPut(clonedBranch.jumps);
+      await db.participations.bulkPut(clonedBranch.participations);
+      await db.effects.bulkPut(clonedBranch.effects);
+      await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
+      await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);
+      await db.houseRuleProfiles.bulkPut(clonedBranch.houseRuleProfiles);
+      await db.presetProfiles.bulkPut(clonedBranch.presetProfiles);
+      await db.notes.bulkPut(clonedBranch.notes);
+      await db.attachments.bulkPut(clonedBranch.attachments);
+      await db.chains.update(chainId, {
+        activeBranchId: clonedBranch.branch.id,
+        activeJumpId: clonedBranch.activeJumpId,
+        updatedAt: now,
+      });
+    },
+  );
+
+  return clonedBranch.branch;
+}
+
+export async function createSnapshotForBranch(
+  chainId: string,
+  branchId: string,
+  title: string,
+  description: string,
+): Promise<Snapshot> {
+  const branchBundle = await getBranchBundle(chainId, branchId);
+
+  if (!branchBundle) {
+    throw new Error('Branch not found.');
+  }
+
+  const payloadEnvelope = createNativeSaveEnvelope([
+    validateNativeChainBundle({
+      ...branchBundle,
+      snapshots: [],
+    }),
+  ]);
+
+  const snapshot: Snapshot = {
+    id: createId('snapshot'),
+    chainId,
+    branchId,
+    title: title.trim() || 'Snapshot',
+    description,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdFromJumpId: branchBundle.chain.activeJumpId ?? branchBundle.jumps[branchBundle.jumps.length - 1]?.id ?? null,
+    payloadJson: JSON.stringify(payloadEnvelope),
+    summary: {
+      jumpCount: branchBundle.jumps.length,
+      jumperCount: branchBundle.jumpers.length,
+      effectCount: branchBundle.effects.length,
+      noteCount: branchBundle.notes.length,
+    },
+  };
+
+  await db.snapshots.put(snapshot);
+  return snapshot;
+}
+
+export async function restoreSnapshotAsBranch(
+  chainId: string,
+  snapshotId: string,
+  title?: string,
+): Promise<Branch> {
+  const [chain, snapshot, bundle] = await Promise.all([
+    db.chains.get(chainId),
+    db.snapshots.get(snapshotId),
+    getChainBundle(chainId),
+  ]);
+
+  if (!chain || !snapshot || !bundle) {
+    throw new Error('Snapshot or chain not found.');
+  }
+
+  const payload = migrateNativeSaveEnvelope(JSON.parse(snapshot.payloadJson));
+  const sourceBundle = payload.chains[0];
+
+  if (!sourceBundle) {
+    throw new Error('Snapshot payload is empty.');
+  }
+
+  const clonedBranch = cloneBranchBundleToExistingChain(sourceBundle, chain, {
+    branchTitle: title?.trim() || `Restored: ${snapshot.title}`,
+    sourceBranchId: snapshot.branchId,
+    forkedFromJumpId: snapshot.createdFromJumpId ?? null,
+    preferredActiveJumpId: sourceBundle.chain.activeJumpId ?? null,
+  });
+  const now = new Date().toISOString();
+
+  await db.transaction(
+    'rw',
+    [
+      db.chains,
+      db.branches,
+      db.jumpers,
+      db.companions,
+      db.jumps,
+      db.participations,
+      db.effects,
+      db.bodymodProfiles,
+      db.jumpRulesContexts,
+      db.houseRuleProfiles,
+      db.presetProfiles,
+      db.notes,
+      db.attachments,
+    ],
+    async () => {
+      await Promise.all(
+        bundle.branches.map((branch) =>
+          db.branches.update(branch.id, {
+            isActive: false,
+            updatedAt: now,
+          }),
+        ),
+      );
+
+      await db.branches.put(clonedBranch.branch);
+      await db.jumpers.bulkPut(clonedBranch.jumpers);
+      await db.companions.bulkPut(clonedBranch.companions);
+      await db.jumps.bulkPut(clonedBranch.jumps);
+      await db.participations.bulkPut(clonedBranch.participations);
+      await db.effects.bulkPut(clonedBranch.effects);
+      await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
+      await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);
+      await db.houseRuleProfiles.bulkPut(clonedBranch.houseRuleProfiles);
+      await db.presetProfiles.bulkPut(clonedBranch.presetProfiles);
+      await db.notes.bulkPut(clonedBranch.notes);
+      await db.attachments.bulkPut(clonedBranch.attachments);
+      await db.chains.update(chainId, {
+        activeBranchId: clonedBranch.branch.id,
+        activeJumpId: clonedBranch.activeJumpId,
+        updatedAt: now,
+      });
+    },
+  );
+
+  return clonedBranch.branch;
 }

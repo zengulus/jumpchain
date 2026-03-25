@@ -93,10 +93,11 @@ export function HomePage() {
     <div className="stack">
       <section className="hero">
         <span className="pill">Sprint 1 foundation</span>
-        <h2>Native schema, IndexedDB persistence, and importer-first UI</h2>
+        <h2>Local-first chain workspace with live IndexedDB data</h2>
         <p>
-          This build is intentionally thin on presentation and heavy on real data flow. You can create blank chains,
-          export native saves, import native saves, and run a ChainMaker v2 file through the review pipeline.
+          This build stays intentionally thin on presentation and heavy on real data flow. You can create blank chains,
+          import or export native saves, review ChainMaker v2 input, and open a chain workspace with live jumpers,
+          jumps, participation, effects, rules, notes, bodymod, timeline, and backup tools.
         </p>
         <div className="actions">
           <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
@@ -190,6 +191,9 @@ export function HomePage() {
                 </div>
                 <p>Last updated {formatTimestamp(chain.updatedAt)}</p>
                 <div className="entity-actions">
+                  <Link className="button" to={`/chains/${chain.chainId}/overview`}>
+                    Open Workspace
+                  </Link>
                   <button
                     className="button button--secondary"
                     type="button"

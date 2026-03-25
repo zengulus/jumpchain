@@ -1,0 +1,318 @@
+import { useRef, useState, type ChangeEvent } from 'react';
+import { detectImportSource } from '../../domain/import/sourceDetection';
+import { createBranchFromJump, createSnapshotForBranch, exportBranchSave, exportNativeSave, importNativeSave, restoreSnapshotAsBranch } from '../../db/persistence';
+import { downloadJson } from '../../utils/download';
+import { readJsonFile } from '../../utils/file';
+import { StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { useChainWorkspace } from '../workspace/useChainWorkspace';
+
+function toFileSlug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function formatTimestamp(value: string) {
+  return new Date(value).toLocaleString();
+}
+
+export function BackupsPage() {
+  const { chainId, bundle, workspace } = useChainWorkspace();
+  const [snapshotTitle, setSnapshotTitle] = useState('Checkpoint');
+  const [snapshotDescription, setSnapshotDescription] = useState('');
+  const [branchTitle, setBranchTitle] = useState('Forked Branch');
+  const [branchJumpId, setBranchJumpId] = useState(workspace.currentJump?.id ?? workspace.jumps[workspace.jumps.length - 1]?.id ?? '');
+  const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleExportFullChain() {
+    try {
+      const envelope = await exportNativeSave(chainId);
+      downloadJson(`${toFileSlug(bundle.chain.title) || 'jumpchain-save'}.jumpchain.json`, envelope);
+      setNotice({
+        tone: 'success',
+        message: 'Exported the full chain as a native save.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to export the full chain.',
+      });
+    }
+  }
+
+  async function handleExportActiveBranch() {
+    if (!workspace.activeBranch) {
+      return;
+    }
+
+    try {
+      const envelope = await exportBranchSave(chainId, workspace.activeBranch.id);
+      downloadJson(
+        `${toFileSlug(bundle.chain.title)}-${toFileSlug(workspace.activeBranch.title)}.branch.jumpchain.json`,
+        envelope,
+      );
+      setNotice({
+        tone: 'success',
+        message: 'Exported the active branch as a filtered native save.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to export the active branch.',
+      });
+    }
+  }
+
+  async function handleCreateSnapshot() {
+    if (!workspace.activeBranch) {
+      return;
+    }
+
+    try {
+      await createSnapshotForBranch(chainId, workspace.activeBranch.id, snapshotTitle, snapshotDescription);
+      setNotice({
+        tone: 'success',
+        message: 'Created a restorable snapshot for the active branch.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to create a snapshot.',
+      });
+    }
+  }
+
+  async function handleRestoreSnapshot(snapshotId: string) {
+    try {
+      const branch = await restoreSnapshotAsBranch(chainId, snapshotId);
+      setNotice({
+        tone: 'success',
+        message: `Restored snapshot into new branch "${branch.title}".`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to restore snapshot.',
+      });
+    }
+  }
+
+  async function handleCreateBranch() {
+    if (!workspace.activeBranch || !branchJumpId) {
+      return;
+    }
+
+    try {
+      const branch = await createBranchFromJump(chainId, workspace.activeBranch.id, branchJumpId, branchTitle);
+      setNotice({
+        tone: 'success',
+        message: `Created branch "${branch.title}" from the selected jump.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to create branch.',
+      });
+    }
+  }
+
+  async function handleNativeImportSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const raw = await readJsonFile(file);
+      const detection = detectImportSource(raw);
+
+      if (detection.sourceType !== 'native') {
+        throw new Error('This file is not a native Jumpchain Tracker save.');
+      }
+
+      await importNativeSave(raw);
+      setNotice({
+        tone: 'success',
+        message: `Imported "${file.name}" as non-destructive native copies.`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to import native save.',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  return (
+    <div className="stack">
+      <WorkspaceModuleHeader
+        title="Backups, Branches, and Recovery"
+        description="Full-chain export, branch-only export, native safe-copy import, branch forks, snapshots, and restore-to-new-branch flows."
+        badge={workspace.activeBranch?.title ?? 'No branch'}
+      />
+
+      <StatusNoticeBanner notice={notice} />
+
+      <section className="grid grid--two">
+        <article className="card stack">
+          <div className="section-heading">
+            <h3>Exports & Imports</h3>
+            <span className="pill">Native envelope</span>
+          </div>
+          <div className="actions">
+            <button className="button" type="button" onClick={() => void handleExportFullChain()}>
+              Export Full Chain
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={!workspace.activeBranch}
+              onClick={() => void handleExportActiveBranch()}
+            >
+              Export Active Branch
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => nativeImportInputRef.current?.click()}
+            >
+              Import Native Save
+            </button>
+          </div>
+          <input
+            ref={nativeImportInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={handleNativeImportSelection}
+          />
+          <p>Native imports always create safe copies. Existing chains and branches are never overwritten.</p>
+        </article>
+
+        <article className="card stack">
+          <div className="section-heading">
+            <h3>Fork Active Branch</h3>
+            <span className="pill">{workspace.branches.length} total branches</span>
+          </div>
+          <label className="field">
+            <span>New branch title</span>
+            <input value={branchTitle} onChange={(event) => setBranchTitle(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Fork at jump</span>
+            <select value={branchJumpId} onChange={(event) => setBranchJumpId(event.target.value)}>
+              {workspace.jumps.map((jump) => (
+                <option key={jump.id} value={jump.id}>
+                  {jump.orderIndex + 1}. {jump.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="actions">
+            <button
+              className="button"
+              type="button"
+              disabled={!workspace.activeBranch || !branchJumpId}
+              onClick={() => void handleCreateBranch()}
+            >
+              Create Branch from Jump
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <section className="grid grid--two">
+        <article className="card stack">
+          <div className="section-heading">
+            <h3>Snapshots</h3>
+            <span className="pill">{workspace.snapshots.length} active-branch snapshots</span>
+          </div>
+          <label className="field">
+            <span>Snapshot title</span>
+            <input value={snapshotTitle} onChange={(event) => setSnapshotTitle(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Description</span>
+            <textarea rows={4} value={snapshotDescription} onChange={(event) => setSnapshotDescription(event.target.value)} />
+          </label>
+          <div className="actions">
+            <button
+              className="button"
+              type="button"
+              disabled={!workspace.activeBranch}
+              onClick={() => void handleCreateSnapshot()}
+            >
+              Create Snapshot
+            </button>
+          </div>
+        </article>
+
+        <article className="card stack">
+          <div className="section-heading">
+            <h3>Branch Ledger</h3>
+            <span className="pill">{workspace.activeBranch?.title ?? 'No branch'}</span>
+          </div>
+          {workspace.branches.length === 0 ? (
+            <p>No branches exist yet.</p>
+          ) : (
+            <ul className="list">
+              {workspace.branches.map((branch) => (
+                <li key={branch.id}>
+                  <strong>{branch.title}</strong>
+                  {branch.id === workspace.activeBranch?.id ? ' (active)' : ''}
+                  {branch.forkedFromJumpId ? ' | forked from a jump' : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      </section>
+
+      <section className="card stack">
+        <div className="section-heading">
+          <h3>Restore Snapshot into New Branch</h3>
+          <span className="pill">Non-destructive restore</span>
+        </div>
+        {workspace.snapshots.length === 0 ? (
+          <p>Create a snapshot first to make restore and rollback flows available.</p>
+        ) : (
+          <div className="grid">
+            {workspace.snapshots
+              .slice()
+              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+              .map((snapshot) => (
+                <article className="entity-card" key={snapshot.id}>
+                  <div className="section-heading">
+                    <h4>{snapshot.title}</h4>
+                    <span className="pill">{formatTimestamp(snapshot.createdAt)}</span>
+                  </div>
+                  <p>{snapshot.description || 'No snapshot description provided.'}</p>
+                  <div className="inline-meta">
+                    <span className="metric">
+                      <strong>{Number(snapshot.summary.jumpCount ?? 0)}</strong>
+                      Jumps
+                    </span>
+                    <span className="metric">
+                      <strong>{Number(snapshot.summary.jumperCount ?? 0)}</strong>
+                      Jumpers
+                    </span>
+                    <span className="metric">
+                      <strong>{Number(snapshot.summary.effectCount ?? 0)}</strong>
+                      Effects
+                    </span>
+                  </div>
+                  <div className="entity-actions">
+                    <button className="button button--secondary" type="button" onClick={() => void handleRestoreSnapshot(snapshot.id)}>
+                      Restore Into New Branch
+                    </button>
+                  </div>
+                </article>
+              ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

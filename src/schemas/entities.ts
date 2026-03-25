@@ -194,6 +194,7 @@ export const SnapshotSchema = BaseRecordSchema.extend({
   title: z.string().min(1),
   description: z.string(),
   createdFromJumpId: IdentifierSchema.nullish(),
+  payloadJson: z.string().min(1),
   summary: JsonMapSchema,
 });
 

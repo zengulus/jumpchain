@@ -6,5 +6,6 @@ export interface Snapshot extends BaseRecord {
   title: string;
   description: string;
   createdFromJumpId?: string | null;
+  payloadJson: string;
   summary: JsonMap;
 }

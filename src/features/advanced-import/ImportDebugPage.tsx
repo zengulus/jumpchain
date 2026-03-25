@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../app/store';
 import { prepareChainMakerV2ImportSession } from '../../domain/import/chainmakerV2';
 import { detectImportSource } from '../../domain/import/sourceDetection';
@@ -11,6 +12,7 @@ function summarizeReasons(reasons: string[]) {
 }
 
 export function ImportDebugPage() {
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { importSession, setImportSession } = useAppStore();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -67,6 +69,7 @@ export function ImportDebugPage() {
       const persisted = await saveImportedChainBundle(importSession.bundle);
       setImportSession(null);
       setStatusMessage(`Imported "${persisted.chain.title}" into IndexedDB as a new chain.`);
+      navigate(`/chains/${persisted.chain.id}/overview`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to commit imported chain.');
     } finally {

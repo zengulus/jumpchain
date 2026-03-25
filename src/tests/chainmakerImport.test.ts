@@ -50,4 +50,45 @@ describe('ChainMaker v2 import foundation', () => {
     expect(envelope.schemaVersion).toBe(1);
     expect(envelope.chains[0].chain.title).toBe('[untitled chain]');
   });
+
+  it('treats malformed payloads as unknown sources', () => {
+    const detection = detectImportSource(['not', 'an', 'object']);
+
+    expect(detection.sourceType).toBe('unknown');
+    expect(detection.isSupported).toBe(false);
+  });
+
+  it('fills safe defaults for partial per-jump character blocks', () => {
+    const partialJumpSource = {
+      ...sampleChainMaker,
+      jumps: {
+        ...sampleChainMaker.jumps,
+        '0': {
+          ...sampleChainMaker.jumps['0'],
+          notes: {},
+          bankDeposits: {},
+          currencyExchanges: {},
+          supplementPurchases: {},
+          supplementInvestments: {},
+          purchases: {},
+          retainedDrawbacks: {},
+          drawbacks: {},
+          drawbackOverrides: {},
+          origins: {},
+          altForms: {},
+          narratives: {},
+          budgets: {},
+          stipends: {},
+        },
+      },
+    };
+    const session = prepareChainMakerV2ImportSession(partialJumpSource);
+    const participation = session.bundle.participations[0];
+
+    expect(participation.notes).toBe('');
+    expect(participation.bankDeposit).toBe(0);
+    expect(participation.purchases).toHaveLength(0);
+    expect(participation.drawbacks).toHaveLength(0);
+    expect(participation.origins).toEqual({});
+  });
 });

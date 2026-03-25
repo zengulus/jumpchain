@@ -135,6 +135,10 @@ button {
   gap: 1.25rem;
 }
 
+.stack--compact {
+  gap: 0.6rem;
+}
+
 .grid {
   display: grid;
   gap: 1rem;
@@ -215,6 +219,7 @@ button {
 
 .button:focus-visible,
 .page-shell__nav a:focus-visible,
+.workspace-subnav a:focus-visible,
 .field input:focus-visible,
 .field textarea:focus-visible,
 .field select:focus-visible {
@@ -237,6 +242,45 @@ button {
   background: rgba(5, 14, 20, 0.88);
   color: var(--color-text);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.field--checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.field--checkbox input {
+  width: auto;
+}
+
+.field-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.field-grid--two {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.field-grid--three {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.field-hint {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.field-hint--error {
+  color: var(--color-warning);
+}
+
+.json-editor {
+  min-height: 12rem;
+  resize: vertical;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.92rem;
 }
 
 .meta-list,
@@ -330,6 +374,133 @@ button {
   gap: 1rem;
 }
 
+.workspace-shell {
+  gap: 1rem;
+}
+
+.workspace-hero {
+  padding: 1.4rem 1.5rem;
+  border: 1px solid rgba(164, 247, 218, 0.16);
+  border-radius: 1.2rem;
+  background:
+    linear-gradient(135deg, rgba(11, 33, 43, 0.96), rgba(20, 44, 56, 0.92)),
+    var(--color-bg-panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.workspace-hero h2,
+.workspace-module-header h2 {
+  margin: 0;
+}
+
+.workspace-hero p,
+.workspace-module-header p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.workspace-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.4rem;
+  border-radius: 1rem;
+  background: rgba(8, 19, 27, 0.78);
+  border: 1px solid var(--color-border);
+}
+
+.workspace-subnav a {
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.85rem;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.workspace-subnav a.active {
+  background: rgba(105, 210, 180, 0.18);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px rgba(105, 210, 180, 0.22);
+}
+
+.workspace-module-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+}
+
+.workspace-two-column {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+}
+
+.selection-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.selection-list__item {
+  appearance: none;
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--color-border);
+  background: rgba(12, 25, 36, 0.74);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+
+.selection-list__item:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-border-strong);
+}
+
+.selection-list__item.is-active {
+  border-color: rgba(105, 210, 180, 0.42);
+  background: rgba(105, 210, 180, 0.12);
+}
+
+.selection-list__item span {
+  color: var(--color-text-muted);
+  font-size: 0.94rem;
+}
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.choice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: rgba(12, 25, 36, 0.74);
+}
+
+.choice-chip input {
+  width: auto;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.timeline-entry {
+  position: relative;
+}
+
 p,
 label,
 li,
@@ -348,5 +519,9 @@ span {
 
   .page-shell__header {
     padding: 1rem;
+  }
+
+  .workspace-two-column {
+    grid-template-columns: 1fr;
   }
 }
