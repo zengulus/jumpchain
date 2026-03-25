@@ -167,7 +167,7 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
     supplementAccess: currentRulesContext?.supplementAccess ?? 'manual',
   };
 
-  let gauntlet = currentRulesContext?.gauntlet ?? currentJump?.jumpType === 'gauntlet' ?? false;
+  let gauntlet = currentRulesContext?.gauntlet ?? (currentJump?.jumpType === 'gauntlet');
 
   for (const effect of contributingEffects) {
     const overrides = extractRuleEffectOverrides(effect);
