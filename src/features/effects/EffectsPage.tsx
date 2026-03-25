@@ -3,7 +3,14 @@ import { accessModes, effectCategories, effectStates, scopeTypes, ownerEntityTyp
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
 import { createBlankEffect, deleteChainRecord, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AdvancedJsonDetails,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type FilterValue<T extends string> = 'all' | T;
@@ -501,19 +508,25 @@ export function EffectsPage() {
                       }
                     />
                   </label>
-                  <JsonEditorField
-                    label="Import source metadata"
-                    value={selectedEffect.importSourceMetadata}
-                    onValidChange={(value) =>
-                      saveSelectedEffect({
-                        ...selectedEffect,
-                        importSourceMetadata:
-                          typeof value === 'object' && value !== null && !Array.isArray(value)
-                            ? (value as Record<string, unknown>)
-                            : {},
-                      })
-                    }
-                  />
+                  <AdvancedJsonDetails
+                    summary="Advanced JSON"
+                    badge="import metadata"
+                    hint="Raw effect metadata is still editable, but it does not need to sit in the main editor."
+                  >
+                    <JsonEditorField
+                      label="Import source metadata"
+                      value={selectedEffect.importSourceMetadata}
+                      onValidChange={(value) =>
+                        saveSelectedEffect({
+                          ...selectedEffect,
+                          importSourceMetadata:
+                            typeof value === 'object' && value !== null && !Array.isArray(value)
+                              ? (value as Record<string, unknown>)
+                              : {},
+                        })
+                      }
+                    />
+                  </AdvancedJsonDetails>
                 </section>
               </>
             ) : null}

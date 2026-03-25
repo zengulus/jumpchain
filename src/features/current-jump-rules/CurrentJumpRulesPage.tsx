@@ -21,7 +21,14 @@ import type { JsonMap } from '../../domain/common';
 import { db } from '../../db/database';
 import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/types';
 import { createBlankHouseRuleProfile, createBlankJumpRulesContext, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AdvancedJsonDetails,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 const rulesSourceLabels = {
@@ -536,19 +543,25 @@ export function CurrentJumpRulesPage() {
               </label>
 
               {rulesSettings.moduleCustomization.showAdvancedMetadata ? (
-                <JsonEditorField
-                  label="Import source metadata"
-                  value={currentRulesContext.importSourceMetadata}
-                  onValidChange={(value) =>
-                    saveRulesContext({
-                      ...currentRulesContext,
-                      importSourceMetadata:
-                        typeof value === 'object' && value !== null && !Array.isArray(value)
-                          ? (value as Record<string, unknown>)
-                          : {},
-                    })
-                  }
-                />
+                <AdvancedJsonDetails
+                  summary="Advanced JSON"
+                  badge="import metadata"
+                  hint="The raw imported rules payload stays tucked away unless you need to inspect or repair it."
+                >
+                  <JsonEditorField
+                    label="Import source metadata"
+                    value={currentRulesContext.importSourceMetadata}
+                    onValidChange={(value) =>
+                      saveRulesContext({
+                        ...currentRulesContext,
+                        importSourceMetadata:
+                          typeof value === 'object' && value !== null && !Array.isArray(value)
+                            ? (value as Record<string, unknown>)
+                            : {},
+                      })
+                    }
+                  />
+                </AdvancedJsonDetails>
               ) : (
                 <p>Advanced metadata editing is hidden by the current module customization.</p>
               )}

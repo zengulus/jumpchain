@@ -1,5 +1,15 @@
 import type { BodymodMode, ChainScopedRecord, JsonMap } from '../common';
 
+export const iconicSelectionKinds = ['perk', 'power', 'item', 'race', 'species', 'alt-form', 'other'] as const;
+export type IconicSelectionKind = (typeof iconicSelectionKinds)[number];
+
+export interface IconicSelection {
+  kind: IconicSelectionKind;
+  title: string;
+  source: string;
+  summary: string;
+}
+
 export interface BodymodForm {
   sourceAltformId?: number | null;
   name: string;
@@ -19,6 +29,9 @@ export interface BodymodProfile extends ChainScopedRecord {
   jumperId: string;
   mode: BodymodMode;
   summary: string;
+  benchmarkNotes: string;
+  interpretationNotes: string;
+  iconicSelections: IconicSelection[];
   forms: BodymodForm[];
   features: JsonMap[];
   importSourceMetadata: JsonMap;

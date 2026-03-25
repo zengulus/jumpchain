@@ -544,6 +544,9 @@ function normalizeBodymodProfiles(source: ChainMakerV2Source): {
     bodymodProfiles.push({
       mode: 'baseline' as const,
       summary: `${altforms.length} imported altform${altforms.length === 1 ? '' : 's'}`,
+      benchmarkNotes: '',
+      interpretationNotes: '',
+      iconicSelections: [],
       forms: altforms.map((altform) => ({
         sourceAltformId: altform._id,
         name: altform.name,
@@ -884,6 +887,9 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
         jumperId,
         mode: profileImport.mode,
         summary: profileImport.summary,
+        benchmarkNotes: profileImport.benchmarkNotes,
+        interpretationNotes: profileImport.interpretationNotes,
+        iconicSelections: profileImport.iconicSelections,
         forms: profileImport.forms,
         features: profileImport.features,
         importSourceMetadata: profileImport.importSourceMetadata,

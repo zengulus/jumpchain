@@ -4,7 +4,14 @@ import { companionStatuses } from '../../domain/common';
 import type { Companion } from '../../domain/jumper/types';
 import { db } from '../../db/database';
 import { createBlankCompanion, deleteChainRecord, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AdvancedJsonDetails,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type CompanionFilter = 'all' | 'attached' | 'independent' | 'inactive';
@@ -314,17 +321,23 @@ export function CompanionsPage() {
                     </label>
                   </div>
 
-                  <JsonEditorField
-                    label="Import Source Metadata"
-                    value={selectedCompanion.importSourceMetadata}
-                    rows={10}
-                    onValidChange={(value) =>
-                      saveSelectedCompanion({
-                        ...selectedCompanion,
-                        importSourceMetadata: value as Companion['importSourceMetadata'],
-                      })
-                    }
-                  />
+                  <AdvancedJsonDetails
+                    summary="Advanced JSON"
+                    badge="import metadata"
+                    hint="Companion import leftovers stay hidden here unless you actually need the raw structure."
+                  >
+                    <JsonEditorField
+                      label="Import Source Metadata"
+                      value={selectedCompanion.importSourceMetadata}
+                      rows={10}
+                      onValidChange={(value) =>
+                        saveSelectedCompanion({
+                          ...selectedCompanion,
+                          importSourceMetadata: value as Companion['importSourceMetadata'],
+                        })
+                      }
+                    />
+                  </AdvancedJsonDetails>
                 </section>
               </>
             ) : (

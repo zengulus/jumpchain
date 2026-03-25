@@ -306,7 +306,7 @@ export function ChainWorkspaceLayout() {
         },
         {
           key: 'bodymod',
-          label: 'Bodymod',
+          label: 'Iconic',
           to: getModulePath('bodymod'),
         },
       ],
@@ -473,7 +473,7 @@ export function ChainWorkspaceLayout() {
                 onClick={() => openJumperRoute(selectedJumperId, 'bodymod')}
                 disabled={!selectedJumperId}
               >
-                Bodymod
+                Iconic
               </button>
             </div>
           </section>

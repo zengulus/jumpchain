@@ -219,7 +219,7 @@ export function ChainOverviewPage() {
             Current Jump Rules
           </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/bodymod`}>
-            Bodymod
+            Iconic
           </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/notes`}>
             Notes

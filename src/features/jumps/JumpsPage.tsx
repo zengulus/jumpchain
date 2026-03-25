@@ -4,7 +4,14 @@ import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
 import { createBlankJump, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AdvancedJsonDetails,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpsPage() {
@@ -311,19 +318,25 @@ export function JumpsPage() {
                   </div>
                 </section>
 
-                <JsonEditorField
-                  label="Import source metadata"
-                  value={selectedJump.importSourceMetadata}
-                  onValidChange={(value) =>
-                    saveSelectedJump({
-                      ...selectedJump,
-                      importSourceMetadata:
-                        typeof value === 'object' && value !== null && !Array.isArray(value)
-                          ? (value as Record<string, unknown>)
-                          : {},
-                    })
-                  }
-                />
+                <AdvancedJsonDetails
+                  summary="Advanced JSON"
+                  badge="import metadata"
+                  hint="Preserved jump import data stays tucked away here unless you need raw cleanup."
+                >
+                  <JsonEditorField
+                    label="Import source metadata"
+                    value={selectedJump.importSourceMetadata}
+                    onValidChange={(value) =>
+                      saveSelectedJump({
+                        ...selectedJump,
+                        importSourceMetadata:
+                          typeof value === 'object' && value !== null && !Array.isArray(value)
+                            ? (value as Record<string, unknown>)
+                            : {},
+                      })
+                    }
+                  />
+                </AdvancedJsonDetails>
               </>
             ) : null}
           </article>

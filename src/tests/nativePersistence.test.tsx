@@ -18,7 +18,14 @@ import {
 } from '../db/persistence';
 import { CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION, APP_VERSION } from '../app/config';
 import { migrateNativeSaveEnvelope } from '../migrations';
-import { createBlankCompanion, createBlankEffect, createBlankJumper, saveChainEntity, saveChainRecord } from '../features/workspace/records';
+import {
+  createBlankBodymodProfile,
+  createBlankCompanion,
+  createBlankEffect,
+  createBlankJumper,
+  saveChainEntity,
+  saveChainRecord,
+} from '../features/workspace/records';
 import { validateNativeChainBundle } from '../schemas';
 
 async function resetDatabase() {
@@ -137,6 +144,51 @@ describe('native persistence and round-trip safety', () => {
     expect(reloadedBundle?.companions[0]?.name).toBe('Trusted Ally');
     expect(reloadedBundle?.companions[0]?.role).toBe('Scout');
     expect(reloadedBundle?.companions[0]?.parentJumperId).toBe(jumper.id);
+  });
+
+  it('persists Iconic profiles with tiered selections across reload', async () => {
+    await resetDatabase();
+    const createdBundle = await createBlankChain('Iconic Reload');
+    const branchId = createdBundle.chain.activeBranchId;
+    const jumper = {
+      ...createBlankJumper(createdBundle.chain.id, branchId),
+      name: 'Concept Jumper',
+    };
+
+    await saveChainRecord(db.jumpers, jumper);
+
+    const profile = {
+      ...createBlankBodymodProfile(createdBundle.chain.id, branchId, jumper.id),
+      mode: 'suite' as const,
+      summary: 'Street sorcerer with a ritual kit.',
+      benchmarkNotes: 'Benchmark against named recurring casters who stay relevant in normal conflicts.',
+      interpretationNotes: 'Keep the ritual identity online even when raw output compresses to setting Core.',
+      iconicSelections: [
+        {
+          kind: 'power' as const,
+          title: 'Instinctive Sorcery',
+          source: 'Occult Jump',
+          summary: 'Preserves the core casting identity.',
+        },
+        {
+          kind: 'item' as const,
+          title: 'Field Grimoire',
+          source: 'Occult Jump',
+          summary: 'Keeps the recognisable ritual toolkit available.',
+        },
+      ],
+    };
+
+    await saveChainRecord(db.bodymodProfiles, profile);
+
+    const reloadedBundle = await getChainBundle(createdBundle.chain.id);
+    const reloadedProfile = reloadedBundle?.bodymodProfiles.find((entry) => entry.jumperId === jumper.id);
+
+    expect(reloadedProfile?.mode).toBe('suite');
+    expect(reloadedProfile?.summary).toBe('Street sorcerer with a ritual kit.');
+    expect(reloadedProfile?.benchmarkNotes).toContain('named recurring casters');
+    expect(reloadedProfile?.iconicSelections[0]?.title).toBe('Instinctive Sorcery');
+    expect(reloadedProfile?.iconicSelections[1]?.kind).toBe('item');
   });
 
   it('persists chainwide rule flags and chain-owned drawback effects across reload', async () => {

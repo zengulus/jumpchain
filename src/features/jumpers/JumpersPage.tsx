@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
 import { createBlankJumper, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AdvancedJsonDetails,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpersPage() {
@@ -75,7 +82,7 @@ export function JumpersPage() {
       {workspace.jumpers.length === 0 ? (
         <EmptyWorkspaceCard
           title="No jumpers yet"
-          body="Create the first jumper for this branch. Bodymod, participation, and note modules will then have someone to target."
+          body="Create the first jumper for this branch. Iconic, participation, and note modules will then have someone to target."
           action={
             <button className="button" type="button" onClick={() => void handleAddJumper()}>
               Create First Jumper
@@ -110,7 +117,7 @@ export function JumpersPage() {
                 <div className="section-heading">
                   <h3>{selectedJumper.name}</h3>
                   <Link className="button button--secondary" to={`/chains/${chainId}/bodymod?jumper=${selectedJumper.id}`}>
-                    Open Bodymod
+                    Open Iconic
                   </Link>
                 </div>
 
@@ -302,19 +309,25 @@ export function JumpersPage() {
                     />
                   </label>
 
-                  <JsonEditorField
-                    label="Import source metadata"
-                    value={selectedJumper.importSourceMetadata}
-                    onValidChange={(value) =>
-                      saveSelectedJumper({
-                        ...selectedJumper,
-                        importSourceMetadata:
-                          typeof value === 'object' && value !== null && !Array.isArray(value)
-                            ? (value as Record<string, unknown>)
-                            : {},
-                      })
-                    }
-                  />
+                  <AdvancedJsonDetails
+                    summary="Advanced JSON"
+                    badge="import metadata"
+                    hint="Raw preserved import fields are available here if you need them for cleanup."
+                  >
+                    <JsonEditorField
+                      label="Import source metadata"
+                      value={selectedJumper.importSourceMetadata}
+                      onValidChange={(value) =>
+                        saveSelectedJumper({
+                          ...selectedJumper,
+                          importSourceMetadata:
+                            typeof value === 'object' && value !== null && !Array.isArray(value)
+                              ? (value as Record<string, unknown>)
+                              : {},
+                        })
+                      }
+                    />
+                  </AdvancedJsonDetails>
                 </section>
               </>
             ) : null}

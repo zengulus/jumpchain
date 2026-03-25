@@ -44,6 +44,26 @@ export function StatusNoticeBanner({ notice }: { notice: StatusNotice | null }) 
   return <div className={`status status--${notice.tone}`}>{notice.message}</div>;
 }
 
+export function AdvancedJsonDetails(props: {
+  summary?: string;
+  badge?: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className="details-panel">
+      <summary className="details-panel__summary">
+        <span>{props.summary ?? 'Advanced JSON'}</span>
+        <span className="pill">{props.badge ?? 'raw data'}</span>
+      </summary>
+      <div className="details-panel__body stack stack--compact">
+        {props.hint ? <p className="field-hint">{props.hint}</p> : null}
+        {props.children}
+      </div>
+    </details>
+  );
+}
+
 export function JsonEditorField(props: {
   label: string;
   value: unknown;

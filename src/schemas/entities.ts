@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { iconicSelectionKinds } from '../domain/bodymod/types';
 import {
   AccessModeSchema,
   BaseRecordSchema,
@@ -147,10 +148,20 @@ export const BodymodFormSchema = z.object({
   importSourceMetadata: JsonMapSchema,
 });
 
+export const IconicSelectionSchema = z.object({
+  kind: z.enum(iconicSelectionKinds),
+  title: z.string(),
+  source: z.string(),
+  summary: z.string(),
+});
+
 export const BodymodProfileSchema = ChainScopedRecordSchema.extend({
   jumperId: IdentifierSchema,
   mode: BodymodModeSchema,
   summary: z.string(),
+  benchmarkNotes: z.string().default(''),
+  interpretationNotes: z.string().default(''),
+  iconicSelections: z.array(IconicSelectionSchema).default([]),
   forms: z.array(BodymodFormSchema),
   features: z.array(JsonMapSchema),
   importSourceMetadata: JsonMapSchema,

@@ -56,7 +56,13 @@ export type NoteType = (typeof noteTypes)[number];
 export const accessModes = ['manual', 'limited', 'full', 'locked'] as const;
 export type AccessMode = (typeof accessModes)[number];
 
-export const bodymodModes = ['none', 'baseline', 'supplemented', 'custom'] as const;
+export const iconicBodymodModes = ['central-gimmick', 'suite', 'baseline'] as const;
+export type IconicBodymodMode = (typeof iconicBodymodModes)[number];
+
+export const legacyBodymodModes = ['none', 'supplemented', 'custom'] as const;
+export type LegacyBodymodMode = (typeof legacyBodymodModes)[number];
+
+export const bodymodModes = [...iconicBodymodModes, ...legacyBodymodModes] as const;
 export type BodymodMode = (typeof bodymodModes)[number];
 
 export const sourceTypes = ['chainmaker-v2', 'native', 'unknown'] as const;
