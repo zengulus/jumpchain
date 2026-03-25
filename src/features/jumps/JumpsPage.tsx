@@ -6,12 +6,14 @@ import { switchActiveJump } from '../../db/persistence';
 import { createBlankJump, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpsPage() {
@@ -20,6 +22,13 @@ export function JumpsPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const selectedJump = workspace.jumps.find((jump) => jump.id === jumpId) ?? workspace.jumps[0] ?? null;
+  const jumpAutosave = useAutosaveRecord(selectedJump, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.jumps, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save jump changes.'),
+  });
+  const draftJump = jumpAutosave.draft ?? selectedJump;
 
   async function handleAddJump() {
     if (!workspace.activeBranch) {
@@ -44,25 +53,6 @@ export function JumpsPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create a jump.',
-      });
-    }
-  }
-
-  async function saveSelectedJump(nextValue: typeof selectedJump) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.jumps, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Jump changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save jump changes.',
       });
     }
   }
@@ -125,6 +115,7 @@ export function JumpsPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={jumpAutosave.status} />
 
       {workspace.jumps.length === 0 ? (
         <EmptyWorkspaceCard
@@ -162,15 +153,15 @@ export function JumpsPage() {
           </aside>
 
           <article className="card stack">
-            {selectedJump ? (
+            {draftJump ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedJump.title}</h3>
+                  <h3>{draftJump.title}</h3>
                   <div className="actions">
                     <button className="button button--secondary" type="button" onClick={() => void handleMakeCurrentJump()}>
                       Make Current Jump
                     </button>
-                    <Link className="button button--secondary" to={`/chains/${chainId}/participation/${selectedJump.id}`}>
+                    <Link className="button button--secondary" to={`/chains/${chainId}/participation/${draftJump.id}`}>
                       Open Participation
                     </Link>
                   </div>
@@ -180,10 +171,10 @@ export function JumpsPage() {
                   <label className="field">
                     <span>Title</span>
                     <input
-                      value={selectedJump.title}
+                      value={draftJump.title}
                       onChange={(event) =>
-                        void saveSelectedJump({
-                          ...selectedJump,
+                        jumpAutosave.updateDraft({
+                          ...draftJump,
                           title: event.target.value,
                         })
                       }
@@ -193,10 +184,10 @@ export function JumpsPage() {
                     <span>Order index</span>
                     <input
                       type="number"
-                      value={selectedJump.orderIndex}
+                      value={draftJump.orderIndex}
                       onChange={(event) =>
-                        void saveSelectedJump({
-                          ...selectedJump,
+                        jumpAutosave.updateDraft({
+                          ...draftJump,
                           orderIndex: Number(event.target.value),
                         })
                       }
@@ -205,10 +196,10 @@ export function JumpsPage() {
                   <label className="field">
                     <span>Status</span>
                     <select
-                      value={selectedJump.status}
+                      value={draftJump.status}
                       onChange={(event) =>
-                        void saveSelectedJump({
-                          ...selectedJump,
+                        jumpAutosave.updateDraft({
+                          ...draftJump,
                           status: event.target.value as (typeof jumpStatuses)[number],
                         })
                       }
@@ -223,10 +214,10 @@ export function JumpsPage() {
                   <label className="field">
                     <span>Jump type</span>
                     <select
-                      value={selectedJump.jumpType}
+                      value={draftJump.jumpType}
                       onChange={(event) =>
-                        void saveSelectedJump({
-                          ...selectedJump,
+                        jumpAutosave.updateDraft({
+                          ...draftJump,
                           jumpType: event.target.value as (typeof jumpTypes)[number],
                         })
                       }
@@ -247,12 +238,12 @@ export function JumpsPage() {
                       <span>Years</span>
                       <input
                         type="number"
-                        value={selectedJump.duration.years}
+                        value={draftJump.duration.years}
                         onChange={(event) =>
-                          void saveSelectedJump({
-                            ...selectedJump,
+                          jumpAutosave.updateDraft({
+                            ...draftJump,
                             duration: {
-                              ...selectedJump.duration,
+                              ...draftJump.duration,
                               years: Number(event.target.value),
                             },
                           })
@@ -263,12 +254,12 @@ export function JumpsPage() {
                       <span>Months</span>
                       <input
                         type="number"
-                        value={selectedJump.duration.months}
+                        value={draftJump.duration.months}
                         onChange={(event) =>
-                          void saveSelectedJump({
-                            ...selectedJump,
+                          jumpAutosave.updateDraft({
+                            ...draftJump,
                             duration: {
-                              ...selectedJump.duration,
+                              ...draftJump.duration,
                               months: Number(event.target.value),
                             },
                           })
@@ -279,12 +270,12 @@ export function JumpsPage() {
                       <span>Days</span>
                       <input
                         type="number"
-                        value={selectedJump.duration.days}
+                        value={draftJump.duration.days}
                         onChange={(event) =>
-                          void saveSelectedJump({
-                            ...selectedJump,
+                          jumpAutosave.updateDraft({
+                            ...draftJump,
                             duration: {
-                              ...selectedJump.duration,
+                              ...draftJump.duration,
                               days: Number(event.target.value),
                             },
                           })
@@ -301,7 +292,7 @@ export function JumpsPage() {
                       <p>No jumpers exist yet. Add a jumper first.</p>
                     ) : (
                       workspace.jumpers.map((jumper) => {
-                        const checked = selectedJump.participantJumperIds.includes(jumper.id);
+                        const checked = draftJump.participantJumperIds.includes(jumper.id);
 
                         return (
                           <label className="choice-chip" key={jumper.id}>
@@ -325,10 +316,10 @@ export function JumpsPage() {
                 >
                   <JsonEditorField
                     label="Import source metadata"
-                    value={selectedJump.importSourceMetadata}
+                    value={draftJump.importSourceMetadata}
                     onValidChange={(value) =>
-                      saveSelectedJump({
-                        ...selectedJump,
+                      jumpAutosave.updateDraft({
+                        ...draftJump,
                         importSourceMetadata:
                           typeof value === 'object' && value !== null && !Array.isArray(value)
                             ? (value as Record<string, unknown>)

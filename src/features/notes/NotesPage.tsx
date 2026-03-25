@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { noteTypes, scopeTypes, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Note } from '../../domain/notes/types';
 import { db } from '../../db/database';
 import { createBlankNote, deleteChainRecord, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { AutosaveStatusIndicator, EmptyWorkspaceCard, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type NoteFilter = 'all' | Note['noteType'];
@@ -13,6 +15,7 @@ function getOwnerOptions(workspace: ReturnType<typeof useChainWorkspace>['worksp
     chain: [{ value: workspace.chain.id, label: workspace.chain.title }],
     jump: workspace.jumps.map((jump) => ({ value: jump.id, label: jump.title })),
     jumper: workspace.jumpers.map((jumper) => ({ value: jumper.id, label: jumper.name })),
+    companion: workspace.companions.map((companion) => ({ value: companion.id, label: companion.name })),
     participation: workspace.participations.map((participation) => ({
       value: participation.id,
       label: `${workspace.jumpers.find((jumper) => jumper.id === participation.jumperId)?.name ?? 'Jumper'} @ ${
@@ -23,17 +26,95 @@ function getOwnerOptions(workspace: ReturnType<typeof useChainWorkspace>['worksp
   } as const;
 }
 
+function getDefaultScopedNoteFields(ownerEntityType: OwnerEntityType | null, ownerEntityId: string | null, chainId: string) {
+  if (!ownerEntityType || !ownerEntityId) {
+    return {
+      ownerEntityType: 'chain' as const,
+      ownerEntityId: chainId,
+      scopeType: 'chain' as const,
+      noteType: 'chain' as const,
+    };
+  }
+
+  switch (ownerEntityType) {
+    case 'jump':
+      return {
+        ownerEntityType,
+        ownerEntityId,
+        scopeType: 'jump' as const,
+        noteType: 'jump' as const,
+      };
+    case 'jumper':
+      return {
+        ownerEntityType,
+        ownerEntityId,
+        scopeType: 'jumper' as const,
+        noteType: 'jumper' as const,
+      };
+    case 'companion':
+      return {
+        ownerEntityType,
+        ownerEntityId,
+        scopeType: 'companion' as const,
+        noteType: 'companion' as const,
+      };
+    case 'participation':
+      return {
+        ownerEntityType,
+        ownerEntityId,
+        scopeType: 'participation' as const,
+        noteType: 'participation' as const,
+      };
+    case 'snapshot':
+      return {
+        ownerEntityType,
+        ownerEntityId,
+        scopeType: 'snapshot' as const,
+        noteType: 'snapshot' as const,
+      };
+    case 'chain':
+    default:
+      return {
+        ownerEntityType: 'chain' as const,
+        ownerEntityId,
+        scopeType: 'chain' as const,
+        noteType: 'chain' as const,
+      };
+  }
+}
+
 export function NotesPage() {
   const { chainId, workspace } = useChainWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [noteFilter, setNoteFilter] = useState<NoteFilter>('all');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const filteredNotes = workspace.notes.filter((note) => noteFilter === 'all' || note.noteType === noteFilter);
-  const selectedNote = workspace.notes.find((note) => note.id === selectedNoteId) ?? filteredNotes[0] ?? workspace.notes[0] ?? null;
+  const focusedOwnerType = searchParams.get('ownerType') as OwnerEntityType | null;
+  const focusedOwnerId = searchParams.get('ownerId');
+  const focusedNotes = workspace.notes.filter((note) => {
+    if (focusedOwnerType && note.ownerEntityType !== focusedOwnerType) {
+      return false;
+    }
+
+    if (focusedOwnerId && note.ownerEntityId !== focusedOwnerId) {
+      return false;
+    }
+
+    return true;
+  });
+  const filteredNotes = focusedNotes.filter((note) => noteFilter === 'all' || note.noteType === noteFilter);
+  const selectedNote = filteredNotes.find((note) => note.id === selectedNoteId) ?? filteredNotes[0] ?? null;
   const ownerOptions = getOwnerOptions(workspace);
+  const noteAutosave = useAutosaveRecord(selectedNote, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.notes, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save note changes.'),
+  });
+  const draftNote = noteAutosave.draft ?? selectedNote;
   const selectedOwnerOptions =
-    selectedNote && selectedNote.ownerEntityType in ownerOptions
-      ? ownerOptions[selectedNote.ownerEntityType as keyof typeof ownerOptions]
+    draftNote && draftNote.ownerEntityType in ownerOptions
+      ? ownerOptions[draftNote.ownerEntityType as keyof typeof ownerOptions]
       : [];
 
   async function handleCreateNote() {
@@ -41,7 +122,10 @@ export function NotesPage() {
       return;
     }
 
-    const note = createBlankNote(chainId, workspace.activeBranch.id, workspace.chain.id);
+    const note = {
+      ...createBlankNote(chainId, workspace.activeBranch.id, workspace.chain.id),
+      ...getDefaultScopedNoteFields(focusedOwnerType, focusedOwnerId, workspace.chain.id),
+    };
 
     try {
       await saveChainRecord(db.notes, note);
@@ -54,25 +138,6 @@ export function NotesPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create note.',
-      });
-    }
-  }
-
-  async function saveSelectedNote(nextValue: Note | null) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.notes, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Note changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save note.',
       });
     }
   }
@@ -105,16 +170,24 @@ export function NotesPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Notes"
-        description="Chain, jump, jumper, participation, and snapshot notes from one place, with live filters and autosave."
+        description="Chain, jump, jumper, companion, participation, and snapshot notes from one place, with live filters and autosave."
         badge={`${workspace.notes.length} total`}
         actions={
-          <button className="button" type="button" onClick={() => void handleCreateNote()}>
-            Add Note
-          </button>
+          <>
+            <button className="button" type="button" onClick={() => void handleCreateNote()}>
+              Add Note
+            </button>
+            {focusedOwnerType && focusedOwnerId ? (
+              <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
+                Clear Owner Focus
+              </button>
+            ) : null}
+          </>
         }
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={noteAutosave.status} />
 
       {workspace.notes.length === 0 ? (
         <EmptyWorkspaceCard
@@ -174,24 +247,24 @@ export function NotesPage() {
                   <label className="field">
                     <span>Title</span>
                     <input
-                      value={selectedNote.title}
+                      value={draftNote?.title ?? ''}
                       onChange={(event) =>
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           title: event.target.value,
-                        })
+                        } as Note)
                       }
                     />
                   </label>
                   <label className="field">
                     <span>Note type</span>
                     <select
-                      value={selectedNote.noteType}
+                      value={draftNote?.noteType ?? 'chain'}
                       onChange={(event) =>
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           noteType: event.target.value as Note['noteType'],
-                        })
+                        } as Note)
                       }
                     >
                       {noteTypes.map((type) => (
@@ -204,12 +277,12 @@ export function NotesPage() {
                   <label className="field">
                     <span>Scope</span>
                     <select
-                      value={selectedNote.scopeType}
+                      value={draftNote?.scopeType ?? 'chain'}
                       onChange={(event) =>
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           scopeType: event.target.value as ScopeType,
-                        })
+                        } as Note)
                       }
                     >
                       {scopeTypes.map((scope) => (
@@ -222,24 +295,25 @@ export function NotesPage() {
                   <label className="field">
                     <span>Owner type</span>
                     <select
-                      value={selectedNote.ownerEntityType}
+                      value={draftNote?.ownerEntityType ?? 'chain'}
                       onChange={(event) => {
                         const ownerEntityType = event.target.value as OwnerEntityType;
                         const nextOwnerOptions =
                           ownerEntityType in ownerOptions
                             ? ownerOptions[ownerEntityType as keyof typeof ownerOptions]
-                            : [{ value: selectedNote.ownerEntityId, label: selectedNote.ownerEntityId }];
+                            : [{ value: draftNote?.ownerEntityId ?? workspace.chain.id, label: draftNote?.ownerEntityId ?? workspace.chain.id }];
 
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           ownerEntityType,
-                          ownerEntityId: nextOwnerOptions[0]?.value ?? selectedNote.ownerEntityId,
-                        });
+                          ownerEntityId: nextOwnerOptions[0]?.value ?? draftNote?.ownerEntityId ?? workspace.chain.id,
+                        } as Note);
                       }}
                     >
                       <option value="chain">chain</option>
                       <option value="jump">jump</option>
                       <option value="jumper">jumper</option>
+                      <option value="companion">companion</option>
                       <option value="participation">participation</option>
                       <option value="snapshot">snapshot</option>
                     </select>
@@ -250,12 +324,12 @@ export function NotesPage() {
                   <span>Owner target</span>
                   {selectedOwnerOptions.length > 0 ? (
                     <select
-                      value={selectedNote.ownerEntityId}
+                      value={draftNote?.ownerEntityId ?? ''}
                       onChange={(event) =>
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           ownerEntityId: event.target.value,
-                        })
+                        } as Note)
                       }
                     >
                       {selectedOwnerOptions.map((option) => (
@@ -266,12 +340,12 @@ export function NotesPage() {
                     </select>
                   ) : (
                     <input
-                      value={selectedNote.ownerEntityId}
+                      value={draftNote?.ownerEntityId ?? ''}
                       onChange={(event) =>
-                        void saveSelectedNote({
-                          ...selectedNote,
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
                           ownerEntityId: event.target.value,
-                        })
+                        } as Note)
                       }
                     />
                   )}
@@ -281,12 +355,12 @@ export function NotesPage() {
                   <span>Content</span>
                   <textarea
                     rows={10}
-                    value={selectedNote.content}
+                    value={draftNote?.content ?? ''}
                     onChange={(event) =>
-                      void saveSelectedNote({
-                        ...selectedNote,
+                      noteAutosave.updateDraft({
+                        ...(draftNote ?? selectedNote),
                         content: event.target.value,
-                      })
+                      } as Note)
                     }
                   />
                 </label>
@@ -294,15 +368,15 @@ export function NotesPage() {
                 <label className="field">
                   <span>Tags</span>
                   <input
-                    value={selectedNote.tags.join(', ')}
+                    value={draftNote?.tags.join(', ') ?? ''}
                     onChange={(event) =>
-                      void saveSelectedNote({
-                        ...selectedNote,
+                      noteAutosave.updateDraft({
+                        ...(draftNote ?? selectedNote),
                         tags: event.target.value
                           .split(',')
                           .map((entry) => entry.trim())
                           .filter(Boolean),
-                      })
+                      } as Note)
                     }
                     placeholder="journal, rules, branching"
                   />

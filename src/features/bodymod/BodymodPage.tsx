@@ -4,7 +4,8 @@ import { iconicBodymodModes, type BodymodMode, type IconicBodymodMode } from '..
 import { iconicSelectionKinds, type BodymodProfile, type IconicSelection } from '../../domain/bodymod/types';
 import { db } from '../../db/database';
 import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 interface IconicSlotTemplate {
@@ -177,10 +178,17 @@ export function BodymodPage() {
   const profile = selectedJumper
     ? workspace.bodymodProfiles.find((entry) => entry.jumperId === selectedJumper.id) ?? null
     : null;
-  const activeTier = profile ? normalizeIconicTier(profile.mode) : 'baseline';
+  const profileAutosave = useAutosaveRecord(profile, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.bodymodProfiles, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save Iconic changes.'),
+  });
+  const draftProfile = profileAutosave.draft ?? profile;
+  const activeTier = draftProfile ? normalizeIconicTier(draftProfile.mode) : 'baseline';
   const tierConfig = ICONIC_TIER_CONFIGS[activeTier];
-  const tierSelections = profile ? getSelectionsForTier(activeTier, profile.iconicSelections) : [];
-  const hasLegacyMode = profile ? !isIconicTier(profile.mode) : false;
+  const tierSelections = draftProfile ? getSelectionsForTier(activeTier, draftProfile.iconicSelections) : [];
+  const hasLegacyMode = draftProfile ? !isIconicTier(draftProfile.mode) : false;
 
   async function handleCreateProfile() {
     if (!workspace.activeBranch || !selectedJumper) {
@@ -204,48 +212,29 @@ export function BodymodPage() {
     }
   }
 
-  async function saveProfile(nextValue: BodymodProfile | null) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.bodymodProfiles, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Iconic changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save Iconic changes.',
-      });
-    }
-  }
-
   function updateTier(nextTier: IconicBodymodMode) {
-    if (!profile) {
+    if (!draftProfile) {
       return;
     }
 
-    void saveProfile({
-      ...profile,
+    profileAutosave.updateDraft({
+      ...draftProfile,
       mode: nextTier,
-      iconicSelections: getSelectionsForTier(nextTier, profile.iconicSelections),
+      iconicSelections: getSelectionsForTier(nextTier, draftProfile.iconicSelections),
     });
   }
 
   function updateSelection(index: number, updater: (selection: IconicSelection) => IconicSelection) {
-    if (!profile) {
+    if (!draftProfile) {
       return;
     }
 
-    const nextSelections = getSelectionsForTier(activeTier, profile.iconicSelections).map((selection, selectionIndex) =>
+    const nextSelections = getSelectionsForTier(activeTier, draftProfile.iconicSelections).map((selection, selectionIndex) =>
       selectionIndex === index ? updater(selection) : selection,
     );
 
-    void saveProfile({
-      ...profile,
+    profileAutosave.updateDraft({
+      ...draftProfile,
       mode: activeTier,
       iconicSelections: nextSelections,
     });
@@ -268,6 +257,7 @@ export function BodymodPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={profileAutosave.status} />
 
       <section className="workspace-two-column">
         <aside className="card stack">
@@ -299,7 +289,7 @@ export function BodymodPage() {
             <>
               <div className="section-heading">
                 <h3>{selectedJumper.name}</h3>
-                {!profile ? (
+                {!draftProfile ? (
                   <button className="button" type="button" onClick={() => void handleCreateProfile()}>
                     Create Iconic Profile
                   </button>
@@ -308,7 +298,7 @@ export function BodymodPage() {
                 )}
               </div>
 
-              {!profile ? (
+              {!draftProfile ? (
                 <p>No Iconic profile exists for this jumper yet.</p>
               ) : (
                 <>
@@ -319,7 +309,7 @@ export function BodymodPage() {
 
                   {hasLegacyMode ? (
                     <div className="status status--warning">
-                      Legacy bodymod mode "{profile.mode}" was normalized to {tierConfig.title}. Pick an Iconic tier to make it explicit.
+                      Legacy bodymod mode "{draftProfile.mode}" was normalized to {tierConfig.title}. Pick an Iconic tier to make it explicit.
                     </div>
                   ) : null}
 
@@ -362,10 +352,10 @@ export function BodymodPage() {
                     <label className="field">
                       <span>Concept summary</span>
                       <input
-                        value={profile.summary}
+                        value={draftProfile.summary}
                         onChange={(event) =>
-                          void saveProfile({
-                            ...profile,
+                          profileAutosave.updateDraft({
+                            ...draftProfile,
                             summary: event.target.value,
                           })
                         }
@@ -377,10 +367,10 @@ export function BodymodPage() {
                         <span>Benchmark notes</span>
                         <textarea
                           rows={5}
-                          value={profile.benchmarkNotes}
+                          value={draftProfile.benchmarkNotes}
                           onChange={(event) =>
-                            void saveProfile({
-                              ...profile,
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
                               benchmarkNotes: event.target.value,
                             })
                           }
@@ -390,10 +380,10 @@ export function BodymodPage() {
                         <span>Interpretation notes</span>
                         <textarea
                           rows={5}
-                          value={profile.interpretationNotes}
+                          value={draftProfile.interpretationNotes}
                           onChange={(event) =>
-                            void saveProfile({
-                              ...profile,
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
                               interpretationNotes: event.target.value,
                             })
                           }
@@ -488,15 +478,15 @@ export function BodymodPage() {
                     </div>
                   </section>
 
-                  {profile.forms.length > 0 ? (
+                  {draftProfile.forms.length > 0 ? (
                     <section className="stack">
                       <div className="section-heading">
                         <h4>Preserved forms</h4>
-                        <span className="pill">{profile.forms.length}</span>
+                        <span className="pill">{draftProfile.forms.length}</span>
                       </div>
 
                       <div className="selection-editor-list">
-                        {profile.forms.map((form, index) => (
+                        {draftProfile.forms.map((form, index) => (
                           <div className="selection-editor" key={form.sourceAltformId ?? `${form.name}-${index}`}>
                             <div className="selection-editor__header">
                               <div className="stack stack--compact">
@@ -528,40 +518,40 @@ export function BodymodPage() {
                       <div className="field-grid field-grid--two">
                         <JsonEditorField
                           label="Iconic selections"
-                          value={profile.iconicSelections}
+                          value={draftProfile.iconicSelections}
                           onValidChange={(value) =>
-                            saveProfile({
-                              ...profile,
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
                               iconicSelections: Array.isArray(value) ? (value as IconicSelection[]) : [],
                             })
                           }
                         />
                         <JsonEditorField
                           label="Forms"
-                          value={profile.forms}
+                          value={draftProfile.forms}
                           onValidChange={(value) =>
-                            saveProfile({
-                              ...profile,
-                              forms: Array.isArray(value) ? (value as typeof profile.forms) : [],
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
+                              forms: Array.isArray(value) ? (value as typeof draftProfile.forms) : [],
                             })
                           }
                         />
                         <JsonEditorField
                           label="Features"
-                          value={profile.features}
+                          value={draftProfile.features}
                           onValidChange={(value) =>
-                            saveProfile({
-                              ...profile,
-                              features: Array.isArray(value) ? (value as typeof profile.features) : [],
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
+                              features: Array.isArray(value) ? (value as typeof draftProfile.features) : [],
                             })
                           }
                         />
                         <JsonEditorField
                           label="Import source metadata"
-                          value={profile.importSourceMetadata}
+                          value={draftProfile.importSourceMetadata}
                           onValidChange={(value) =>
-                            saveProfile({
-                              ...profile,
+                            profileAutosave.updateDraft({
+                              ...draftProfile,
                               importSourceMetadata:
                                 typeof value === 'object' && value !== null && !Array.isArray(value)
                                   ? (value as Record<string, unknown>)

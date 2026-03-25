@@ -4,7 +4,8 @@ import { getEffectiveParticipationBudgetState } from '../../domain/chain/selecto
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
 import { createBlankParticipation, saveChainRecord } from '../workspace/records';
-import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 interface SummaryToken {
@@ -490,6 +491,482 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
   );
 }
 
+function ParticipationEditorCard(props: {
+  jumper: ReturnType<typeof useChainWorkspace>['workspace']['jumpers'][number];
+  jump: ReturnType<typeof useChainWorkspace>['workspace']['jumps'][number];
+  participation: ReturnType<typeof useChainWorkspace>['workspace']['participations'][number];
+  workspace: ReturnType<typeof useChainWorkspace>['workspace'];
+}) {
+  const participationAutosave = useAutosaveRecord(props.participation, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.participations, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save participation changes.'),
+  });
+  const draftParticipation = participationAutosave.draft ?? props.participation;
+  const purchaseGroups = getPurchaseTokenGroups(draftParticipation.purchases);
+  const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, draftParticipation);
+  const currencyDefinitions = getCurrencyDefinitions(asRecord(draftParticipation.importSourceMetadata).currencies);
+  const purchaseGuidance = `${formatCountLabel(purchaseGroups.perks.length, 'perk')}, ${formatCountLabel(
+    purchaseGroups.items.length,
+    'item',
+  )}, and ${formatCountLabel(
+    purchaseGroups.others.length,
+    'other purchase',
+    'other purchases',
+  )} are grouped below. Raw imported structures stay editable in Advanced JSON editors.`;
+
+  function updateParticipation(
+    updater:
+      | typeof draftParticipation
+      | ((current: typeof draftParticipation) => typeof draftParticipation),
+  ) {
+    participationAutosave.updateDraft((current) => {
+      const resolvedCurrent = current ?? draftParticipation;
+
+      return typeof updater === 'function'
+        ? (updater as (value: typeof draftParticipation) => typeof draftParticipation)(resolvedCurrent)
+        : updater;
+    });
+  }
+
+  return (
+    <article className="card editor-sheet stack" key={props.jumper.id}>
+      <div className="section-heading">
+        <h3>{props.jumper.name}</h3>
+        <span className="pill">{draftParticipation.status}</span>
+      </div>
+
+      <AutosaveStatusIndicator status={participationAutosave.status} />
+
+      <section className="stack">
+        <div className="guidance-strip guidance-strip--accent">
+          <strong>Perks and items already live here.</strong>
+          <p>
+            Imported ChainMaker selections are stored in this participation record under purchases. The
+            editor now groups them into perks, items, and other purchases so you do not have to hunt
+            through raw JSON just to find them.
+          </p>
+        </div>
+
+        <div className="editor-section">
+          <div className="editor-section__header">
+            <div className="stack stack--compact">
+              <h4>Core Participation</h4>
+              <p className="editor-section__copy">
+                Fast fields for status, deposit, notes, and narrative beats for this jumper in the current
+                jump.
+              </p>
+            </div>
+          </div>
+
+          <div className="stack stack--compact">
+            <div className="field-grid field-grid--two">
+              <label className="field">
+                <span>Status</span>
+                <select
+                  value={draftParticipation.status}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      status: event.target.value as (typeof participationStatuses)[number],
+                    }))
+                  }
+                >
+                  {participationStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Bank deposit</span>
+                <input
+                  type="number"
+                  value={draftParticipation.bankDeposit}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      bankDeposit: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Notes</span>
+              <textarea
+                rows={5}
+                value={draftParticipation.notes}
+                onChange={(event) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <div className="field-grid field-grid--three">
+              <label className="field">
+                <span>Accomplishments</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.accomplishments}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        accomplishments: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Challenges</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.challenges}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        challenges: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Goals</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.goals}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        goals: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="editor-section-list">
+          <SelectionEditorSection
+            title="Perks"
+            description={purchaseGuidance}
+            items={draftParticipation.purchases.filter(
+              (purchase) =>
+                (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+            )}
+            emptyMessage="No perk purchases are recorded for this jumper in the current jump."
+            addLabel="Add Perk"
+            createItem={() => createBlankSelection('New Perk', { purchaseType: 0, selectionKind: 'purchase' })}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                purchases: [
+                  ...nextItems,
+                  ...current.purchases.filter(
+                    (purchase) =>
+                      (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) !== 0,
+                  ),
+                ],
+              }))
+            }
+          />
+          <SelectionEditorSection
+            title="Items"
+            description="Imported item purchases are grouped separately so physical acquisitions are easier to scan."
+            items={draftParticipation.purchases.filter(
+              (purchase) =>
+                (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
+            )}
+            emptyMessage="No item purchases are recorded for this jumper in the current jump."
+            addLabel="Add Item"
+            createItem={() => createBlankSelection('New Item', { purchaseType: 1, selectionKind: 'purchase' })}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                purchases: [
+                  ...current.purchases.filter(
+                    (purchase) =>
+                      (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+                  ),
+                  ...nextItems,
+                  ...current.purchases.filter((purchase) => {
+                    const purchaseType =
+                      getOptionalNumber(asRecord(purchase).purchaseType) ??
+                      getOptionalNumber(asRecord(purchase)._type);
+
+                    return purchaseType !== 0 && purchaseType !== 1;
+                  }),
+                ],
+              }))
+            }
+          />
+          <SelectionEditorSection
+            title="Other purchases"
+            description="Unclassified purchases, companion-like selections, and anything without a perk or item type stay here."
+            items={draftParticipation.purchases.filter((purchase) => {
+              const purchaseType =
+                getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type);
+
+              return purchaseType !== 0 && purchaseType !== 1;
+            })}
+            emptyMessage="No uncategorized purchases are recorded for this participation."
+            addLabel="Add Other Purchase"
+            createItem={() => createBlankSelection('New Purchase', { selectionKind: 'purchase' })}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                purchases: [
+                  ...current.purchases.filter(
+                    (purchase) =>
+                      (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+                  ),
+                  ...current.purchases.filter(
+                    (purchase) =>
+                      (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
+                  ),
+                  ...nextItems,
+                ],
+              }))
+            }
+          />
+          <SelectionEditorSection
+            title="Drawbacks"
+            description="Active drawbacks attached to this jumper for this jump."
+            items={draftParticipation.drawbacks}
+            emptyMessage="No drawbacks recorded for this jumper in the current jump."
+            addLabel="Add Drawback"
+            createItem={() => createBlankSelection('New Drawback', { selectionKind: 'drawback' })}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                drawbacks: nextItems,
+              }))
+            }
+          />
+          <SelectionEditorSection
+            title="Retained drawbacks"
+            description="Carry-forward drawback selections that remain relevant past their original jump."
+            items={draftParticipation.retainedDrawbacks}
+            emptyMessage="No retained drawbacks recorded."
+            addLabel="Add Retained Drawback"
+            createItem={() => createBlankSelection('New Retained Drawback', { selectionKind: 'retained-drawback' })}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                retainedDrawbacks: nextItems,
+              }))
+            }
+          />
+          <SummarySection
+            title="Origins and backgrounds"
+            description="Imported origin picks and background selections for this jumper."
+            items={getOriginTokens(draftParticipation.origins)}
+            emptyMessage="No origin or background selections were imported."
+          />
+          <SummarySection
+            title="Budgets and stipends"
+            description={
+              effectiveBudgetState.contributingChainDrawbacks.length > 0
+                ? 'Currency budgets, stipend allocations, and active chain drawback rewards for this jump.'
+                : 'Currency budgets and stipend allocations for the current jump.'
+            }
+            items={[
+              ...getBudgetTokens(
+                effectiveBudgetState.effectiveBudgets,
+                effectiveBudgetState.baseBudgets,
+                effectiveBudgetState.chainDrawbackBudgetGrants,
+                currencyDefinitions,
+              ),
+              ...getStipendTokens(draftParticipation.stipends),
+            ]}
+            emptyMessage="No budgets or stipends are defined for this participation."
+          />
+          <SummarySection
+            title="Structured imported blocks"
+            description="Source-only structured data that still belongs to this participation but does not have a first-class editor yet."
+            items={getStructuredImportTokens(draftParticipation)}
+            emptyMessage="No additional imported structured blocks are present."
+          />
+        </div>
+      </section>
+
+      <details className="details-panel">
+        <summary className="details-panel__summary">
+          <span>Advanced JSON editors</span>
+          <span className="pill">manual cleanup and preserved source blocks</span>
+        </summary>
+        <div className="details-panel__body stack stack--compact">
+          <p className="field-hint">
+            The grouped sections above are the primary view. Use these JSON editors for cleanup,
+            migration work, and edge-case preservation when the structured surface is not enough.
+          </p>
+          <div className="field-grid field-grid--two">
+            <JsonEditorField
+              label="Purchases"
+              value={draftParticipation.purchases}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  purchases: Array.isArray(value) ? value : [],
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Drawbacks"
+              value={draftParticipation.drawbacks}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  drawbacks: Array.isArray(value) ? value : [],
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Retained drawbacks"
+              value={draftParticipation.retainedDrawbacks}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  retainedDrawbacks: Array.isArray(value) ? value : [],
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Origins / backgrounds"
+              value={draftParticipation.origins}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  origins:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, unknown>)
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Budgets"
+              value={draftParticipation.budgets}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  budgets:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? Object.fromEntries(
+                          Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, Number(entry)]),
+                        )
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Stipends"
+              value={draftParticipation.stipends}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  stipends:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, Record<string, number>>)
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Alt forms"
+              value={draftParticipation.altForms}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  altForms: Array.isArray(value) ? value : [],
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Currency exchanges"
+              value={draftParticipation.currencyExchanges}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  currencyExchanges: Array.isArray(value) ? value : [],
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Supplement purchases"
+              value={draftParticipation.supplementPurchases}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  supplementPurchases:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, unknown>)
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Supplement investments"
+              value={draftParticipation.supplementInvestments}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  supplementInvestments:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, unknown>)
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Drawback overrides"
+              value={draftParticipation.drawbackOverrides}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  drawbackOverrides:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, unknown>)
+                      : {},
+                }))
+              }
+            />
+            <JsonEditorField
+              label="Import source metadata"
+              value={draftParticipation.importSourceMetadata}
+              onValidChange={(value) =>
+                updateParticipation((current) => ({
+                  ...current,
+                  importSourceMetadata:
+                    typeof value === 'object' && value !== null && !Array.isArray(value)
+                      ? (value as Record<string, unknown>)
+                      : {},
+                }))
+              }
+            />
+          </div>
+        </div>
+      </details>
+    </article>
+  );
+}
+
 export function ParticipationPage() {
   const { jumpId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -537,27 +1014,6 @@ export function ParticipationPage() {
     }
   }
 
-  async function saveParticipation(participationId: string, updater: (value: typeof workspace.participations[number]) => typeof workspace.participations[number]) {
-    const participation = workspace.participations.find((entry) => entry.id === participationId);
-
-    if (!participation) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.participations, updater(participation));
-      setNotice({
-        tone: 'success',
-        message: 'Participation changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save participation changes.',
-      });
-    }
-  }
-
   if (!jump) {
     return (
       <EmptyWorkspaceCard
@@ -594,462 +1050,31 @@ export function ParticipationPage() {
           const participation = workspace.participations.find(
             (entry) => entry.jumpId === jump.id && entry.jumperId === jumper.id,
           );
-          const purchaseGroups = participation ? getPurchaseTokenGroups(participation.purchases) : null;
-          const effectiveBudgetState = participation ? getEffectiveParticipationBudgetState(workspace, participation) : null;
-          const currencyDefinitions = participation ? getCurrencyDefinitions(asRecord(participation.importSourceMetadata).currencies) : {};
-          const purchaseGuidance = purchaseGroups
-            ? `${formatCountLabel(purchaseGroups.perks.length, 'perk')}, ${formatCountLabel(
-                purchaseGroups.items.length,
-                'item',
-              )}, and ${formatCountLabel(
-                purchaseGroups.others.length,
-                'other purchase',
-                'other purchases',
-              )} are grouped below. Raw imported structures stay editable in Advanced JSON editors.`
-            : null;
 
           return (
-            <article className="card editor-sheet stack" key={jumper.id}>
-              <div className="section-heading">
-                <h3>{jumper.name}</h3>
-                <span className="pill">{participation ? participation.status : 'not participating yet'}</span>
-              </div>
-
+            <div key={jumper.id}>
               {!participation ? (
-                <div className="actions">
-                  <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
-                    Add Participation Record
-                  </button>
-                </div>
+                <article className="card editor-sheet stack">
+                  <div className="section-heading">
+                    <h3>{jumper.name}</h3>
+                    <span className="pill">not participating yet</span>
+                  </div>
+
+                  <div className="actions">
+                    <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
+                      Add Participation Record
+                    </button>
+                  </div>
+                </article>
               ) : (
-                <>
-                  <section className="stack">
-                    <div className="guidance-strip guidance-strip--accent">
-                      <strong>Perks and items already live here.</strong>
-                      <p>
-                        Imported ChainMaker selections are stored in this participation record under purchases. The
-                        editor now groups them into perks, items, and other purchases so you do not have to hunt
-                        through raw JSON just to find them.
-                      </p>
-                    </div>
-
-                    <div className="editor-section">
-                      <div className="editor-section__header">
-                        <div className="stack stack--compact">
-                          <h4>Core Participation</h4>
-                          <p className="editor-section__copy">
-                            Fast fields for status, deposit, notes, and narrative beats for this jumper in the current
-                            jump.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="stack stack--compact">
-                        <div className="field-grid field-grid--two">
-                          <label className="field">
-                            <span>Status</span>
-                            <select
-                              value={participation.status}
-                              onChange={(event) =>
-                                void saveParticipation(participation.id, (current) => ({
-                                  ...current,
-                                  status: event.target.value as (typeof participationStatuses)[number],
-                                }))
-                              }
-                            >
-                              {participationStatuses.map((status) => (
-                                <option key={status} value={status}>
-                                  {status}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Bank deposit</span>
-                            <input
-                              type="number"
-                              value={participation.bankDeposit}
-                              onChange={(event) =>
-                                void saveParticipation(participation.id, (current) => ({
-                                  ...current,
-                                  bankDeposit: Number(event.target.value),
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-
-                        <label className="field">
-                          <span>Notes</span>
-                          <textarea
-                            rows={5}
-                            value={participation.notes}
-                            onChange={(event) =>
-                              void saveParticipation(participation.id, (current) => ({
-                                ...current,
-                                notes: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-
-                        <div className="field-grid field-grid--three">
-                          <label className="field">
-                            <span>Accomplishments</span>
-                            <textarea
-                              rows={4}
-                              value={participation.narratives.accomplishments}
-                              onChange={(event) =>
-                                void saveParticipation(participation.id, (current) => ({
-                                  ...current,
-                                  narratives: {
-                                    ...current.narratives,
-                                    accomplishments: event.target.value,
-                                  },
-                                }))
-                              }
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Challenges</span>
-                            <textarea
-                              rows={4}
-                              value={participation.narratives.challenges}
-                              onChange={(event) =>
-                                void saveParticipation(participation.id, (current) => ({
-                                  ...current,
-                                  narratives: {
-                                    ...current.narratives,
-                                    challenges: event.target.value,
-                                  },
-                                }))
-                              }
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Goals</span>
-                            <textarea
-                              rows={4}
-                              value={participation.narratives.goals}
-                              onChange={(event) =>
-                                void saveParticipation(participation.id, (current) => ({
-                                  ...current,
-                                  narratives: {
-                                    ...current.narratives,
-                                    goals: event.target.value,
-                                  },
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="editor-section-list">
-                      <SelectionEditorSection
-                        title="Perks"
-                        description={purchaseGuidance ?? 'Imported and manual perk purchases are grouped here.'}
-                        items={participation.purchases.filter(
-                          (purchase) =>
-                            (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
-                        )}
-                        emptyMessage="No perk purchases are recorded for this jumper in the current jump."
-                        addLabel="Add Perk"
-                        createItem={() => createBlankSelection('New Perk', { purchaseType: 0, selectionKind: 'purchase' })}
-                        onChange={(nextItems) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            purchases: [
-                              ...nextItems,
-                              ...current.purchases.filter(
-                                (purchase) =>
-                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) !== 0,
-                              ),
-                            ],
-                          }))
-                        }
-                      />
-                      <SelectionEditorSection
-                        title="Items"
-                        description="Imported item purchases are grouped separately so physical acquisitions are easier to scan."
-                        items={participation.purchases.filter(
-                          (purchase) =>
-                            (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
-                        )}
-                        emptyMessage="No item purchases are recorded for this jumper in the current jump."
-                        addLabel="Add Item"
-                        createItem={() => createBlankSelection('New Item', { purchaseType: 1, selectionKind: 'purchase' })}
-                        onChange={(nextItems) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            purchases: [
-                              ...current.purchases.filter(
-                                (purchase) =>
-                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
-                              ),
-                              ...nextItems,
-                              ...current.purchases.filter((purchase) => {
-                                const purchaseType =
-                                  getOptionalNumber(asRecord(purchase).purchaseType) ??
-                                  getOptionalNumber(asRecord(purchase)._type);
-
-                                return purchaseType !== 0 && purchaseType !== 1;
-                              }),
-                            ],
-                          }))
-                        }
-                      />
-                      <SelectionEditorSection
-                        title="Other purchases"
-                        description="Unclassified purchases, companion-like selections, and anything without a perk or item type stay here."
-                        items={participation.purchases.filter((purchase) => {
-                          const purchaseType =
-                            getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type);
-
-                          return purchaseType !== 0 && purchaseType !== 1;
-                        })}
-                        emptyMessage="No uncategorized purchases are recorded for this participation."
-                        addLabel="Add Other Purchase"
-                        createItem={() => createBlankSelection('New Purchase', { selectionKind: 'purchase' })}
-                        onChange={(nextItems) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            purchases: [
-                              ...current.purchases.filter(
-                                (purchase) =>
-                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
-                              ),
-                              ...current.purchases.filter(
-                                (purchase) =>
-                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
-                              ),
-                              ...nextItems,
-                            ],
-                          }))
-                        }
-                      />
-                      <SelectionEditorSection
-                        title="Drawbacks"
-                        description="Active drawbacks attached to this jumper for this jump."
-                        items={participation.drawbacks}
-                        emptyMessage="No drawbacks recorded for this jumper in the current jump."
-                        addLabel="Add Drawback"
-                        createItem={() => createBlankSelection('New Drawback', { selectionKind: 'drawback' })}
-                        onChange={(nextItems) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            drawbacks: nextItems,
-                          }))
-                        }
-                      />
-                      <SelectionEditorSection
-                        title="Retained drawbacks"
-                        description="Carry-forward drawback selections that remain relevant past their original jump."
-                        items={participation.retainedDrawbacks}
-                        emptyMessage="No retained drawbacks recorded."
-                        addLabel="Add Retained Drawback"
-                        createItem={() => createBlankSelection('New Retained Drawback', { selectionKind: 'retained-drawback' })}
-                        onChange={(nextItems) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            retainedDrawbacks: nextItems,
-                          }))
-                        }
-                      />
-                      <SummarySection
-                        title="Origins and backgrounds"
-                        description="Imported origin picks and background selections for this jumper."
-                        items={getOriginTokens(participation.origins)}
-                        emptyMessage="No origin or background selections were imported."
-                      />
-                      <SummarySection
-                        title="Budgets and stipends"
-                        description={
-                          effectiveBudgetState && effectiveBudgetState.contributingChainDrawbacks.length > 0
-                            ? 'Currency budgets, stipend allocations, and active chain drawback rewards for this jump.'
-                            : 'Currency budgets and stipend allocations for the current jump.'
-                        }
-                        items={[
-                          ...getBudgetTokens(
-                            effectiveBudgetState?.effectiveBudgets ?? participation.budgets,
-                            effectiveBudgetState?.baseBudgets ?? participation.budgets,
-                            effectiveBudgetState?.chainDrawbackBudgetGrants ?? {},
-                            currencyDefinitions,
-                          ),
-                          ...getStipendTokens(participation.stipends),
-                        ]}
-                        emptyMessage="No budgets or stipends are defined for this participation."
-                      />
-                      <SummarySection
-                        title="Structured imported blocks"
-                        description="Source-only structured data that still belongs to this participation but does not have a first-class editor yet."
-                        items={getStructuredImportTokens(participation)}
-                        emptyMessage="No additional imported structured blocks are present."
-                      />
-                    </div>
-                  </section>
-
-                  <details className="details-panel">
-                    <summary className="details-panel__summary">
-                      <span>Advanced JSON editors</span>
-                      <span className="pill">manual cleanup and preserved source blocks</span>
-                    </summary>
-                    <div className="details-panel__body stack stack--compact">
-                      <p className="field-hint">
-                        The grouped sections above are the primary view. Use these JSON editors for cleanup,
-                        migration work, and edge-case preservation when the structured surface is not enough.
-                      </p>
-                      <div className="field-grid field-grid--two">
-                        <JsonEditorField
-                          label="Purchases"
-                          value={participation.purchases}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              purchases: Array.isArray(value) ? value : [],
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Drawbacks"
-                          value={participation.drawbacks}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              drawbacks: Array.isArray(value) ? value : [],
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Retained drawbacks"
-                          value={participation.retainedDrawbacks}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              retainedDrawbacks: Array.isArray(value) ? value : [],
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Origins / backgrounds"
-                          value={participation.origins}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              origins:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Budgets"
-                          value={participation.budgets}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              budgets:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? Object.fromEntries(
-                                      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, Number(entry)]),
-                                    )
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Stipends"
-                          value={participation.stipends}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              stipends:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, Record<string, number>>)
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Alt forms"
-                          value={participation.altForms}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              altForms: Array.isArray(value) ? value : [],
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Currency exchanges"
-                          value={participation.currencyExchanges}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              currencyExchanges: Array.isArray(value) ? value : [],
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Supplement purchases"
-                          value={participation.supplementPurchases}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              supplementPurchases:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Supplement investments"
-                          value={participation.supplementInvestments}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              supplementInvestments:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Drawback overrides"
-                          value={participation.drawbackOverrides}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              drawbackOverrides:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            }))
-                          }
-                        />
-                        <JsonEditorField
-                          label="Import source metadata"
-                          value={participation.importSourceMetadata}
-                          onValidChange={(value) =>
-                            saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              importSourceMetadata:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-                  </details>
-                </>
+                <ParticipationEditorCard
+                  jump={jump}
+                  jumper={jumper}
+                  participation={participation}
+                  workspace={workspace}
+                />
               )}
-            </article>
+            </div>
           );
         })
       )}

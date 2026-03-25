@@ -6,12 +6,14 @@ import { db } from '../../db/database';
 import { createBlankCompanion, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type CompanionFilter = 'all' | 'attached' | 'independent' | 'inactive';
@@ -64,6 +66,13 @@ export function CompanionsPage() {
     filteredCompanions[0] ??
     workspace.companions[0] ??
     null;
+  const companionAutosave = useAutosaveRecord(selectedCompanion, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.companions, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save companion changes.'),
+  });
+  const draftCompanion = companionAutosave.draft ?? selectedCompanion;
 
   async function handleAddCompanion() {
     if (!workspace.activeBranch) {
@@ -83,25 +92,6 @@ export function CompanionsPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create a companion.',
-      });
-    }
-  }
-
-  async function saveSelectedCompanion(nextValue: Companion | null) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.companions, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Companion changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save companion changes.',
       });
     }
   }
@@ -144,6 +134,7 @@ export function CompanionsPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={companionAutosave.status} />
 
       {workspace.companions.length === 0 ? (
         <EmptyWorkspaceCard
@@ -193,19 +184,31 @@ export function CompanionsPage() {
           </aside>
 
           <article className="card stack">
-            {selectedCompanion ? (
+            {draftCompanion ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedCompanion.name}</h3>
+                  <h3>{draftCompanion.name}</h3>
                   <div className="actions">
-                    {selectedCompanion.parentJumperId ? (
+                    {draftCompanion.parentJumperId ? (
                       <Link
                         className="button button--secondary"
-                        to={`/chains/${chainId}/jumpers?jumper=${selectedCompanion.parentJumperId}`}
+                        to={`/chains/${chainId}/jumpers?jumper=${draftCompanion.parentJumperId}`}
                       >
                         Open Parent Jumper
                       </Link>
                     ) : null}
+                    <Link
+                      className="button button--secondary"
+                      to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
+                    >
+                      Companion Notes
+                    </Link>
+                    <Link
+                      className="button button--secondary"
+                      to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
+                    >
+                      Companion Effects
+                    </Link>
                     <button className="button button--secondary" type="button" onClick={() => void handleDeleteCompanion()}>
                       Delete
                     </button>
@@ -218,10 +221,10 @@ export function CompanionsPage() {
                     <label className="field">
                       <span>Name</span>
                       <input
-                        value={selectedCompanion.name}
+                        value={draftCompanion.name}
                         onChange={(event) =>
-                          void saveSelectedCompanion({
-                            ...selectedCompanion,
+                          companionAutosave.updateDraft({
+                            ...draftCompanion,
                             name: event.target.value,
                           })
                         }
@@ -230,10 +233,10 @@ export function CompanionsPage() {
                     <label className="field">
                       <span>Role</span>
                       <input
-                        value={selectedCompanion.role}
+                        value={draftCompanion.role}
                         onChange={(event) =>
-                          void saveSelectedCompanion({
-                            ...selectedCompanion,
+                          companionAutosave.updateDraft({
+                            ...draftCompanion,
                             role: event.target.value,
                           })
                         }
@@ -242,10 +245,10 @@ export function CompanionsPage() {
                     <label className="field">
                       <span>Parent jumper</span>
                       <select
-                        value={selectedCompanion.parentJumperId ?? ''}
+                        value={draftCompanion.parentJumperId ?? ''}
                         onChange={(event) =>
-                          void saveSelectedCompanion({
-                            ...selectedCompanion,
+                          companionAutosave.updateDraft({
+                            ...draftCompanion,
                             parentJumperId: event.target.value || null,
                           })
                         }
@@ -261,10 +264,10 @@ export function CompanionsPage() {
                     <label className="field">
                       <span>Status</span>
                       <select
-                        value={selectedCompanion.status}
+                        value={draftCompanion.status}
                         onChange={(event) =>
-                          void saveSelectedCompanion({
-                            ...selectedCompanion,
+                          companionAutosave.updateDraft({
+                            ...draftCompanion,
                             status: event.target.value as Companion['status'],
                           })
                         }
@@ -285,10 +288,10 @@ export function CompanionsPage() {
                     <label className="field">
                       <span>Origin jump</span>
                       <select
-                        value={selectedCompanion.originJumpId ?? ''}
+                        value={draftCompanion.originJumpId ?? ''}
                         onChange={(event) =>
-                          void saveSelectedCompanion({
-                            ...selectedCompanion,
+                          companionAutosave.updateDraft({
+                            ...draftCompanion,
                             originJumpId: event.target.value || null,
                           })
                         }
@@ -313,11 +316,11 @@ export function CompanionsPage() {
                   <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Companion id</span>
-                      <input value={selectedCompanion.id} readOnly />
+                      <input value={draftCompanion.id} readOnly />
                     </label>
                     <label className="field">
                       <span>Updated</span>
-                      <input value={new Date(selectedCompanion.updatedAt).toLocaleString()} readOnly />
+                      <input value={new Date(draftCompanion.updatedAt).toLocaleString()} readOnly />
                     </label>
                   </div>
 
@@ -328,11 +331,11 @@ export function CompanionsPage() {
                   >
                     <JsonEditorField
                       label="Import Source Metadata"
-                      value={selectedCompanion.importSourceMetadata}
+                      value={draftCompanion.importSourceMetadata}
                       rows={10}
                       onValidChange={(value) =>
-                        saveSelectedCompanion({
-                          ...selectedCompanion,
+                        companionAutosave.updateDraft({
+                          ...draftCompanion,
                           importSourceMetadata: value as Companion['importSourceMetadata'],
                         })
                       }

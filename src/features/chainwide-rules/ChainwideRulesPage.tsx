@@ -7,12 +7,14 @@ import { db } from '../../db/database';
 import { createBlankEffect, deleteChainRecord, saveChainEntity, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type ChainwideCategoryFilter = 'all' | Effect['category'];
@@ -62,11 +64,22 @@ export function ChainwideRulesPage() {
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const chainwideEffects = workspace.effects.filter((effect) => isChainwideEffect(effect, workspace.chain.id));
   const filteredEffects = chainwideEffects.filter((effect) => categoryFilter === 'all' || effect.category === categoryFilter);
-  const selectedEffect =
-    chainwideEffects.find((effect) => effect.id === selectedEffectId) ??
-    filteredEffects[0] ??
-    chainwideEffects[0] ??
-    null;
+  const selectedEffect = filteredEffects.find((effect) => effect.id === selectedEffectId) ?? filteredEffects[0] ?? null;
+  const chainAutosave = useAutosaveRecord(workspace.chain, {
+    onSave: async (nextValue) => {
+      await saveChainEntity(nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save chainwide rule settings.'),
+  });
+  const effectAutosave = useAutosaveRecord(selectedEffect, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.effects, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save the chainwide rule entry.'),
+  });
+  const autosaveStatus = mergeAutosaveStatuses([chainAutosave.status, effectAutosave.status]);
+  const draftChain = chainAutosave.draft ?? workspace.chain;
+  const draftEffect = effectAutosave.draft ?? selectedEffect;
   const activeBudgetContributions = getActiveChainDrawbackBudgetContributions(workspace);
   const chainwideDrawbackCount = chainwideEffects.filter((effect) => effect.category === 'drawback').length;
   const chainwideRuleCount = chainwideEffects.filter((effect) => effect.category === 'rule').length;
@@ -75,29 +88,25 @@ export function ChainwideRulesPage() {
     0,
   );
 
-  async function updateChainSetting<K extends keyof typeof workspace.chain.chainSettings>(
+  function updateChainSetting<K extends keyof typeof draftChain.chainSettings>(
     key: K,
-    value: (typeof workspace.chain.chainSettings)[K],
-    successMessage: string,
+    value: (typeof draftChain.chainSettings)[K],
   ) {
-    try {
-      await saveChainEntity({
-        ...workspace.chain,
-        chainSettings: {
-          ...workspace.chain.chainSettings,
-          [key]: value,
-        },
-      });
-      setNotice({
-        tone: 'success',
-        message: successMessage,
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save chainwide rule settings.',
-      });
+    chainAutosave.updateDraft({
+      ...draftChain,
+      chainSettings: {
+        ...draftChain.chainSettings,
+        [key]: value,
+      },
+    });
+  }
+
+  function updateSelectedEffect(nextValue: Effect | null) {
+    if (!nextValue) {
+      return;
     }
+
+    effectAutosave.updateDraft(nextValue);
   }
 
   async function handleCreateChainwideEffect(category: Effect['category']) {
@@ -122,25 +131,6 @@ export function ChainwideRulesPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create a chainwide rule entry.',
-      });
-    }
-  }
-
-  async function saveSelectedEffect(nextValue: Effect | null) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.effects, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Chainwide rule entry autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save the chainwide rule entry.',
       });
     }
   }
@@ -191,6 +181,7 @@ export function ChainwideRulesPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={autosaveStatus} />
 
       <section className="grid grid--two">
         <article className="card stack">
@@ -202,14 +193,8 @@ export function ChainwideRulesPage() {
           <label className="field field--checkbox">
             <input
               type="checkbox"
-              checked={workspace.chain.chainSettings.chainDrawbacksForCompanions}
-              onChange={(event) =>
-                void updateChainSetting(
-                  'chainDrawbacksForCompanions',
-                  event.target.checked,
-                  'Updated companion handling for chain drawbacks.',
-                )
-              }
+              checked={draftChain.chainSettings.chainDrawbacksForCompanions}
+              onChange={(event) => updateChainSetting('chainDrawbacksForCompanions', event.target.checked)}
             />
             <span>Chain drawbacks apply to companions</span>
           </label>
@@ -217,14 +202,8 @@ export function ChainwideRulesPage() {
           <label className="field field--checkbox">
             <input
               type="checkbox"
-              checked={workspace.chain.chainSettings.chainDrawbacksSupplements}
-              onChange={(event) =>
-                void updateChainSetting(
-                  'chainDrawbacksSupplements',
-                  event.target.checked,
-                  'Updated supplement handling for chain drawbacks.',
-                )
-              }
+              checked={draftChain.chainSettings.chainDrawbacksSupplements}
+              onChange={(event) => updateChainSetting('chainDrawbacksSupplements', event.target.checked)}
             />
             <span>Chain drawbacks apply to supplements</span>
           </label>
@@ -301,7 +280,7 @@ export function ChainwideRulesPage() {
               {filteredEffects.map((effect) => (
                 <button
                   key={effect.id}
-                  className={`selection-list__item${selectedEffect?.id === effect.id ? ' is-active' : ''}`}
+                  className={`selection-list__item${draftEffect?.id === effect.id ? ' is-active' : ''}`}
                   type="button"
                   onClick={() => setSelectedEffectId(effect.id)}
                 >
@@ -315,10 +294,10 @@ export function ChainwideRulesPage() {
           </aside>
 
           <article className="card stack">
-            {selectedEffect ? (
+            {draftEffect ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedEffect.title}</h3>
+                  <h3>{draftEffect.title}</h3>
                   <button className="button button--secondary" type="button" onClick={() => void handleDeleteEffect()}>
                     Delete
                   </button>
@@ -330,10 +309,10 @@ export function ChainwideRulesPage() {
                     <label className="field">
                       <span>Title</span>
                       <input
-                        value={selectedEffect.title}
+                        value={draftEffect.title}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             title: event.target.value,
                           })
                         }
@@ -343,10 +322,10 @@ export function ChainwideRulesPage() {
                     <label className="field">
                       <span>Category</span>
                       <select
-                        value={selectedEffect.category}
+                        value={draftEffect.category}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             category: event.target.value as Effect['category'],
                           })
                         }
@@ -362,10 +341,10 @@ export function ChainwideRulesPage() {
                     <label className="field">
                       <span>State</span>
                       <select
-                        value={selectedEffect.state}
+                        value={draftEffect.state}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             state: event.target.value as Effect['state'],
                           })
                         }
@@ -388,10 +367,10 @@ export function ChainwideRulesPage() {
                     <span>Description</span>
                     <textarea
                       rows={8}
-                      value={selectedEffect.description}
+                      value={draftEffect.description}
                       onChange={(event) =>
-                        void saveSelectedEffect({
-                          ...selectedEffect,
+                        updateSelectedEffect({
+                          ...draftEffect,
                           description: event.target.value,
                         })
                       }
@@ -399,7 +378,7 @@ export function ChainwideRulesPage() {
                   </label>
                 </section>
 
-                {selectedEffect.category === 'drawback' ? (
+                {draftEffect.category === 'drawback' ? (
                   <section className="stack stack--compact">
                     <h4>Jump budget</h4>
                     <div className="field-grid field-grid--two">
@@ -407,12 +386,12 @@ export function ChainwideRulesPage() {
                         <span>Grant amount</span>
                         <input
                           type="number"
-                          value={getSingleBudgetGrant(selectedEffect).amount}
+                          value={getSingleBudgetGrant(draftEffect).amount}
                           onChange={(event) =>
-                            void saveSelectedEffect(
+                            updateSelectedEffect(
                               setEffectBudgetGrant(
-                                selectedEffect,
-                                getSingleBudgetGrant(selectedEffect).currencyKey,
+                                draftEffect,
+                                getSingleBudgetGrant(draftEffect).currencyKey,
                                 event.target.value.trim().length > 0 ? Number(event.target.value) : 0,
                               ),
                             )
@@ -422,13 +401,13 @@ export function ChainwideRulesPage() {
                       <label className="field">
                         <span>Currency key</span>
                         <input
-                          value={getSingleBudgetGrant(selectedEffect).currencyKey}
+                          value={getSingleBudgetGrant(draftEffect).currencyKey}
                           onChange={(event) =>
-                            void saveSelectedEffect(
+                            updateSelectedEffect(
                               setEffectBudgetGrant(
-                                selectedEffect,
+                                draftEffect,
                                 event.target.value.trim().length > 0 ? event.target.value.trim() : '0',
-                                getSingleBudgetGrant(selectedEffect).amount,
+                                getSingleBudgetGrant(draftEffect).amount,
                               ),
                             )
                           }
@@ -444,11 +423,11 @@ export function ChainwideRulesPage() {
                   <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Scope</span>
-                      <input value={selectedEffect.scopeType} readOnly />
+                      <input value={draftEffect.scopeType} readOnly />
                     </label>
                     <label className="field">
                       <span>Owner type</span>
-                      <input value={selectedEffect.ownerEntityType} readOnly />
+                      <input value={draftEffect.ownerEntityType} readOnly />
                     </label>
                   </div>
 
@@ -459,10 +438,10 @@ export function ChainwideRulesPage() {
                   >
                     <JsonEditorField
                       label="Import Source Metadata"
-                      value={selectedEffect.importSourceMetadata}
+                      value={draftEffect.importSourceMetadata}
                       onValidChange={(value) =>
-                        saveSelectedEffect({
-                          ...selectedEffect,
+                        updateSelectedEffect({
+                          ...draftEffect,
                           importSourceMetadata:
                             typeof value === 'object' && value !== null && !Array.isArray(value)
                               ? (value as Record<string, unknown>)

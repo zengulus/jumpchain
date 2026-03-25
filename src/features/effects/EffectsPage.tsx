@@ -1,16 +1,19 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { accessModes, effectCategories, effectStates, scopeTypes, ownerEntityTypes, type AccessMode, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
 import { createBlankEffect, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type FilterValue<T extends string> = 'all' | T;
@@ -80,14 +83,40 @@ function setRuleOverride(effect: Effect, key: string, value: AccessMode | boolea
   };
 }
 
+function getDefaultScopeType(ownerEntityType: OwnerEntityType) {
+  switch (ownerEntityType) {
+    case 'jumper':
+      return 'jumper' as const;
+    case 'companion':
+      return 'companion' as const;
+    case 'jump':
+      return 'jump' as const;
+    case 'participation':
+      return 'participation' as const;
+    case 'branch':
+      return 'branch' as const;
+    case 'snapshot':
+      return 'snapshot' as const;
+    case 'system':
+      return 'global' as const;
+    case 'chain':
+    default:
+      return 'chain' as const;
+  }
+}
+
 export function EffectsPage() {
   const { chainId, workspace } = useChainWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedEffectId, setSelectedEffectId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<FilterValue<ScopeType>>('all');
   const [categoryFilter, setCategoryFilter] = useState<FilterValue<(typeof effectCategories)[number]>>('all');
   const [stateFilter, setStateFilter] = useState<FilterValue<(typeof effectStates)[number]>>('all');
   const [ownerTypeFilter, setOwnerTypeFilter] = useState<FilterValue<OwnerEntityType>>('all');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const focusedOwnerType = searchParams.get('ownerType') as OwnerEntityType | null;
+  const focusedOwnerId = searchParams.get('ownerId');
+  const ownerOptions = getOwnerOptions(workspace);
   const filteredEffects = workspace.effects.filter((effect) => {
     if (scopeFilter !== 'all' && effect.scopeType !== scopeFilter) {
       return false;
@@ -105,18 +134,43 @@ export function EffectsPage() {
       return false;
     }
 
+    if (focusedOwnerType && effect.ownerEntityType !== focusedOwnerType) {
+      return false;
+    }
+
+    if (focusedOwnerId && effect.ownerEntityId !== focusedOwnerId) {
+      return false;
+    }
+
     return true;
   });
-  const selectedEffect = workspace.effects.find((effect) => effect.id === selectedEffectId) ?? filteredEffects[0] ?? workspace.effects[0] ?? null;
-  const ownerOptions = getOwnerOptions(workspace);
-  const selectedOwnerOptions = selectedEffect ? ownerOptions[selectedEffect.ownerEntityType] : [];
+  const selectedEffect = filteredEffects.find((effect) => effect.id === selectedEffectId) ?? filteredEffects[0] ?? null;
+  const effectAutosave = useAutosaveRecord(selectedEffect, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.effects, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save effect changes.'),
+  });
+  const draftEffect = effectAutosave.draft ?? selectedEffect;
+  const selectedOwnerOptions = draftEffect ? ownerOptions[draftEffect.ownerEntityType] : [];
 
   async function handleCreateEffect() {
     if (!workspace.activeBranch) {
       return;
     }
 
-    const effect = createBlankEffect(chainId, workspace.activeBranch.id, workspace.chain.id);
+    const hasFocusedOwner =
+      focusedOwnerType &&
+      focusedOwnerId &&
+      (focusedOwnerType === 'system' || ownerOptions[focusedOwnerType]?.some((option) => option.value === focusedOwnerId));
+    const effect = hasFocusedOwner
+      ? {
+          ...createBlankEffect(chainId, workspace.activeBranch.id, focusedOwnerType === 'system' ? 'system' : focusedOwnerId),
+          scopeType: getDefaultScopeType(focusedOwnerType),
+          ownerEntityType: focusedOwnerType,
+          ownerEntityId: focusedOwnerType === 'system' ? 'system' : focusedOwnerId,
+        }
+      : createBlankEffect(chainId, workspace.activeBranch.id, workspace.chain.id);
 
     try {
       await saveChainRecord(db.effects, effect);
@@ -133,16 +187,16 @@ export function EffectsPage() {
     }
   }
 
-  async function saveSelectedEffect(nextValue: Effect | null) {
+  function updateSelectedEffect(nextValue: Effect | null) {
     if (!nextValue) {
       return;
     }
 
-    const currentOwnerValid = selectedEffect ? isEffectOwnerValid(selectedEffect, ownerOptions) : true;
+    const currentOwnerValid = draftEffect ? isEffectOwnerValid(draftEffect, ownerOptions) : true;
     const ownerChanged =
-      !selectedEffect ||
-      nextValue.ownerEntityType !== selectedEffect.ownerEntityType ||
-      nextValue.ownerEntityId !== selectedEffect.ownerEntityId;
+      !draftEffect ||
+      nextValue.ownerEntityType !== draftEffect.ownerEntityType ||
+      nextValue.ownerEntityId !== draftEffect.ownerEntityId;
 
     if (!isEffectOwnerValid(nextValue, ownerOptions) && (ownerChanged || currentOwnerValid)) {
       setNotice({
@@ -152,18 +206,7 @@ export function EffectsPage() {
       return;
     }
 
-    try {
-      await saveChainRecord(db.effects, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Effect changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save effect changes.',
-      });
-    }
+    effectAutosave.updateDraft(nextValue);
   }
 
   async function handleDeleteEffect() {
@@ -197,13 +240,21 @@ export function EffectsPage() {
         description="Filterable branch-visible effects with chain, jump, and jumper ownership plus rule override metadata."
         badge={`${workspace.effects.length} total`}
         actions={
-          <button className="button" type="button" onClick={() => void handleCreateEffect()}>
-            Add Effect
-          </button>
+          <>
+            <button className="button" type="button" onClick={() => void handleCreateEffect()}>
+              Add Effect
+            </button>
+            {focusedOwnerType && focusedOwnerId ? (
+              <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
+                Clear Owner Focus
+              </button>
+            ) : null}
+          </>
         }
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={effectAutosave.status} />
 
       {workspace.effects.length === 0 ? (
         <EmptyWorkspaceCard
@@ -296,10 +347,10 @@ export function EffectsPage() {
           </aside>
 
           <article className="card stack">
-            {selectedEffect ? (
+            {draftEffect ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedEffect.title}</h3>
+                  <h3>{draftEffect.title}</h3>
                   <button className="button button--secondary" type="button" onClick={() => void handleDeleteEffect()}>
                     Delete
                   </button>
@@ -311,10 +362,10 @@ export function EffectsPage() {
                     <label className="field">
                       <span>Title</span>
                       <input
-                        value={selectedEffect.title}
+                        value={draftEffect.title}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             title: event.target.value,
                           })
                         }
@@ -323,10 +374,10 @@ export function EffectsPage() {
                     <label className="field">
                       <span>Category</span>
                       <select
-                        value={selectedEffect.category}
+                        value={draftEffect.category}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             category: event.target.value as Effect['category'],
                           })
                         }
@@ -341,10 +392,10 @@ export function EffectsPage() {
                     <label className="field">
                       <span>State</span>
                       <select
-                        value={selectedEffect.state}
+                        value={draftEffect.state}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             state: event.target.value as Effect['state'],
                           })
                         }
@@ -359,10 +410,10 @@ export function EffectsPage() {
                     <label className="field">
                       <span>Scope</span>
                       <select
-                        value={selectedEffect.scopeType}
+                        value={draftEffect.scopeType}
                         onChange={(event) =>
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             scopeType: event.target.value as Effect['scopeType'],
                           })
                         }
@@ -377,7 +428,7 @@ export function EffectsPage() {
                     <label className="field">
                       <span>Owner type</span>
                       <select
-                        value={selectedEffect.ownerEntityType}
+                        value={draftEffect.ownerEntityType}
                         onChange={(event) => {
                           const ownerEntityType = event.target.value as OwnerEntityType;
                           const nextOwnerOptions = ownerOptions[ownerEntityType];
@@ -390,10 +441,10 @@ export function EffectsPage() {
                             return;
                           }
 
-                          void saveSelectedEffect({
-                            ...selectedEffect,
+                          updateSelectedEffect({
+                            ...draftEffect,
                             ownerEntityType,
-                            ownerEntityId: ownerEntityType === 'system' ? 'system' : nextOwnerOptions[0]?.value ?? selectedEffect.ownerEntityId,
+                            ownerEntityId: ownerEntityType === 'system' ? 'system' : nextOwnerOptions[0]?.value ?? draftEffect.ownerEntityId,
                           });
                         }}
                       >
@@ -401,7 +452,7 @@ export function EffectsPage() {
                           <option
                             key={ownerType}
                             value={ownerType}
-                            disabled={!hasOwnerTargets(ownerOptions, ownerType) && ownerType !== selectedEffect.ownerEntityType}
+                            disabled={!hasOwnerTargets(ownerOptions, ownerType) && ownerType !== draftEffect.ownerEntityType}
                           >
                             {ownerType}
                           </option>
@@ -410,14 +461,14 @@ export function EffectsPage() {
                     </label>
                     <label className="field">
                       <span>Owner target</span>
-                      {selectedEffect.ownerEntityType === 'system' ? (
+                      {draftEffect.ownerEntityType === 'system' ? (
                         <input value="system" readOnly />
                       ) : selectedOwnerOptions.length > 0 ? (
                         <select
-                          value={selectedEffect.ownerEntityId}
+                          value={draftEffect.ownerEntityId}
                           onChange={(event) =>
-                            void saveSelectedEffect({
-                              ...selectedEffect,
+                            updateSelectedEffect({
+                              ...draftEffect,
                               ownerEntityId: event.target.value,
                             })
                           }
@@ -429,12 +480,12 @@ export function EffectsPage() {
                           ))}
                         </select>
                       ) : (
-                        <input value={selectedEffect.ownerEntityId} readOnly />
+                        <input value={draftEffect.ownerEntityId} readOnly />
                       )}
                     </label>
                   </div>
 
-                  {!hasOwnerTargets(ownerOptions, selectedEffect.ownerEntityType) ? (
+                  {!hasOwnerTargets(ownerOptions, draftEffect.ownerEntityType) ? (
                     <p className="editor-section__empty">
                       This effect currently points at an owner type with no matching records in the active workspace.
                       Choose a different owner type to repair it.
@@ -445,10 +496,10 @@ export function EffectsPage() {
                     <span>Description</span>
                     <textarea
                       rows={5}
-                      value={selectedEffect.description}
+                      value={draftEffect.description}
                       onChange={(event) =>
-                        void saveSelectedEffect({
-                          ...selectedEffect,
+                        updateSelectedEffect({
+                          ...draftEffect,
                           description: event.target.value,
                         })
                       }
@@ -456,7 +507,7 @@ export function EffectsPage() {
                   </label>
                 </section>
 
-                {selectedEffect.category === 'rule' ? (
+                {draftEffect.category === 'rule' ? (
                   <section className="stack stack--compact">
                     <h4>Rule Overrides</h4>
                     <div className="field-grid field-grid--three">
@@ -465,9 +516,9 @@ export function EffectsPage() {
                           <label className="field" key={key}>
                             <span>{key}</span>
                             <select
-                              value={(getRuleOverrides(selectedEffect)[key] as string | undefined) ?? ''}
+                              value={(getRuleOverrides(draftEffect)[key] as string | undefined) ?? ''}
                               onChange={(event) =>
-                                void saveSelectedEffect(setRuleOverride(selectedEffect, key, event.target.value as AccessMode | ''))
+                                updateSelectedEffect(setRuleOverride(draftEffect, key, event.target.value as AccessMode | ''))
                               }
                             >
                               <option value="">inherit</option>
@@ -483,9 +534,9 @@ export function EffectsPage() {
                       <label className="field field--checkbox">
                         <input
                           type="checkbox"
-                          checked={Boolean(getRuleOverrides(selectedEffect).gauntlet)}
+                          checked={Boolean(getRuleOverrides(draftEffect).gauntlet)}
                           onChange={(event) =>
-                            void saveSelectedEffect(setRuleOverride(selectedEffect, 'gauntlet', event.target.checked))
+                            updateSelectedEffect(setRuleOverride(draftEffect, 'gauntlet', event.target.checked))
                           }
                         />
                         <span>Force gauntlet state</span>
@@ -499,10 +550,10 @@ export function EffectsPage() {
                   <label className="field">
                     <span>Source effect id</span>
                     <input
-                      value={selectedEffect.sourceEffectId ?? ''}
+                      value={draftEffect.sourceEffectId ?? ''}
                       onChange={(event) =>
-                        void saveSelectedEffect({
-                          ...selectedEffect,
+                        updateSelectedEffect({
+                          ...draftEffect,
                           sourceEffectId: event.target.value === '' ? null : event.target.value,
                         })
                       }
@@ -515,10 +566,10 @@ export function EffectsPage() {
                   >
                     <JsonEditorField
                       label="Import source metadata"
-                      value={selectedEffect.importSourceMetadata}
+                      value={draftEffect.importSourceMetadata}
                       onValidChange={(value) =>
-                        saveSelectedEffect({
-                          ...selectedEffect,
+                        updateSelectedEffect({
+                          ...draftEffect,
                           importSourceMetadata:
                             typeof value === 'object' && value !== null && !Array.isArray(value)
                               ? (value as Record<string, unknown>)

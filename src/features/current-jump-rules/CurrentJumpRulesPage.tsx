@@ -8,6 +8,7 @@ import {
   diffRulesModuleSettings,
   getRulesModulePresetById,
   markRulesModuleSettingOverride,
+  parseRulesModuleSettings,
   rulesAccessKeys,
   rulesCustomizationLabels,
   rulesDefaultLabels,
@@ -23,12 +24,14 @@ import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/type
 import { createBlankHouseRuleProfile, createBlankJumpRulesContext, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 const rulesSourceLabels = {
@@ -57,7 +60,12 @@ function getContextOverrideEntries(currentRulesContext: JumpRulesContext, settin
       entries.push({
         path: `defaults.${key}`,
         label: rulesDefaultLabels[key],
-        value: typeof currentRulesContext[key] === 'boolean' ? (currentRulesContext[key] ? 'enabled' : 'disabled') : currentRulesContext[key],
+        value:
+          typeof currentRulesContext[key] === 'boolean'
+            ? currentRulesContext[key]
+              ? 'enabled'
+              : 'disabled'
+            : currentRulesContext[key],
       });
     }
   }
@@ -71,31 +79,33 @@ export function CurrentJumpRulesPage() {
   const [selectedPresetId, setSelectedPresetId] = useState(builtInRulesModulePresets[0]?.id ?? 'manual-blank');
   const effectiveState = getEffectiveCurrentJumpState(workspace);
   const currentJump = effectiveState.currentJump;
-  const currentRulesContext = effectiveState.currentRulesContext;
   const rulesProfile = effectiveState.branchRulesProfile;
-  const rulesSettings = effectiveState.branchRulesSettings;
+  const currentRulesContext = effectiveState.currentRulesContext;
+  const profileAutosave = useAutosaveRecord(rulesProfile, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.houseRuleProfiles, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save branch rules profile.'),
+  });
+  const contextAutosave = useAutosaveRecord(currentRulesContext, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.jumpRulesContexts, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save current-jump rules.'),
+  });
+  const autosaveStatus = mergeAutosaveStatuses([profileAutosave.status, contextAutosave.status]);
+  const draftRulesProfile = profileAutosave.draft ?? rulesProfile;
+  const draftRulesSettings = draftRulesProfile
+    ? parseRulesModuleSettings(draftRulesProfile.settings, workspace.chain.chainSettings.altForms)
+    : effectiveState.branchRulesSettings;
+  const draftRulesContext = contextAutosave.draft ?? currentRulesContext;
   const currentRulesSourceLabel = formatRulesSource(effectiveState.currentRulesSource);
   const selectedPreset =
     builtInRulesModulePresets.find((preset) => preset.id === selectedPresetId) ?? builtInRulesModulePresets[0] ?? null;
-  const presetPreview = selectedPreset ? applyRulesModulePreset(rulesSettings, selectedPreset) : rulesSettings;
-  const presetDiff = selectedPreset ? diffRulesModuleSettings(rulesSettings, presetPreview) : [];
-  const appliedPreset = rulesSettings.appliedPresetId ? getRulesModulePresetById(rulesSettings.appliedPresetId) : null;
-  const contextOverrides = currentRulesContext ? getContextOverrideEntries(currentRulesContext, rulesSettings) : [];
-
-  async function saveRulesProfileRecord(nextProfile: HouseRuleProfile, successMessage: string) {
-    try {
-      await saveChainRecord(db.houseRuleProfiles, nextProfile);
-      setNotice({
-        tone: 'success',
-        message: successMessage,
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save branch rules profile.',
-      });
-    }
-  }
+  const presetPreview = selectedPreset ? applyRulesModulePreset(draftRulesSettings, selectedPreset) : draftRulesSettings;
+  const presetDiff = selectedPreset ? diffRulesModuleSettings(draftRulesSettings, presetPreview) : [];
+  const appliedPreset = draftRulesSettings.appliedPresetId ? getRulesModulePresetById(draftRulesSettings.appliedPresetId) : null;
+  const contextOverrides = draftRulesContext ? getContextOverrideEntries(draftRulesContext, draftRulesSettings) : [];
 
   function getDraftRulesProfile() {
     if (!workspace.activeBranch) {
@@ -103,25 +113,71 @@ export function CurrentJumpRulesPage() {
     }
 
     return (
-      rulesProfile ??
+      draftRulesProfile ??
       createBlankHouseRuleProfile(chainId, workspace.activeBranch.id, workspace.chain.chainSettings.altForms)
     );
   }
 
-  async function saveRulesProfileSettings(nextSettings: RulesModuleSettings, successMessage: string) {
+  function updateRulesProfileDraft(updater: (profile: HouseRuleProfile) => HouseRuleProfile) {
     const profile = getDraftRulesProfile();
 
     if (!profile) {
       return;
     }
 
-    await saveRulesProfileRecord(
-      {
-        ...profile,
-        settings: nextSettings as unknown as JsonMap,
-      },
-      successMessage,
+    profileAutosave.updateDraft(updater(profile));
+  }
+
+  function updateRulesProfileField(key: 'title' | 'description', value: string) {
+    updateRulesProfileDraft((profile) => ({
+      ...profile,
+      [key]: value,
+    }));
+  }
+
+  function updateRulesProfileSettings(nextSettings: RulesModuleSettings) {
+    updateRulesProfileDraft((profile) => ({
+      ...profile,
+      settings: nextSettings as unknown as JsonMap,
+    }));
+  }
+
+  function updateRuleDefault(key: RulesDefaultKey, value: JumpRulesContext[RulesDefaultKey]) {
+    updateRulesProfileSettings(
+      markRulesModuleSettingOverride(
+        {
+          ...draftRulesSettings,
+          defaults: {
+            ...draftRulesSettings.defaults,
+            [key]: value,
+          },
+        },
+        `defaults.${key}`,
+      ),
     );
+  }
+
+  function updateModuleCustomization(key: RulesModuleCustomizationKey, value: boolean) {
+    updateRulesProfileSettings(
+      markRulesModuleSettingOverride(
+        {
+          ...draftRulesSettings,
+          moduleCustomization: {
+            ...draftRulesSettings.moduleCustomization,
+            [key]: value,
+          },
+        },
+        `moduleCustomization.${key}`,
+      ),
+    );
+  }
+
+  function updateRulesContext(nextValue: JumpRulesContext | null) {
+    if (!nextValue) {
+      return;
+    }
+
+    contextAutosave.updateDraft(nextValue);
   }
 
   async function handleCreateProfile() {
@@ -131,62 +187,26 @@ export function CurrentJumpRulesPage() {
       return;
     }
 
-    await saveRulesProfileRecord(profile, 'Created a branch rules profile for this module.');
-  }
-
-  async function updateRulesProfileField(key: 'title' | 'description', value: string) {
-    if (!rulesProfile) {
-      return;
+    try {
+      await saveChainRecord(db.houseRuleProfiles, profile);
+      setNotice({
+        tone: 'success',
+        message: 'Created a branch rules profile for this module.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to save branch rules profile.',
+      });
     }
-
-    await saveRulesProfileRecord(
-      {
-        ...rulesProfile,
-        [key]: value,
-      },
-      'Saved branch rules profile details.',
-    );
   }
 
-  async function updateRuleDefault(key: RulesDefaultKey, value: JumpRulesContext[RulesDefaultKey]) {
-    const nextSettings = markRulesModuleSettingOverride(
-      {
-        ...rulesSettings,
-        defaults: {
-          ...rulesSettings.defaults,
-          [key]: value,
-        },
-      },
-      `defaults.${key}`,
-    );
-
-    await saveRulesProfileSettings(nextSettings, 'Saved branch rules defaults.');
-  }
-
-  async function updateModuleCustomization(key: RulesModuleCustomizationKey, value: boolean) {
-    const nextSettings = markRulesModuleSettingOverride(
-      {
-        ...rulesSettings,
-        moduleCustomization: {
-          ...rulesSettings.moduleCustomization,
-          [key]: value,
-        },
-      },
-      `moduleCustomization.${key}`,
-    );
-
-    await saveRulesProfileSettings(nextSettings, 'Saved rules module customization.');
-  }
-
-  async function handleApplyPreset() {
+  function handleApplyPreset() {
     if (!selectedPreset) {
       return;
     }
 
-    await saveRulesProfileSettings(
-      applyRulesModulePreset(rulesSettings, selectedPreset),
-      `Applied the "${selectedPreset.name}" preset to the branch rules profile.`,
-    );
+    updateRulesProfileSettings(applyRulesModulePreset(draftRulesSettings, selectedPreset));
   }
 
   async function handleCreateContext() {
@@ -197,7 +217,7 @@ export function CurrentJumpRulesPage() {
     try {
       await saveChainRecord(
         db.jumpRulesContexts,
-        createBlankJumpRulesContext(chainId, workspace.activeBranch.id, currentJump.id, rulesSettings.defaults),
+        createBlankJumpRulesContext(chainId, workspace.activeBranch.id, currentJump.id, draftRulesSettings.defaults),
       );
       setNotice({
         tone: 'success',
@@ -207,25 +227,6 @@ export function CurrentJumpRulesPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create jump rules context.',
-      });
-    }
-  }
-
-  async function saveRulesContext(nextValue: JumpRulesContext | null) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.jumpRulesContexts, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Current-jump rules autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save current-jump rules.',
       });
     }
   }
@@ -253,6 +254,7 @@ export function CurrentJumpRulesPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={autosaveStatus} />
 
       <section className="grid grid--two">
         <article className="card stack">
@@ -283,10 +285,10 @@ export function CurrentJumpRulesPage() {
             </span>
           </div>
 
-          {rulesSettings.moduleCustomization.showFallbackSourceBadges ? (
+          {draftRulesSettings.moduleCustomization.showFallbackSourceBadges ? (
             <div className="inline-meta">
               <span className="pill">{currentRulesSourceLabel}</span>
-              {rulesProfile ? <span className="pill">{rulesProfile.title}</span> : null}
+              {draftRulesProfile ? <span className="pill">{draftRulesProfile.title}</span> : null}
               {appliedPreset ? <span className="pill">{appliedPreset.name}</span> : null}
             </div>
           ) : null}
@@ -295,7 +297,7 @@ export function CurrentJumpRulesPage() {
             {effectiveState.contributingEffects.length} active effects are contributing to the rule summary for this jump.
           </p>
 
-          {effectiveState.contributingEffects.length > 0 && rulesSettings.moduleCustomization.showEffectSources ? (
+          {effectiveState.contributingEffects.length > 0 && draftRulesSettings.moduleCustomization.showEffectSources ? (
             <ul className="list">
               {effectiveState.contributingEffects.map((effect) => (
                 <li key={effect.id}>
@@ -314,10 +316,10 @@ export function CurrentJumpRulesPage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>Branch Rules Profile</h3>
-            <span className="pill">{rulesProfile ? 'active' : 'not created yet'}</span>
+            <span className="pill">{draftRulesProfile ? 'active' : 'not created yet'}</span>
           </div>
 
-          {!rulesProfile ? (
+          {!draftRulesProfile ? (
             <>
               <p>
                 This branch is still using chain-level fallback defaults. Create a dedicated rules profile when you want
@@ -334,8 +336,8 @@ export function CurrentJumpRulesPage() {
               <label className="field">
                 <span>Profile title</span>
                 <input
-                  value={rulesProfile.title}
-                  onChange={(event) => void updateRulesProfileField('title', event.target.value)}
+                  value={draftRulesProfile.title}
+                  onChange={(event) => updateRulesProfileField('title', event.target.value)}
                 />
               </label>
 
@@ -343,21 +345,21 @@ export function CurrentJumpRulesPage() {
                 <span>Description</span>
                 <textarea
                   rows={4}
-                  value={rulesProfile.description}
-                  onChange={(event) => void updateRulesProfileField('description', event.target.value)}
+                  value={draftRulesProfile.description}
+                  onChange={(event) => updateRulesProfileField('description', event.target.value)}
                 />
               </label>
 
               <div className="inline-meta">
                 {appliedPreset ? <span className="pill">Preset: {appliedPreset.name}</span> : <span className="pill">Preset: custom</span>}
-                <span className="pill">{rulesSettings.manualOverridePaths.length} manual overrides</span>
+                <span className="pill">{draftRulesSettings.manualOverridePaths.length} manual overrides</span>
               </div>
 
               <label className="field field--checkbox">
                 <input
                   type="checkbox"
-                  checked={rulesSettings.defaults.gauntlet}
-                  onChange={(event) => void updateRuleDefault('gauntlet', event.target.checked)}
+                  checked={draftRulesSettings.defaults.gauntlet}
+                  onChange={(event) => updateRuleDefault('gauntlet', event.target.checked)}
                 />
                 <span>{rulesDefaultLabels.gauntlet}</span>
               </label>
@@ -367,9 +369,9 @@ export function CurrentJumpRulesPage() {
                   <label className="field" key={key}>
                     <span>{rulesDefaultLabels[key]}</span>
                     <select
-                      value={rulesSettings.defaults[key]}
+                      value={draftRulesSettings.defaults[key]}
                       onChange={(event) =>
-                        void updateRuleDefault(key, event.target.value as JumpRulesContext[RulesAccessKey])
+                        updateRuleDefault(key, event.target.value as JumpRulesContext[RulesAccessKey])
                       }
                     >
                       {accessModes.map((mode) => (
@@ -401,8 +403,8 @@ export function CurrentJumpRulesPage() {
             <label className="field field--checkbox" key={key}>
               <input
                 type="checkbox"
-                checked={rulesSettings.moduleCustomization[key]}
-                onChange={(event) => void updateModuleCustomization(key, event.target.checked)}
+                checked={draftRulesSettings.moduleCustomization[key]}
+                onChange={(event) => updateModuleCustomization(key, event.target.checked)}
               />
               <span>{rulesCustomizationLabels[key]}</span>
               <small className="field-hint">{rulesCustomizationDescriptions[key]}</small>
@@ -429,7 +431,7 @@ export function CurrentJumpRulesPage() {
 
           <p>{selectedPreset?.description ?? 'Choose a preset to preview and apply branch-level rules defaults.'}</p>
 
-          {rulesSettings.moduleCustomization.showPresetDiff ? (
+          {draftRulesSettings.moduleCustomization.showPresetDiff ? (
             presetDiff.length > 0 ? (
               <ul className="list">
                 {presetDiff.map((entry) => (
@@ -446,7 +448,7 @@ export function CurrentJumpRulesPage() {
           )}
 
           <div className="actions">
-            <button className="button" type="button" onClick={() => void handleApplyPreset()} disabled={!selectedPreset}>
+            <button className="button" type="button" onClick={handleApplyPreset} disabled={!selectedPreset || !draftRulesProfile}>
               Apply Preset to Branch Defaults
             </button>
           </div>
@@ -457,10 +459,10 @@ export function CurrentJumpRulesPage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>Rules Context</h3>
-            <span className="pill">{currentRulesContext ? 'editable' : 'not created yet'}</span>
+            <span className="pill">{draftRulesContext ? 'editable' : 'not created yet'}</span>
           </div>
 
-          {!currentRulesContext ? (
+          {!draftRulesContext ? (
             <>
               <p>
                 This jump is currently inheriting {currentRulesSourceLabel.toLowerCase()}. Create a dedicated rules
@@ -474,7 +476,7 @@ export function CurrentJumpRulesPage() {
             </>
           ) : (
             <>
-              {rulesSettings.moduleCustomization.highlightRuleOverrides ? (
+              {draftRulesSettings.moduleCustomization.highlightRuleOverrides ? (
                 contextOverrides.length > 0 ? (
                   <section className="stack stack--compact">
                     <h4>Jump Overrides</h4>
@@ -494,10 +496,10 @@ export function CurrentJumpRulesPage() {
               <label className="field field--checkbox">
                 <input
                   type="checkbox"
-                  checked={currentRulesContext.gauntlet}
+                  checked={draftRulesContext.gauntlet}
                   onChange={(event) =>
-                    void saveRulesContext({
-                      ...currentRulesContext,
+                    updateRulesContext({
+                      ...draftRulesContext,
                       gauntlet: event.target.checked,
                     })
                   }
@@ -510,10 +512,10 @@ export function CurrentJumpRulesPage() {
                   <label className="field" key={key}>
                     <span>{rulesDefaultLabels[key]}</span>
                     <select
-                      value={currentRulesContext[key]}
+                      value={draftRulesContext[key]}
                       onChange={(event) =>
-                        void saveRulesContext({
-                          ...currentRulesContext,
+                        updateRulesContext({
+                          ...draftRulesContext,
                           [key]: event.target.value as JumpRulesContext[RulesAccessKey],
                         })
                       }
@@ -532,17 +534,17 @@ export function CurrentJumpRulesPage() {
                 <span>Notes</span>
                 <textarea
                   rows={6}
-                  value={currentRulesContext.notes}
+                  value={draftRulesContext.notes}
                   onChange={(event) =>
-                    void saveRulesContext({
-                      ...currentRulesContext,
+                    updateRulesContext({
+                      ...draftRulesContext,
                       notes: event.target.value,
                     })
                   }
                 />
               </label>
 
-              {rulesSettings.moduleCustomization.showAdvancedMetadata ? (
+              {draftRulesSettings.moduleCustomization.showAdvancedMetadata ? (
                 <AdvancedJsonDetails
                   summary="Advanced JSON"
                   badge="import metadata"
@@ -550,10 +552,10 @@ export function CurrentJumpRulesPage() {
                 >
                   <JsonEditorField
                     label="Import source metadata"
-                    value={currentRulesContext.importSourceMetadata}
+                    value={draftRulesContext.importSourceMetadata}
                     onValidChange={(value) =>
-                      saveRulesContext({
-                        ...currentRulesContext,
+                      updateRulesContext({
+                        ...draftRulesContext,
                         importSourceMetadata:
                           typeof value === 'object' && value !== null && !Array.isArray(value)
                             ? (value as Record<string, unknown>)
@@ -580,18 +582,18 @@ export function CurrentJumpRulesPage() {
           </p>
           <div className="inline-meta">
             <span className="metric">
-              <strong>{rulesSettings.defaults.gauntlet ? 'enabled' : 'disabled'}</strong>
+              <strong>{draftRulesSettings.defaults.gauntlet ? 'enabled' : 'disabled'}</strong>
               Gauntlet
             </span>
             {rulesAccessKeys.map((key) => (
               <span className="metric" key={key}>
-                <strong>{rulesSettings.defaults[key]}</strong>
+                <strong>{draftRulesSettings.defaults[key]}</strong>
                 {rulesDefaultLabels[key]}
               </span>
             ))}
           </div>
-          {rulesSettings.manualOverridePaths.length > 0 ? (
-            <p>{rulesSettings.manualOverridePaths.length} fields have been manually adjusted after preset application.</p>
+          {draftRulesSettings.manualOverridePaths.length > 0 ? (
+            <p>{draftRulesSettings.manualOverridePaths.length} fields have been manually adjusted after preset application.</p>
           ) : (
             <p>No manual branch overrides are recorded yet.</p>
           )}

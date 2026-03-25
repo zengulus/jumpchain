@@ -1,10 +1,12 @@
 import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { vi } from 'vitest';
 import { HomePage } from '../features/home/HomePage';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
 import { db } from '../db/database';
 import {
+  createNativeSaveEnvelope,
   createSnapshotForBranch,
   createBlankChain,
   deleteChain,
@@ -286,6 +288,31 @@ describe('native persistence and round-trip safety', () => {
     expect(persistedImportedBundle.companions).toHaveLength(1);
   });
 
+  it('rolls back multi-chain native imports when a later table write fails', async () => {
+    await resetDatabase();
+    const firstBundle = await createBlankChain('Atomic Import One');
+    const secondBundle = await createBlankChain('Atomic Import Two');
+    const nativeEnvelope = createNativeSaveEnvelope([firstBundle, secondBundle]);
+
+    await resetDatabase();
+
+    const branchesBulkPutSpy = vi.spyOn(db.branches, 'bulkPut').mockRejectedValueOnce(new Error('Injected bulkPut failure.'));
+
+    let errorMessage = '';
+
+    try {
+      await importNativeSave(nativeEnvelope);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    } finally {
+      branchesBulkPutSpy.mockRestore();
+    }
+
+    expect(errorMessage).toBe('Injected bulkPut failure.');
+    const overviews = await listChainOverviews();
+    expect(overviews).toHaveLength(0);
+  });
+
   it('persists imported ChainMaker data and reloads preserved unresolved mappings', async () => {
     await resetDatabase();
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
@@ -397,6 +424,38 @@ describe('native persistence and round-trip safety', () => {
     expect(restoredJumpers).toHaveLength(1);
     expect(restoredCompanions[0].parentJumperId).toBe(restoredJumpers[0].id);
     expect(restoredCompanions[0].parentJumperId === savedBundle.jumpers[0]?.id).toBe(false);
+  });
+
+  it('touches the parent chain updated timestamp when a snapshot is created', async () => {
+    await resetDatabase();
+    const savedBundle = await createBlankChain('Snapshot Timestamp');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await createSnapshotForBranch(savedBundle.chain.id, savedBundle.chain.activeBranchId, 'Checkpoint', 'Timestamp test');
+
+    const reloadedBundle = await getChainBundle(savedBundle.chain.id);
+    expect(reloadedBundle?.chain.updatedAt === savedBundle.chain.updatedAt).toBe(false);
+  });
+
+  it('rejects restoring a snapshot into a different chain', async () => {
+    await resetDatabase();
+    const firstBundle = await createBlankChain('First Chain');
+    const secondBundle = await createBlankChain('Second Chain');
+    const snapshot = await createSnapshotForBranch(firstBundle.chain.id, firstBundle.chain.activeBranchId, 'Foreign Snapshot', '');
+
+    let errorMessage = '';
+
+    try {
+      await restoreSnapshotAsBranch(secondBundle.chain.id, snapshot.id);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(errorMessage).toBe('Snapshot does not belong to the selected chain.');
+
+    const reloadedSecondBundle = await getChainBundle(secondBundle.chain.id);
+    expect(reloadedSecondBundle?.branches).toHaveLength(1);
+    expect(reloadedSecondBundle?.chain.activeBranchId).toBe(secondBundle.chain.activeBranchId);
   });
 
   it('renders the home page with persisted chain list data after reload', async () => {

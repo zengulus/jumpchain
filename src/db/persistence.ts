@@ -504,7 +504,16 @@ function cloneBranchBundleToExistingChain(
 
 async function writeBundle(bundle: NativeChainBundle) {
   await ensureDatabaseOpen();
-  const validatedBundle = validateNativeChainBundle(bundle);
+  await writeBundles([validateNativeChainBundle(bundle)]);
+}
+
+async function writeBundles(bundles: NativeChainBundle[]) {
+  await ensureDatabaseOpen();
+
+  if (bundles.length === 0) {
+    return;
+  }
+
   const tables = [
     db.chains,
     db.branches,
@@ -522,26 +531,27 @@ async function writeBundle(bundle: NativeChainBundle) {
     db.attachments,
     db.importReports,
   ] as const;
+  const validatedBundles = bundles.map((bundle) => validateNativeChainBundle(bundle));
 
   await db.transaction(
     'rw',
     tables,
     async () => {
-      await db.chains.put(validatedBundle.chain);
-      await db.branches.bulkPut(validatedBundle.branches);
-      await db.jumpers.bulkPut(validatedBundle.jumpers);
-      await db.companions.bulkPut(validatedBundle.companions);
-      await db.jumps.bulkPut(validatedBundle.jumps);
-      await db.participations.bulkPut(validatedBundle.participations);
-      await db.effects.bulkPut(validatedBundle.effects);
-      await db.bodymodProfiles.bulkPut(validatedBundle.bodymodProfiles);
-      await db.jumpRulesContexts.bulkPut(validatedBundle.jumpRulesContexts);
-      await db.houseRuleProfiles.bulkPut(validatedBundle.houseRuleProfiles);
-      await db.presetProfiles.bulkPut(validatedBundle.presetProfiles);
-      await db.snapshots.bulkPut(validatedBundle.snapshots);
-      await db.notes.bulkPut(validatedBundle.notes);
-      await db.attachments.bulkPut(validatedBundle.attachments);
-      await db.importReports.bulkPut(validatedBundle.importReports);
+      await db.chains.bulkPut(validatedBundles.map((bundle) => bundle.chain));
+      await db.branches.bulkPut(validatedBundles.flatMap((bundle) => bundle.branches));
+      await db.jumpers.bulkPut(validatedBundles.flatMap((bundle) => bundle.jumpers));
+      await db.companions.bulkPut(validatedBundles.flatMap((bundle) => bundle.companions));
+      await db.jumps.bulkPut(validatedBundles.flatMap((bundle) => bundle.jumps));
+      await db.participations.bulkPut(validatedBundles.flatMap((bundle) => bundle.participations));
+      await db.effects.bulkPut(validatedBundles.flatMap((bundle) => bundle.effects));
+      await db.bodymodProfiles.bulkPut(validatedBundles.flatMap((bundle) => bundle.bodymodProfiles));
+      await db.jumpRulesContexts.bulkPut(validatedBundles.flatMap((bundle) => bundle.jumpRulesContexts));
+      await db.houseRuleProfiles.bulkPut(validatedBundles.flatMap((bundle) => bundle.houseRuleProfiles));
+      await db.presetProfiles.bulkPut(validatedBundles.flatMap((bundle) => bundle.presetProfiles));
+      await db.snapshots.bulkPut(validatedBundles.flatMap((bundle) => bundle.snapshots));
+      await db.notes.bulkPut(validatedBundles.flatMap((bundle) => bundle.notes));
+      await db.attachments.bulkPut(validatedBundles.flatMap((bundle) => bundle.attachments));
+      await db.importReports.bulkPut(validatedBundles.flatMap((bundle) => bundle.importReports));
     },
   );
 }
@@ -1001,9 +1011,7 @@ export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope
     chains: migratedEnvelope.chains.map((bundle) => cloneBundleWithRemappedIds(bundle)),
   });
 
-  for (const bundle of importedEnvelope.chains) {
-    await writeBundle(bundle);
-  }
+  await writeBundles(importedEnvelope.chains);
 
   return importedEnvelope;
 }
@@ -1141,14 +1149,15 @@ export async function createSnapshotForBranch(
     }),
   ]);
 
+  const now = new Date().toISOString();
   const snapshot: Snapshot = {
     id: createId('snapshot'),
     chainId,
     branchId,
     title: title.trim() || 'Snapshot',
     description,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdFromJumpId: branchBundle.chain.activeJumpId ?? branchBundle.jumps[branchBundle.jumps.length - 1]?.id ?? null,
     payloadJson: JSON.stringify(payloadEnvelope),
     summary: {
@@ -1159,7 +1168,13 @@ export async function createSnapshotForBranch(
     },
   };
 
-  await db.snapshots.put(snapshot);
+  await db.transaction('rw', [db.chains, db.snapshots], async () => {
+    await db.snapshots.put(snapshot);
+    await db.chains.update(chainId, {
+      updatedAt: now,
+    });
+  });
+
   return snapshot;
 }
 
@@ -1177,6 +1192,10 @@ export async function restoreSnapshotAsBranch(
 
   if (!chain || !snapshot || !bundle) {
     throw new Error('Snapshot or chain not found.');
+  }
+
+  if (snapshot.chainId !== chainId) {
+    throw new Error('Snapshot does not belong to the selected chain.');
   }
 
   const payload = migrateNativeSaveEnvelope(JSON.parse(snapshot.payloadJson));

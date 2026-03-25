@@ -18,7 +18,7 @@ export const ownerEntityTypes = [
 
 export type OwnerEntityType = (typeof ownerEntityTypes)[number];
 
-export const scopeTypes = ['global', 'chain', 'jumper', 'jump', 'participation', 'branch', 'snapshot'] as const;
+export const scopeTypes = ['global', 'chain', 'jumper', 'companion', 'jump', 'participation', 'branch', 'snapshot'] as const;
 export type ScopeType = (typeof scopeTypes)[number];
 
 export const effectCategories = [
@@ -50,7 +50,7 @@ export type ParticipationStatus = (typeof participationStatuses)[number];
 export const companionStatuses = ['active', 'inactive', 'imported', 'retired'] as const;
 export type CompanionStatus = (typeof companionStatuses)[number];
 
-export const noteTypes = ['chain', 'jump', 'jumper', 'participation', 'snapshot', 'import'] as const;
+export const noteTypes = ['chain', 'jump', 'jumper', 'companion', 'participation', 'snapshot', 'import'] as const;
 export type NoteType = (typeof noteTypes)[number];
 
 export const accessModes = ['manual', 'limited', 'full', 'locked'] as const;

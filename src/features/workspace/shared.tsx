@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createJsonText } from './records';
+import type { AutosaveStatus } from './useAutosaveRecord';
 
 export interface StatusNotice {
   tone: 'success' | 'warning' | 'error';
@@ -42,6 +43,42 @@ export function StatusNoticeBanner({ notice }: { notice: StatusNotice | null }) 
   }
 
   return <div className={`status status--${notice.tone}`}>{notice.message}</div>;
+}
+
+export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) {
+  if (status.phase === 'idle') {
+    return null;
+  }
+
+  if (status.phase === 'error') {
+    return (
+      <div className="autosave-status autosave-status--error" role="alert">
+        Autosave failed: {status.message ?? 'Unable to persist the latest edits.'}
+      </div>
+    );
+  }
+
+  if (status.phase === 'dirty') {
+    return (
+      <div className="autosave-status autosave-status--dirty" role="status">
+        Changes pending
+      </div>
+    );
+  }
+
+  if (status.phase === 'saving') {
+    return (
+      <div className="autosave-status autosave-status--saving" role="status">
+        Saving...
+      </div>
+    );
+  }
+
+  return (
+    <div className="autosave-status autosave-status--saved" role="status">
+      Saved
+    </div>
+  );
 }
 
 export function AdvancedJsonDetails(props: {

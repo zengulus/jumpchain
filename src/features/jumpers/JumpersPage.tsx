@@ -4,12 +4,14 @@ import { db } from '../../db/database';
 import { createBlankJumper, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpersPage() {
@@ -18,6 +20,13 @@ export function JumpersPage() {
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? null;
   const selectedJumper = workspace.jumpers.find((jumper) => jumper.id === selectedJumperId) ?? workspace.jumpers[0] ?? null;
+  const jumperAutosave = useAutosaveRecord(selectedJumper, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.jumpers, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save jumper changes.'),
+  });
+  const draftJumper = jumperAutosave.draft ?? selectedJumper;
 
   async function handleAddJumper() {
     if (!workspace.activeBranch) {
@@ -41,25 +50,6 @@ export function JumpersPage() {
     }
   }
 
-  async function saveSelectedJumper(nextValue: typeof selectedJumper) {
-    if (!nextValue) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.jumpers, nextValue);
-      setNotice({
-        tone: 'success',
-        message: 'Jumper changes autosaved.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to save jumper changes.',
-      });
-    }
-  }
-
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or recover a branch before editing jumpers." />;
   }
@@ -78,6 +68,7 @@ export function JumpersPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+      <AutosaveStatusIndicator status={jumperAutosave.status} />
 
       {workspace.jumpers.length === 0 ? (
         <EmptyWorkspaceCard
@@ -112,11 +103,11 @@ export function JumpersPage() {
           </aside>
 
           <article className="card stack">
-            {selectedJumper ? (
+            {draftJumper ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedJumper.name}</h3>
-                  <Link className="button button--secondary" to={`/chains/${chainId}/bodymod?jumper=${selectedJumper.id}`}>
+                  <h3>{draftJumper.name}</h3>
+                  <Link className="button button--secondary" to={`/chains/${chainId}/bodymod?jumper=${draftJumper.id}`}>
                     Open Iconic
                   </Link>
                 </div>
@@ -127,10 +118,10 @@ export function JumpersPage() {
                     <label className="field">
                       <span>Name</span>
                       <input
-                        value={selectedJumper.name}
+                        value={draftJumper.name}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             name: event.target.value,
                           })
                         }
@@ -139,10 +130,10 @@ export function JumpersPage() {
                     <label className="field">
                       <span>Gender</span>
                       <input
-                        value={selectedJumper.gender}
+                        value={draftJumper.gender}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             gender: event.target.value,
                           })
                         }
@@ -152,10 +143,10 @@ export function JumpersPage() {
                       <span>Original age</span>
                       <input
                         type="number"
-                        value={selectedJumper.originalAge ?? ''}
+                        value={draftJumper.originalAge ?? ''}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             originalAge: event.target.value === '' ? null : Number(event.target.value),
                           })
                         }
@@ -164,10 +155,10 @@ export function JumpersPage() {
                     <label className="field field--checkbox">
                       <input
                         type="checkbox"
-                        checked={selectedJumper.isPrimary}
+                        checked={draftJumper.isPrimary}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             isPrimary: event.target.checked,
                           })
                         }
@@ -180,10 +171,10 @@ export function JumpersPage() {
                     <span>Notes</span>
                     <textarea
                       rows={5}
-                      value={selectedJumper.notes}
+                      value={draftJumper.notes}
                       onChange={(event) =>
-                        void saveSelectedJumper({
-                          ...selectedJumper,
+                        jumperAutosave.updateDraft({
+                          ...draftJumper,
                           notes: event.target.value,
                         })
                       }
@@ -198,12 +189,12 @@ export function JumpersPage() {
                       <span>Personality</span>
                       <textarea
                         rows={4}
-                        value={selectedJumper.personality.personality}
+                        value={draftJumper.personality.personality}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             personality: {
-                              ...selectedJumper.personality,
+                              ...draftJumper.personality,
                               personality: event.target.value,
                             },
                           })
@@ -214,12 +205,12 @@ export function JumpersPage() {
                       <span>Motivation</span>
                       <textarea
                         rows={4}
-                        value={selectedJumper.personality.motivation}
+                        value={draftJumper.personality.motivation}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             personality: {
-                              ...selectedJumper.personality,
+                              ...draftJumper.personality,
                               motivation: event.target.value,
                             },
                           })
@@ -230,12 +221,12 @@ export function JumpersPage() {
                       <span>Likes</span>
                       <textarea
                         rows={3}
-                        value={selectedJumper.personality.likes}
+                        value={draftJumper.personality.likes}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             personality: {
-                              ...selectedJumper.personality,
+                              ...draftJumper.personality,
                               likes: event.target.value,
                             },
                           })
@@ -246,12 +237,12 @@ export function JumpersPage() {
                       <span>Dislikes</span>
                       <textarea
                         rows={3}
-                        value={selectedJumper.personality.dislikes}
+                        value={draftJumper.personality.dislikes}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             personality: {
-                              ...selectedJumper.personality,
+                              ...draftJumper.personality,
                               dislikes: event.target.value,
                             },
                           })
@@ -262,12 +253,12 @@ export function JumpersPage() {
                       <span>Quirks</span>
                       <textarea
                         rows={3}
-                        value={selectedJumper.personality.quirks}
+                        value={draftJumper.personality.quirks}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             personality: {
-                              ...selectedJumper.personality,
+                              ...draftJumper.personality,
                               quirks: event.target.value,
                             },
                           })
@@ -278,12 +269,12 @@ export function JumpersPage() {
                       <span>Background summary</span>
                       <textarea
                         rows={3}
-                        value={selectedJumper.background.summary}
+                        value={draftJumper.background.summary}
                         onChange={(event) =>
-                          void saveSelectedJumper({
-                            ...selectedJumper,
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
                             background: {
-                              ...selectedJumper.background,
+                              ...draftJumper.background,
                               summary: event.target.value,
                             },
                           })
@@ -296,12 +287,12 @@ export function JumpersPage() {
                     <span>Background description</span>
                     <textarea
                       rows={6}
-                      value={selectedJumper.background.description}
+                      value={draftJumper.background.description}
                       onChange={(event) =>
-                        void saveSelectedJumper({
-                          ...selectedJumper,
+                        jumperAutosave.updateDraft({
+                          ...draftJumper,
                           background: {
-                            ...selectedJumper.background,
+                            ...draftJumper.background,
                             description: event.target.value,
                           },
                         })
@@ -316,10 +307,10 @@ export function JumpersPage() {
                   >
                     <JsonEditorField
                       label="Import source metadata"
-                      value={selectedJumper.importSourceMetadata}
+                      value={draftJumper.importSourceMetadata}
                       onValidChange={(value) =>
-                        saveSelectedJumper({
-                          ...selectedJumper,
+                        jumperAutosave.updateDraft({
+                          ...draftJumper,
                           importSourceMetadata:
                             typeof value === 'object' && value !== null && !Array.isArray(value)
                               ? (value as Record<string, unknown>)
