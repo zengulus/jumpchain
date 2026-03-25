@@ -74,6 +74,7 @@ export function ChainWorkspaceLayout() {
     );
   }
 
+  const resolvedChainId = chainId;
   const workspace = state.workspace;
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
@@ -96,17 +97,17 @@ export function ChainWorkspaceLayout() {
     const search = buildSearch(nextJumperId);
 
     if (target === 'jumpers') {
-      navigate(`/chains/${chainId}/jumpers${search}`);
+      navigate(`/chains/${resolvedChainId}/jumpers${search}`);
       return;
     }
 
     if (target === 'bodymod') {
-      navigate(`/chains/${chainId}/bodymod${search}`);
+      navigate(`/chains/${resolvedChainId}/bodymod${search}`);
       return;
     }
 
     if (currentJump) {
-      navigate(`/chains/${chainId}/participation/${currentJump.id}${search}`);
+      navigate(`/chains/${resolvedChainId}/participation/${currentJump.id}${search}`);
     }
   }
 
@@ -115,15 +116,15 @@ export function ChainWorkspaceLayout() {
       return;
     }
 
-    await switchActiveJump(chainId, nextJumpId);
+    await switchActiveJump(resolvedChainId, nextJumpId);
 
     if (location.pathname.endsWith('/jumps') || location.pathname.includes('/jumps/')) {
-      navigate(`/chains/${chainId}/jumps/${nextJumpId}${location.search}`);
+      navigate(`/chains/${resolvedChainId}/jumps/${nextJumpId}${location.search}`);
       return;
     }
 
     if (location.pathname.includes('/participation/')) {
-      navigate(`/chains/${chainId}/participation/${nextJumpId}${location.search}`);
+      navigate(`/chains/${resolvedChainId}/participation/${nextJumpId}${location.search}`);
     }
   }
 
@@ -131,12 +132,12 @@ export function ChainWorkspaceLayout() {
     const search = buildSearch(nextJumperId);
 
     if (location.pathname.includes('/jumpers')) {
-      navigate(`/chains/${chainId}/jumpers${search}`);
+      navigate(`/chains/${resolvedChainId}/jumpers${search}`);
       return;
     }
 
     if (location.pathname.includes('/bodymod')) {
-      navigate(`/chains/${chainId}/bodymod${search}`);
+      navigate(`/chains/${resolvedChainId}/bodymod${search}`);
       return;
     }
 
@@ -265,12 +266,12 @@ export function ChainWorkspaceLayout() {
 
           <nav className="workspace-subnav" aria-label="Chain modules">
             {workspaceLinks.map(([path, label]) => (
-              <NavLink key={path} to={`/chains/${chainId}/${path}`}>
+              <NavLink key={path} to={`/chains/${resolvedChainId}/${path}`}>
                 {label}
               </NavLink>
             ))}
             {currentJump ? (
-              <NavLink to={`/chains/${chainId}/participation/${currentJump.id}`}>Participation</NavLink>
+              <NavLink to={`/chains/${resolvedChainId}/participation/${currentJump.id}`}>Participation</NavLink>
             ) : null}
           </nav>
         </aside>
@@ -278,7 +279,7 @@ export function ChainWorkspaceLayout() {
         <section className="workspace-content">
           <Outlet
             context={{
-              chainId,
+              chainId: resolvedChainId,
               bundle: state.bundle,
               workspace,
             } satisfies ChainWorkspaceOutletContext}

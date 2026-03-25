@@ -108,7 +108,7 @@ function getPurchaseTokenGroups(purchases: unknown[]): PurchaseTokenGroups {
   );
 }
 
-function createBlankSelection(title: string, extraFields: Record<string, unknown> = {}) {
+function createBlankSelection(title: string, extraFields: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     name: title,
     summary: title,
@@ -118,7 +118,7 @@ function createBlankSelection(title: string, extraFields: Record<string, unknown
   };
 }
 
-function normalizeSelectionForEdit(value: unknown, fallbackTitle: string) {
+function normalizeSelectionForEdit(value: unknown, fallbackTitle: string): Record<string, unknown> {
   const record = asRecord(value);
 
   if (Object.keys(record).length > 0) {
