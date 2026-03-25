@@ -71,8 +71,9 @@ export function ChainWorkspaceLayout() {
     );
   }
 
-  const activeBranch = state.workspace.activeBranch;
-  const currentJump = state.workspace.currentJump;
+  const workspace = state.workspace;
+  const activeBranch = workspace.activeBranch;
+  const currentJump = workspace.currentJump;
 
   return (
     <div className="workspace-shell stack">
@@ -137,7 +138,7 @@ export function ChainWorkspaceLayout() {
             context={{
               chainId,
               bundle: state.bundle,
-              workspace: state.workspace,
+              workspace,
             } satisfies ChainWorkspaceOutletContext}
           />
         </section>
