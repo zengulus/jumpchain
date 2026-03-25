@@ -9,3 +9,11 @@ This repo now starts from an importer-first foundation:
 - `src/features/home` and `src/features/advanced-import` provide the first thin UI over real data.
 
 The current implementation intentionally favors schema safety and preservation of unmapped source data over polished module screens.
+
+## GitHub Pages
+
+This app is intended to run on GitHub Pages as built static assets, not by serving the source tree directly.
+
+- Vite builds the app into `dist/`.
+- `.github/workflows/deploy-pages.yml` deploys the built `dist/` artifact to GitHub Pages.
+- The app uses `createHashRouter`, so Pages does not need SPA rewrite support.
