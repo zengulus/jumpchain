@@ -37,6 +37,26 @@ interface WorkspaceModuleMenuItem {
   to: string | null;
 }
 
+function getModuleGroupId(moduleKey: ModuleKey) {
+  switch (moduleKey) {
+    case 'overview':
+    case 'jumpers':
+    case 'jumps':
+    case 'participation':
+      return 'core';
+    case 'effects':
+    case 'rules':
+    case 'bodymod':
+      return 'systems';
+    case 'timeline':
+    case 'notes':
+    case 'backups':
+      return 'history';
+    default:
+      return 'core';
+  }
+}
+
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
     return 'participation';
@@ -82,6 +102,9 @@ export function ChainWorkspaceLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [openModuleGroups, setOpenModuleGroups] = useState<string[]>(['core']);
+  const activeModuleKey = getActiveModuleKey(location.pathname);
+  const activeModuleGroupId = getModuleGroupId(activeModuleKey);
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
       if (!chainId) {
         return { status: 'missing-param' };
@@ -99,6 +122,12 @@ export function ChainWorkspaceLayout() {
         workspace: buildBranchWorkspace(bundle, bundle.chain.activeBranchId),
       };
     }, [chainId]);
+
+  useEffect(() => {
+    setOpenModuleGroups((currentGroups) =>
+      currentGroups.includes(activeModuleGroupId) ? currentGroups : [...currentGroups, activeModuleGroupId],
+    );
+  }, [activeModuleGroupId]);
 
   if (!chainId) {
     return <Navigate to="/" replace />;
@@ -127,8 +156,6 @@ export function ChainWorkspaceLayout() {
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
   const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? '';
-  const activeModuleKey = getActiveModuleKey(location.pathname);
-  const [openModuleGroups, setOpenModuleGroups] = useState<string[]>(['core']);
 
   function buildSearch(nextJumperId: string) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -326,20 +353,6 @@ export function ChainWorkspaceLayout() {
       ],
     },
   ];
-  const activeModuleGroupId = moduleGroups.find((group) =>
-    group.items.some((item) => item.key === activeModuleKey),
-  )?.id;
-
-  useEffect(() => {
-    if (!activeModuleGroupId) {
-      return;
-    }
-
-    setOpenModuleGroups((currentGroups) =>
-      currentGroups.includes(activeModuleGroupId) ? currentGroups : [...currentGroups, activeModuleGroupId],
-    );
-  }, [activeModuleGroupId]);
-
   function toggleModuleGroup(groupId: string) {
     setOpenModuleGroups((currentGroups) =>
       currentGroups.includes(groupId)
