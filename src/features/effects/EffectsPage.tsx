@@ -422,16 +422,6 @@ export function EffectsPage() {
                           ))}
                         </select>
                       ) : (
-                        <input
-                          value={selectedEffect.ownerEntityId}
-                          onChange={(event) =>
-                            void saveSelectedEffect({
-                              ...selectedEffect,
-                              ownerEntityId: event.target.value,
-                            })
-                          }
-                        />
-                      ) : (
                         <input value={selectedEffect.ownerEntityId} readOnly />
                       )}
                     </label>
