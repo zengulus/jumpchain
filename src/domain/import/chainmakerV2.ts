@@ -8,6 +8,7 @@ import type { Jumper } from '../jumper/types';
 import type { Jump, JumperParticipation } from '../jump/types';
 import type {
   ChainMakerV2Altform,
+  ChainMakerV2CleanerResult,
   ChainMakerV2Source,
   ImportReport,
   NormalizedEffectImport,
@@ -20,6 +21,7 @@ import type {
 import { ChainMakerV2SourceSchema } from '../../schemas';
 import { createId } from '../../utils/id';
 import { detectImportSource } from './sourceDetection';
+import { cleanChainMakerV2Raw } from './cleaner';
 
 const TOP_LEVEL_MAPPED_KEYS = new Set([
   'name',
@@ -30,6 +32,7 @@ const TOP_LEVEL_MAPPED_KEYS = new Set([
   'chainDrawbacks',
   'chainSettings',
   'bankSettings',
+  'purchases',
   'characterList',
   'jumpList',
 ]);
@@ -86,6 +89,109 @@ function getNarrativeDefaults() {
   };
 }
 
+function parseOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function getPurchaseCatalog(source: ChainMakerV2Source) {
+  const catalog = new Map<number, Record<string, unknown>>();
+  const purchaseRecord = asRecord(source.purchases);
+
+  for (const [sourceKey, rawEntry] of sortNumericEntries(purchaseRecord)) {
+    const entry = asRecord(rawEntry);
+    const entryId = parseOptionalNumber(entry._id) ?? parseOptionalNumber(sourceKey);
+
+    if (entryId !== null) {
+      catalog.set(entryId, entry);
+    }
+  }
+
+  return catalog;
+}
+
+function summarizePurchaseCatalogEntry(
+  selectionKind: 'purchase' | 'drawback' | 'retained-drawback' | 'chain-drawback',
+  sourcePurchaseId: number,
+  entry: Record<string, unknown>,
+) {
+  const tags = Array.isArray(entry.tags) ? entry.tags.filter((tag): tag is string => typeof tag === 'string') : [];
+
+  return {
+    sourcePurchaseId,
+    selectionKind,
+    name:
+      typeof entry.name === 'string' && entry.name.trim().length > 0
+        ? entry.name
+        : `${selectionKind} ${sourcePurchaseId}`,
+    description: typeof entry.description === 'string' ? entry.description : '',
+    value: parseOptionalNumber(entry.value),
+    currency: parseOptionalNumber(entry.currency),
+    purchaseValue: parseOptionalNumber(entry.purchaseValue),
+    costModifier: parseOptionalNumber(entry.costModifier),
+    purchaseType: parseOptionalNumber(entry._type),
+    subtype: parseOptionalNumber(entry.subtype),
+    duration: parseOptionalNumber(entry.duration),
+    sourceCharacterId: parseOptionalNumber(entry._characterId),
+    sourceJumpId: parseOptionalNumber(entry._jumpId),
+    tags,
+    category: Array.isArray(entry.category) ? entry.category : [],
+  };
+}
+
+function normalizeSelectionList(
+  references: unknown[],
+  selectionKind: 'purchase' | 'drawback' | 'retained-drawback',
+  pathPrefix: string,
+  purchaseCatalog: Map<number, Record<string, unknown>>,
+  unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'],
+) {
+  return references.map((reference, index) => {
+    const sourcePurchaseId = parseOptionalNumber(reference);
+
+    if (sourcePurchaseId !== null) {
+      const purchaseEntry = purchaseCatalog.get(sourcePurchaseId);
+
+      if (purchaseEntry) {
+        return summarizePurchaseCatalogEntry(selectionKind, sourcePurchaseId, purchaseEntry);
+      }
+    }
+
+    unresolvedMappings.push({
+      path: `${pathPrefix}.${index}`,
+      reason: `${selectionKind} reference could not be resolved against the preserved purchase catalog.`,
+      severity: 'warning',
+      rawFragment: reference,
+      preservedAt: 'chain.importSourceMetadata.purchaseCatalog',
+    });
+
+    return {
+      sourcePurchaseId,
+      selectionKind,
+      name: typeof reference === 'string' || typeof reference === 'number' ? String(reference) : 'Unresolved selection',
+      description: '',
+      unresolved: true,
+    };
+  });
+}
+
 function makeSummary(chainName: string, jumpers: number, jumps: number, chainDrawbacks: number, altforms: number, participations: number) {
   return {
     chainName,
@@ -110,6 +216,7 @@ function normalizeJumpers(source: ChainMakerV2Source): NormalizedJumperImport[] 
       '_primary',
       'originalForm',
     ]));
+    const normalizedOriginalAge = parseOptionalNumber(character.originalAge);
 
     return {
       sourceKey,
@@ -117,17 +224,22 @@ function normalizeJumpers(source: ChainMakerV2Source): NormalizedJumperImport[] 
       name: character.name,
       isPrimary: character._primary,
       gender: character.gender,
-      originalAge: character.originalAge ?? null,
+      originalAge: normalizedOriginalAge,
       notes: character.notes,
       originalFormSourceId: character.originalForm ?? null,
       personality: character.personality,
       background: character.background,
-      importSourceMetadata: preserved,
+      importSourceMetadata: {
+        ...preserved,
+        ...(character.originalAge !== undefined && normalizedOriginalAge === null
+          ? { originalAgeRaw: character.originalAge }
+          : {}),
+      },
     };
   });
 }
 
-function normalizeJumps(source: ChainMakerV2Source): {
+function normalizeJumps(source: ChainMakerV2Source, purchaseCatalog: Map<number, Record<string, unknown>>): {
   jumps: NormalizedJumpImport[];
   participations: NormalizedParticipationImport[];
   warnings: PreparedImportSession['normalized']['warnings'];
@@ -180,9 +292,27 @@ function normalizeJumps(source: ChainMakerV2Source): {
         sourceJumpId: jump._id,
         sourceCharacterId: characterId,
         notes: jump.notes[characterKey] ?? '',
-        purchases: jump.purchases[characterKey] ?? [],
-        drawbacks: jump.drawbacks[characterKey] ?? [],
-        retainedDrawbacks: jump.retainedDrawbacks[characterKey] ?? [],
+        purchases: normalizeSelectionList(
+          jump.purchases[characterKey] ?? [],
+          'purchase',
+          `jumps.${sourceKey}.purchases.${characterKey}`,
+          purchaseCatalog,
+          unresolvedMappings,
+        ),
+        drawbacks: normalizeSelectionList(
+          jump.drawbacks[characterKey] ?? [],
+          'drawback',
+          `jumps.${sourceKey}.drawbacks.${characterKey}`,
+          purchaseCatalog,
+          unresolvedMappings,
+        ),
+        retainedDrawbacks: normalizeSelectionList(
+          jump.retainedDrawbacks[characterKey] ?? [],
+          'retained-drawback',
+          `jumps.${sourceKey}.retainedDrawbacks.${characterKey}`,
+          purchaseCatalog,
+          unresolvedMappings,
+        ),
         origins: jump.origins[characterKey] ?? {},
         budgets: jump.budgets[characterKey] ?? {},
         stipends: jump.stipends[characterKey] ?? {},
@@ -210,15 +340,40 @@ function normalizeJumps(source: ChainMakerV2Source): {
   return { jumps, participations, warnings, unresolvedMappings };
 }
 
-function normalizeEffects(source: ChainMakerV2Source): NormalizedEffectImport[] {
-  return source.chainDrawbacks.map((drawback, index) => {
+function normalizeEffects(
+  source: ChainMakerV2Source,
+  purchaseCatalog: Map<number, Record<string, unknown>>,
+): {
+  effects: NormalizedEffectImport[];
+  unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'];
+} {
+  const unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'] = [];
+  const effects = source.chainDrawbacks.map((drawback, index) => {
+    const sourcePurchaseId = parseOptionalNumber(drawback);
+    const catalogEntry = sourcePurchaseId !== null ? purchaseCatalog.get(sourcePurchaseId) : undefined;
     const drawbackRecord = Array.isArray(drawback)
       ? { rawValue: drawback }
+      : catalogEntry
+        ? {
+            ...catalogEntry,
+            sourcePurchaseId,
+            selectionKind: 'chain-drawback',
+          }
       : Object.keys(asRecord(drawback)).length > 0
         ? asRecord(drawback)
         : { rawValue: drawback };
     const rawTitle = drawbackRecord.name ?? drawbackRecord.title ?? drawbackRecord.summary;
     const rawDescription = drawbackRecord.description ?? drawbackRecord.details ?? drawbackRecord.notes;
+
+    if (sourcePurchaseId !== null && !catalogEntry) {
+      unresolvedMappings.push({
+        path: `chainDrawbacks.${index}`,
+        reason: 'Chain drawback reference could not be resolved against the preserved purchase catalog.',
+        severity: 'warning',
+        rawFragment: drawback,
+        preservedAt: 'chain.importSourceMetadata.purchaseCatalog',
+      });
+    }
 
     return {
       sourceIndex: index,
@@ -227,6 +382,11 @@ function normalizeEffects(source: ChainMakerV2Source): NormalizedEffectImport[] 
       importSourceMetadata: drawbackRecord,
     };
   });
+
+  return {
+    effects,
+    unresolvedMappings,
+  };
 }
 
 function groupAltformsByCharacter(source: ChainMakerV2Source) {
@@ -275,16 +435,44 @@ export function parseChainMakerV2Source(raw: unknown): ChainMakerV2Source {
   return ChainMakerV2SourceSchema.parse(raw);
 }
 
+function applyCleanerSummary(
+  normalized: NormalizedImportModel,
+  cleaning: ChainMakerV2CleanerResult,
+): NormalizedImportModel {
+  if (cleaning.changes.length === 0) {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    warnings: [
+      {
+        code: 'chainmaker_cleaner_applied',
+        message: `Cleaner normalized ${cleaning.changes.length} source field${cleaning.changes.length === 1 ? '' : 's'} before DTO validation.`,
+        severity: 'info',
+      },
+      ...normalized.warnings,
+    ],
+    preservedSourceSummary: {
+      ...normalized.preservedSourceSummary,
+      cleanerChangeCount: cleaning.changes.length,
+      cleanerTouchedPaths: cleaning.changes.slice(0, 20).map((change) => change.path),
+    },
+  };
+}
+
 export function normalizeChainMakerV2Source(source: ChainMakerV2Source): NormalizedImportModel {
+  const purchaseCatalog = getPurchaseCatalog(source);
   const jumpers = normalizeJumpers(source);
-  const jumpData = normalizeJumps(source);
-  const effects = normalizeEffects(source);
+  const jumpData = normalizeJumps(source, purchaseCatalog);
+  const effectData = normalizeEffects(source, purchaseCatalog);
   const bodymodProfiles = normalizeBodymodProfiles(source);
   const preservedTopLevel = getUnmappedFields(source, TOP_LEVEL_MAPPED_KEYS);
   const preservedChainSettings = getUnmappedFields(source.chainSettings, CHAIN_SETTINGS_MAPPED_KEYS);
   const preservedBankSettings = getUnmappedFields(source.bankSettings, BANK_SETTINGS_MAPPED_KEYS);
   const chainImportSourceMetadata = {
     ...preservedTopLevel,
+    ...(purchaseCatalog.size > 0 ? { purchaseCatalog: source.purchases ?? {} } : {}),
     ...(Object.keys(preservedChainSettings).length > 0 ? { chainSettingsExtra: preservedChainSettings } : {}),
     ...(Object.keys(preservedBankSettings).length > 0 ? { bankSettingsExtra: preservedBankSettings } : {}),
   };
@@ -296,6 +484,17 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
     preservedAt: `chain.importSourceMetadata.${key}`,
   }));
   const settingsUnresolvedMappings = [
+    ...(purchaseCatalog.size > 0
+      ? [
+          {
+            path: 'purchases',
+            reason: 'Top-level purchase catalog was preserved and used to enrich purchases, drawbacks, and chain drawbacks.',
+            severity: 'info' as const,
+            rawFragment: { count: purchaseCatalog.size },
+            preservedAt: 'chain.importSourceMetadata.purchaseCatalog',
+          },
+        ]
+      : []),
     ...(Object.keys(preservedChainSettings).length > 0
       ? [
           {
@@ -344,15 +543,20 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
     companions: [],
     jumps: jumpData.jumps,
     participations: jumpData.participations,
-    effects,
+    effects: effectData.effects,
     bodymodProfiles,
     warnings: jumpData.warnings,
-    unresolvedMappings: [...topLevelUnresolvedMappings, ...settingsUnresolvedMappings, ...jumpData.unresolvedMappings],
+    unresolvedMappings: [
+      ...topLevelUnresolvedMappings,
+      ...settingsUnresolvedMappings,
+      ...jumpData.unresolvedMappings,
+      ...effectData.unresolvedMappings,
+    ],
     summary: makeSummary(
       source.name,
       jumpers.length,
       jumpData.jumps.length,
-      effects.length,
+      effectData.effects.length,
       Object.keys(source.altforms).length,
       jumpData.participations.length,
     ),
@@ -361,6 +565,7 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
       jumpCount: Object.keys(source.jumps).length,
       characterCount: Object.keys(source.characters).length,
       altformCount: Object.keys(source.altforms).length,
+      purchaseCatalogCount: purchaseCatalog.size,
     },
   };
 }
@@ -596,12 +801,14 @@ export function prepareChainMakerV2ImportSession(raw: unknown): PreparedImportSe
     throw new Error('The provided payload is not a supported ChainMaker v2 export.');
   }
 
-  const source = parseChainMakerV2Source(raw);
-  const normalized = normalizeChainMakerV2Source(source);
+  const cleaning = cleanChainMakerV2Raw(raw);
+  const source = parseChainMakerV2Source(cleaning.cleanedRaw);
+  const normalized = applyCleanerSummary(normalizeChainMakerV2Source(source), cleaning);
   const bundle = mapNormalizedImportToNativeBundle(normalized);
 
   return {
     sourceDetection: detection,
+    cleaning,
     source,
     normalized,
     bundle,

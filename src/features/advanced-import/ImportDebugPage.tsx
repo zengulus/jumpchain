@@ -11,6 +11,41 @@ function summarizeReasons(reasons: string[]) {
   return reasons.join(' ');
 }
 
+function getStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+function getNumericValue(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function PreviewPanel(props: { title: string; items: string[]; emptyMessage: string; previewLimit?: number }) {
+  const previewLimit = props.previewLimit ?? 10;
+  const visibleItems = props.items.slice(0, previewLimit);
+  const hiddenCount = Math.max(0, props.items.length - visibleItems.length);
+
+  return (
+    <article className="summary-panel stack stack--compact">
+      <div className="section-heading">
+        <h4>{props.title}</h4>
+        <span className="pill">{props.items.length}</span>
+      </div>
+      {props.items.length === 0 ? (
+        <p className="summary-panel__empty">{props.emptyMessage}</p>
+      ) : (
+        <div className="token-list">
+          {visibleItems.map((item, index) => (
+            <span className="token" key={`${props.title}-${item}-${index}`}>
+              {item}
+            </span>
+          ))}
+          {hiddenCount > 0 ? <span className="token token--muted">+{hiddenCount} more</span> : null}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export function ImportDebugPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -76,6 +111,20 @@ export function ImportDebugPage() {
       setIsSaving(false);
     }
   }
+
+  const jumperNames = importSession?.bundle.jumpers.map((jumper) => jumper.name) ?? [];
+  const jumpTitles = importSession?.bundle.jumps.map((jump) => jump.title) ?? [];
+  const effectTitles = importSession?.bundle.effects.map((effect) => effect.title) ?? [];
+  const preservedTopLevelBlocks = getStringList(importSession?.importReport.preservedSourceSummary.topLevelBlocks);
+  const purchaseCatalogCount = getNumericValue(importSession?.importReport.preservedSourceSummary.purchaseCatalogCount) ?? 0;
+  const cleanerChangeCount = importSession?.cleaning.changes.length ?? 0;
+  const cleanerTouchedPaths = getStringList(importSession?.importReport.preservedSourceSummary.cleanerTouchedPaths);
+  const visibleWarnings = importSession?.normalized.warnings.slice(0, 12) ?? [];
+  const hiddenWarningCount = Math.max(0, (importSession?.normalized.warnings.length ?? 0) - visibleWarnings.length);
+  const visibleMappings = importSession?.normalized.unresolvedMappings.slice(0, 12) ?? [];
+  const hiddenMappingCount = Math.max(0, (importSession?.normalized.unresolvedMappings.length ?? 0) - visibleMappings.length);
+  const visibleCleanerChanges = importSession?.cleaning.changes.slice(0, 12) ?? [];
+  const hiddenCleanerChangeCount = Math.max(0, cleanerChangeCount - visibleCleanerChanges.length);
 
   return (
     <div className="stack">
@@ -165,8 +214,47 @@ export function ImportDebugPage() {
                 <strong>{importSession.normalized.summary.altformCount}</strong>
                 Altforms
               </div>
+              <div className="metric">
+                <strong>{importSession.normalized.summary.participationCount}</strong>
+                Participations
+              </div>
+              <div className="metric">
+                <strong>{purchaseCatalogCount}</strong>
+                Preserved purchase catalog entries
+              </div>
+              <div className="metric">
+                <strong>{cleanerChangeCount}</strong>
+                Cleaner adjustments
+              </div>
             </div>
             <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
+            <div className="summary-grid">
+              <PreviewPanel
+                title="Jumpers"
+                items={jumperNames}
+                emptyMessage="No jumpers were found in the current import session."
+              />
+              <PreviewPanel
+                title="Jumps"
+                items={jumpTitles}
+                emptyMessage="No jumps were found in the current import session."
+              />
+              <PreviewPanel
+                title="Chain drawbacks and effects"
+                items={effectTitles}
+                emptyMessage="No chain-scoped drawbacks or effects were created from this source."
+              />
+              <PreviewPanel
+                title="Preserved source blocks"
+                items={preservedTopLevelBlocks}
+                emptyMessage="Everything mapped into the current native contract."
+              />
+              <PreviewPanel
+                title="Cleaner touched fields"
+                items={cleanerTouchedPaths}
+                emptyMessage="No source cleanup was required before validation."
+              />
+            </div>
             <div className="actions">
               <button className="button" type="button" onClick={() => void handleImportAsNewChain()} disabled={isSaving}>
                 Import As New Chain
@@ -177,6 +265,27 @@ export function ImportDebugPage() {
           <section className="grid grid--two">
             <article className="card stack">
               <div className="section-heading">
+                <h3>Cleaner Adjustments</h3>
+                <span className="pill">{cleanerChangeCount}</span>
+              </div>
+              {cleanerChangeCount === 0 ? (
+                <p>No cleanup was required for this source payload.</p>
+              ) : (
+                <ul className="list">
+                  {visibleCleanerChanges.map((change) => (
+                    <li key={change.path}>
+                      <strong>{change.path}</strong>: {change.reason}
+                    </li>
+                  ))}
+                  {hiddenCleanerChangeCount > 0 ? (
+                    <li>+{hiddenCleanerChangeCount} more cleaner adjustments were applied before validation.</li>
+                  ) : null}
+                </ul>
+              )}
+            </article>
+
+            <article className="card stack">
+              <div className="section-heading">
                 <h3>Warnings</h3>
                 <span className="pill">{importSession.normalized.warnings.length}</span>
               </div>
@@ -184,11 +293,12 @@ export function ImportDebugPage() {
                 <p>No warnings for the current sample.</p>
               ) : (
                 <ul className="list">
-                  {importSession.normalized.warnings.map((warning) => (
+                  {visibleWarnings.map((warning) => (
                     <li key={`${warning.code}-${warning.path ?? 'root'}`}>
                       <strong>{warning.code}</strong>: {warning.message}
                     </li>
                   ))}
+                  {hiddenWarningCount > 0 ? <li>+{hiddenWarningCount} more warnings in the full import report.</li> : null}
                 </ul>
               )}
             </article>
@@ -202,11 +312,12 @@ export function ImportDebugPage() {
                 <p>Everything mapped cleanly for this file.</p>
               ) : (
                 <ul className="list">
-                  {importSession.normalized.unresolvedMappings.map((mapping) => (
+                  {visibleMappings.map((mapping) => (
                     <li key={mapping.path}>
                       <strong>{mapping.path}</strong>: {mapping.reason}
                     </li>
                   ))}
+                  {hiddenMappingCount > 0 ? <li>+{hiddenMappingCount} more preserved mappings in the full import report.</li> : null}
                 </ul>
               )}
             </article>

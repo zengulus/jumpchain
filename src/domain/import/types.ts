@@ -20,6 +20,18 @@ export interface SourceDetectionResult {
   reasons: string[];
 }
 
+export interface ChainMakerV2CleanerChange {
+  path: string;
+  reason: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface ChainMakerV2CleanerResult {
+  cleanedRaw: unknown;
+  changes: ChainMakerV2CleanerChange[];
+}
+
 export interface ImportReport {
   id: string;
   createdAt: string;
@@ -52,7 +64,7 @@ export interface ChainMakerV2Character {
   _id: number;
   name: string;
   gender: string;
-  originalAge?: number;
+  originalAge?: number | string;
   personality: ChainMakerV2CharacterPersonality;
   background: ChainMakerV2CharacterBackground;
   notes: string;
@@ -247,6 +259,7 @@ export interface NormalizedImportModel {
 
 export interface PreparedImportSession {
   sourceDetection: SourceDetectionResult;
+  cleaning: ChainMakerV2CleanerResult;
   source: ChainMakerV2Source;
   normalized: NormalizedImportModel;
   bundle: NativeChainBundle;

@@ -56,7 +56,7 @@ const ChainMakerV2CharacterSchema = z
     _id: z.number(),
     name: z.string().min(1),
     gender: z.string(),
-    originalAge: z.number().optional(),
+    originalAge: z.union([z.number(), z.string()]).optional(),
     personality: z.object({
       personality: z.string(),
       motivation: z.string(),
