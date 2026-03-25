@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { noteTypes, scopeTypes, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Note } from '../../domain/notes/types';
 import { db } from '../../db/database';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery } from '../search/searchUtils';
 import { createBlankNote, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import { AutosaveStatusIndicator, EmptyWorkspaceCard, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
@@ -86,9 +88,10 @@ function getDefaultScopedNoteFields(ownerEntityType: OwnerEntityType | null, own
 export function NotesPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [noteFilter, setNoteFilter] = useState<NoteFilter>('all');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const selectedNoteId = searchParams.get('note');
+  const searchQuery = searchParams.get('search') ?? '';
   const focusedOwnerType = searchParams.get('ownerType') as OwnerEntityType | null;
   const focusedOwnerId = searchParams.get('ownerId');
   const focusedNotes = workspace.notes.filter((note) => {
@@ -102,7 +105,11 @@ export function NotesPage() {
 
     return true;
   });
-  const filteredNotes = focusedNotes.filter((note) => noteFilter === 'all' || note.noteType === noteFilter);
+  const filteredNotes = focusedNotes.filter(
+    (note) =>
+      (noteFilter === 'all' || note.noteType === noteFilter) &&
+      matchesSearchQuery(searchQuery, note.title, note.content, note.tags, note.noteType),
+  );
   const selectedNote = filteredNotes.find((note) => note.id === selectedNoteId) ?? filteredNotes[0] ?? null;
   const ownerOptions = getOwnerOptions(workspace);
   const noteAutosave = useAutosaveRecord(selectedNote, {
@@ -129,7 +136,11 @@ export function NotesPage() {
 
     try {
       await saveChainRecord(db.notes, note);
-      setSelectedNoteId(note.id);
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.set('note', note.id);
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Created a new note.',
@@ -149,7 +160,11 @@ export function NotesPage() {
 
     try {
       await deleteChainRecord(db.notes, selectedNote.id, chainId);
-      setSelectedNoteId(null);
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.delete('note');
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Note deleted.',
@@ -178,7 +193,18 @@ export function NotesPage() {
               Add Note
             </button>
             {focusedOwnerType && focusedOwnerId ? (
-              <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+                    nextParams.delete('ownerType');
+                    nextParams.delete('ownerId');
+                    return nextParams;
+                  })
+                }
+              >
                 Clear Owner Focus
               </button>
             ) : null}
@@ -207,6 +233,26 @@ export function NotesPage() {
               <span className="pill">{filteredNotes.length} shown</span>
             </div>
             <label className="field">
+              <span>Search notes</span>
+              <input
+                value={searchQuery}
+                placeholder="title, content, tags..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
+                }
+              />
+            </label>
+            <label className="field">
               <span>Note type</span>
               <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
                 <option value="all">all</option>
@@ -224,10 +270,20 @@ export function NotesPage() {
                   key={note.id}
                   className={`selection-list__item${selectedNote?.id === note.id ? ' is-active' : ''}`}
                   type="button"
-                  onClick={() => setSelectedNoteId(note.id)}
+                  onClick={() =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
+                      nextParams.set('note', note.id);
+                      return nextParams;
+                    })
+                  }
                 >
-                  <strong>{note.title}</strong>
-                  <span>{note.noteType}</span>
+                  <strong>
+                    <SearchHighlight text={note.title} query={searchQuery} />
+                  </strong>
+                  <span>
+                    <SearchHighlight text={note.noteType} query={searchQuery} />
+                  </span>
                 </button>
               ))}
             </div>
@@ -237,7 +293,9 @@ export function NotesPage() {
             {selectedNote ? (
               <>
                 <div className="section-heading">
-                  <h3>{selectedNote.title}</h3>
+                  <h3>
+                    <SearchHighlight text={selectedNote.title} query={searchQuery} />
+                  </h3>
                   <button className="button button--secondary" type="button" onClick={() => void handleDeleteNote()}>
                     Delete
                   </button>
@@ -382,7 +440,9 @@ export function NotesPage() {
                   />
                 </label>
               </>
-            ) : null}
+            ) : (
+              <p>No notes match the current filters.</p>
+            )}
           </article>
         </section>
       )}

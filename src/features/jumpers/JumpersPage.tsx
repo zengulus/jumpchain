@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJumper, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
@@ -18,8 +20,20 @@ export function JumpersPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? null;
-  const selectedJumper = workspace.jumpers.find((jumper) => jumper.id === selectedJumperId) ?? workspace.jumpers[0] ?? null;
+  const searchQuery = searchParams.get('search') ?? '';
+  const filteredJumpers = workspace.jumpers.filter((jumper) =>
+    matchesSearchQuery(
+      searchQuery,
+      jumper.name,
+      jumper.gender,
+      jumper.notes,
+      jumper.personality,
+      jumper.background,
+      jumper.importSourceMetadata,
+    ),
+  );
+  const selectedJumperId = searchParams.get('jumper') ?? filteredJumpers[0]?.id ?? null;
+  const selectedJumper = filteredJumpers.find((jumper) => jumper.id === selectedJumperId) ?? filteredJumpers[0] ?? null;
   const jumperAutosave = useAutosaveRecord(selectedJumper, {
     onSave: async (nextValue) => {
       await saveChainRecord(db.jumpers, nextValue);
@@ -37,7 +51,11 @@ export function JumpersPage() {
 
     try {
       await saveChainRecord(db.jumpers, jumper);
-      setSearchParams({ jumper: jumper.id });
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.set('jumper', jumper.id);
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Created a new jumper record in IndexedDB.',
@@ -87,16 +105,46 @@ export function JumpersPage() {
               <h3>Roster</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
+            <label className="field">
+              <span>Search roster</span>
+              <input
+                value={searchQuery}
+                placeholder="name, notes, personality, background..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
+                }
+              />
+            </label>
             <div className="selection-list">
-              {workspace.jumpers.map((jumper) => (
+              {filteredJumpers.map((jumper) => (
                 <button
                   key={jumper.id}
                   className={`selection-list__item${selectedJumper?.id === jumper.id ? ' is-active' : ''}`}
                   type="button"
-                  onClick={() => setSearchParams({ jumper: jumper.id })}
+                  onClick={() =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
+                      nextParams.set('jumper', jumper.id);
+                      return nextParams;
+                    })
+                  }
                 >
-                  <strong>{jumper.name}</strong>
-                  <span>{jumper.isPrimary ? 'Primary jumper' : 'Secondary jumper'}</span>
+                  <strong>
+                    <SearchHighlight text={jumper.name} query={searchQuery} />
+                  </strong>
+                  <span>
+                    <SearchHighlight text={jumper.isPrimary ? 'Primary jumper' : 'Secondary jumper'} query={searchQuery} />
+                  </span>
                 </button>
               ))}
             </div>
@@ -106,8 +154,10 @@ export function JumpersPage() {
             {draftJumper ? (
               <>
                 <div className="section-heading">
-                  <h3>{draftJumper.name}</h3>
-                  <Link className="button button--secondary" to={`/chains/${chainId}/bodymod?jumper=${draftJumper.id}`}>
+                  <h3>
+                    <SearchHighlight text={draftJumper.name} query={searchQuery} />
+                  </h3>
+                  <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
                     Open Iconic
                   </Link>
                 </div>
@@ -321,7 +371,9 @@ export function JumpersPage() {
                   </AdvancedJsonDetails>
                 </section>
               </>
-            ) : null}
+            ) : (
+              <p>No jumpers match the current search.</p>
+            )}
           </article>
         </section>
       )}

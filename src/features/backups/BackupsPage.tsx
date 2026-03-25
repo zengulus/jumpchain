@@ -1,8 +1,11 @@
 import { useRef, useState, type ChangeEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { detectImportSource } from '../../domain/import/sourceDetection';
 import { createBranchFromJump, createSnapshotForBranch, exportBranchSave, exportNativeSave, importNativeSave, restoreSnapshotAsBranch } from '../../db/persistence';
 import { downloadJson } from '../../utils/download';
 import { readJsonFile } from '../../utils/file';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery } from '../search/searchUtils';
 import { StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -16,12 +19,30 @@ function formatTimestamp(value: string) {
 
 export function BackupsPage() {
   const { chainId, bundle, workspace } = useChainWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [snapshotTitle, setSnapshotTitle] = useState('Checkpoint');
   const [snapshotDescription, setSnapshotDescription] = useState('');
   const [branchTitle, setBranchTitle] = useState('Forked Branch');
   const [branchJumpId, setBranchJumpId] = useState(workspace.currentJump?.id ?? workspace.jumps[workspace.jumps.length - 1]?.id ?? '');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
+  const searchQuery = searchParams.get('search') ?? '';
+  const selectedSnapshotId = searchParams.get('snapshot');
+  const filteredBranches = workspace.branches.filter((branch) => matchesSearchQuery(searchQuery, branch.title, branch.notes));
+  const filteredSnapshots = workspace.snapshots
+    .filter((snapshot) => matchesSearchQuery(searchQuery, snapshot.title, snapshot.description, snapshot.summary))
+    .slice()
+    .sort((left, right) => {
+      if (selectedSnapshotId === left.id) {
+        return -1;
+      }
+
+      if (selectedSnapshotId === right.id) {
+        return 1;
+      }
+
+      return right.createdAt.localeCompare(left.createdAt);
+    });
 
   async function handleExportFullChain() {
     try {
@@ -155,6 +176,29 @@ export function BackupsPage() {
 
       <StatusNoticeBanner notice={notice} />
 
+      <section className="card stack stack--compact">
+        <label className="field">
+          <span>Search branches and snapshots</span>
+          <input
+            value={searchQuery}
+            placeholder="branch titles, snapshot names, descriptions..."
+            onChange={(event) =>
+              setSearchParams((currentParams) => {
+                const nextParams = new URLSearchParams(currentParams);
+
+                if (event.target.value.trim()) {
+                  nextParams.set('search', event.target.value);
+                } else {
+                  nextParams.delete('search');
+                }
+
+                return nextParams;
+              })
+            }
+          />
+        </label>
+      </section>
+
       <section className="grid grid--two">
         <article className="card stack">
           <div className="section-heading">
@@ -252,15 +296,19 @@ export function BackupsPage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>Branch Ledger</h3>
-            <span className="pill">{workspace.activeBranch?.title ?? 'No branch'}</span>
+            <span className="pill">{filteredBranches.length} shown</span>
           </div>
           {workspace.branches.length === 0 ? (
             <p>No branches exist yet.</p>
+          ) : filteredBranches.length === 0 ? (
+            <p>No branches match the current search.</p>
           ) : (
             <ul className="list">
-              {workspace.branches.map((branch) => (
+              {filteredBranches.map((branch) => (
                 <li key={branch.id}>
-                  <strong>{branch.title}</strong>
+                  <strong>
+                    <SearchHighlight text={branch.title} query={searchQuery} />
+                  </strong>
                   {branch.id === workspace.activeBranch?.id ? ' (active)' : ''}
                   {branch.forkedFromJumpId ? ' | forked from a jump' : ''}
                 </li>
@@ -273,22 +321,25 @@ export function BackupsPage() {
       <section className="card stack">
         <div className="section-heading">
           <h3>Restore Snapshot into New Branch</h3>
-          <span className="pill">Non-destructive restore</span>
+          <span className="pill">{filteredSnapshots.length} shown</span>
         </div>
         {workspace.snapshots.length === 0 ? (
           <p>Create a snapshot first to make restore and rollback flows available.</p>
+        ) : filteredSnapshots.length === 0 ? (
+          <p>No snapshots match the current search.</p>
         ) : (
           <div className="grid">
-            {workspace.snapshots
-              .slice()
-              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-              .map((snapshot) => (
+            {filteredSnapshots.map((snapshot) => (
                 <article className="entity-card" key={snapshot.id}>
                   <div className="section-heading">
-                    <h4>{snapshot.title}</h4>
+                    <h4>
+                      <SearchHighlight text={snapshot.title} query={searchQuery} />
+                    </h4>
                     <span className="pill">{formatTimestamp(snapshot.createdAt)}</span>
                   </div>
-                  <p>{snapshot.description || 'No snapshot description provided.'}</p>
+                  <p>
+                    <SearchHighlight text={snapshot.description || 'No snapshot description provided.'} query={searchQuery} />
+                  </p>
                   <div className="inline-meta">
                     <span className="metric">
                       <strong>{Number(snapshot.summary.jumpCount ?? 0)}</strong>

@@ -3,8 +3,10 @@ import {
   personalRealityCoreModes,
   personalRealityExtraModes,
   personalRealityOptionCatalog,
+  personalRealityOptionsById,
   personalRealityPages,
   personalRealitySections,
+  type PersonalRealityExtraModeId,
   type PersonalRealityOption,
 } from './catalog';
 import {
@@ -17,10 +19,99 @@ import {
   type PersonalRealitySelectionState,
   type PersonalRealityState,
 } from './model';
+import { SearchHighlight } from '../search/SearchHighlight';
 import { EmptyWorkspaceCard, AutosaveStatusIndicator, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { saveChainEntity } from '../workspace/records';
+
+interface CoreModeGuideRow {
+  id: PersonalRealityState['coreModeId'];
+  title: string;
+  startingBudget: string;
+  ongoingBudget: string;
+  purchaseRule: string;
+  planningRead: string;
+}
+
+interface ExtraModeGuideRow {
+  id: PersonalRealityExtraModeId;
+  title: string;
+  effect: string;
+  planningRead: string;
+}
+
+const coreModeGuideRows: CoreModeGuideRow[] = [
+  {
+    id: 'upfront',
+    title: 'Upfront',
+    startingBudget: '1500 WP',
+    ongoingBudget: 'None',
+    purchaseRule: 'Pick any 3 purchase groups and all entries in those groups are half price.',
+    planningRead: 'Best when you want a stable, front-loaded build and know the main facilities you want now.',
+  },
+  {
+    id: 'incremental',
+    title: 'Incremental',
+    startingBudget: '500 WP',
+    ongoingBudget: '+50 WP per completed jump or gauntlet',
+    purchaseRule: 'Normal purchase rules. Budget grows steadily with chain length.',
+    planningRead: 'Best when you want to start small and add infrastructure as the chain continues.',
+  },
+  {
+    id: 'unlimited',
+    title: 'Unlimited',
+    startingBudget: '0 WP',
+    ongoingBudget: 'Up to 100 CP -> 100 WP per eligible jump',
+    purchaseRule: 'Separate from the general page-1 50 CP -> 2 WP exchange. Track actual transferred WP.',
+    planningRead: 'Best when Personal Reality spending should compete directly with jump CP on a jump-by-jump basis.',
+  },
+  {
+    id: 'reasonable',
+    title: 'Reasonable',
+    startingBudget: '3000 WP',
+    ongoingBudget: '+100 WP every 5th completed jump',
+    purchaseRule: 'Cannot buy any single entry costing more than 100 WP.',
+    planningRead: 'Best when you want a broad but intentionally grounded build without giant headline purchases.',
+  },
+  {
+    id: 'therehouse',
+    title: 'Therehouse',
+    startingBudget: '5000 WP',
+    ongoingBudget: '+200 CP per jump',
+    purchaseRule: 'Your Personal Reality becomes a real, vulnerable in-setting location.',
+    planningRead: 'Best when you want the reality itself to be part of the story, logistics, and threats.',
+  },
+];
+
+const extraModeGuideRows: ExtraModeGuideRow[] = [
+  {
+    id: 'patient-jumper',
+    title: 'Patient Jumper',
+    effect: '+100 WP for each jump after the first where you delayed taking the Personal Reality.',
+    planningRead: 'Use this when the supplement is entering an already-running chain or intentionally late start.',
+  },
+  {
+    id: 'swap-out',
+    title: 'Swap-Out',
+    effect: 'Rebuild an old warehouse-style chain into this supplement. The 25+ jump Incremental case starts at 700 WP.',
+    planningRead: 'Use this when you are converting a mature chain rather than starting fresh.',
+  },
+  {
+    id: 'cross-roads',
+    title: 'Cross-Roads',
+    effect: 'Each qualifying drawback trigger adds 5 collective WP to the shared Crossroads Tavern, not your own build.',
+    planningRead: 'Use this when you want inter-jumper metaplay tracked alongside your own Personal Reality.',
+  },
+];
+
+const purchaseGuideItems = [
+  'Freebies listed by the supplement are treated as already included. Optional freebies still need you to opt in.',
+  'Repeatable purchases use counters. WP-side and CP-side counts can be tracked separately when the supplement allows both.',
+  'Upfront discounts are applied by purchase group, not just one row. Discounting Medical Bay also discounts its upgrades.',
+  'Limitations add WP only while active. If you mark one as bought off, the builder adds the 150% buyoff cost.',
+  'The builder tracks CP commitments here, but it does not yet subtract that CP from jump participation budgets automatically.',
+];
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
@@ -124,9 +215,82 @@ function getPageNumber(searchParams: URLSearchParams) {
   return 2;
 }
 
+function getSectionForPage(pageNumber: number) {
+  const page = personalRealityPages.find((entry) => entry.number === pageNumber);
+  return personalRealitySections.find((entry) => entry.id === page?.sectionId) ?? personalRealitySections[0];
+}
+
+function getPreviousPage(pageNumber: number) {
+  const currentIndex = personalRealityPages.findIndex((entry) => entry.number === pageNumber);
+  return currentIndex > 0 ? personalRealityPages[currentIndex - 1] : null;
+}
+
+function getNextPage(pageNumber: number) {
+  const currentIndex = personalRealityPages.findIndex((entry) => entry.number === pageNumber);
+  return currentIndex >= 0 && currentIndex < personalRealityPages.length - 1 ? personalRealityPages[currentIndex + 1] : null;
+}
+
 function coreModeSummaryText(coreModeId: PersonalRealityState['coreModeId']) {
   const coreMode = personalRealityCoreModes.find((entry) => entry.id === coreModeId);
-  return coreMode ? coreMode.summary : 'Pick a core mode to start tracking your Personal Reality budget.';
+  return coreMode ? coreMode.summary : 'Choose one core mode first. That choice defines the whole budget model for this supplement.';
+}
+
+function getRequirementTitles(option: PersonalRealityOption) {
+  const requirementIds = option.requiresOptionIds ?? [];
+
+  if (requirementIds.length > 0) {
+    return requirementIds
+      .map((requirementId) => personalRealityOptionsById[requirementId]?.title ?? requirementId)
+      .join(', ');
+  }
+
+  return option.requirementsText ?? 'None listed.';
+}
+
+function isDiscounted(state: PersonalRealityState, option: PersonalRealityOption) {
+  return state.coreModeId === 'upfront' && state.discountedGroupIds.includes(getDiscountGroupId(option));
+}
+
+function getCurrentModeGuide(coreModeId: PersonalRealityState['coreModeId']) {
+  return coreModeGuideRows.find((entry) => entry.id === coreModeId) ?? null;
+}
+
+function getPageGuideLines(pageNumber: number, options: PersonalRealityOption[]) {
+  const lines: string[] = [];
+
+  if (pageNumber === 2) {
+    lines.push('Choose exactly one core mode. Everything else in the supplement uses that budget model.');
+  }
+
+  if (pageNumber === 3) {
+    lines.push('Extra modes stack on top of the selected core mode. None of them replace the core mode.');
+  }
+
+  if (pageNumber === 4) {
+    lines.push('This is the baseline foundation page. Most of the listed freebies are treated as already included.');
+  }
+
+  if (options.some((option) => option.kind === 'counter')) {
+    lines.push('Rows with counters are repeatable purchases. Use the purchase count fields instead of treating them as one-off toggles.');
+  }
+
+  if (options.some((option) => option.cpCost)) {
+    lines.push('Some entries can be bought with CP as well as WP. The builder tracks that split, but it does not deduct jump CP automatically yet.');
+  }
+
+  if (options.some((option) => isLimitationOption(option))) {
+    lines.push('Limitations add WP when active. Buying them off costs 150% of their listed value.');
+  }
+
+  if (pageNumber >= 20 && pageNumber <= 38) {
+    lines.push('These pages are mostly facilities and extensions. Think of them as physical infrastructure rather than abstract rules.');
+  }
+
+  if (pageNumber >= 39 && pageNumber <= 47) {
+    lines.push('These pages mix item support, companion logistics, and special rule modules. They are less foundational and more interpretive.');
+  }
+
+  return Array.from(new Set(lines));
 }
 
 function BudgetEditor(props: {
@@ -154,263 +318,322 @@ function BudgetEditor(props: {
   }
 
   return (
-    <section className="card stack">
-      <div className="section-heading">
-        <h3>Budget Controls</h3>
+    <section className="personal-reality-panel personal-reality-budget-panel">
+      <div className="personal-reality-panel__header">
+        <div>
+          <h3>Budget And Mode Ledger</h3>
+          <p>Modes define how the Personal Reality grows. Purchases then spend against that model.</p>
+        </div>
         <span className="pill">Pages 2-3</span>
       </div>
-      <p>{coreModeSummaryText(props.state.coreModeId)}</p>
 
-      <div className="field-grid field-grid--two">
-        <label className="field">
-          <span>Core mode</span>
-          <select
-            value={props.state.coreModeId}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                coreModeId: event.target.value as PersonalRealityState['coreModeId'],
-                discountedGroupIds: event.target.value === 'upfront' ? currentState.discountedGroupIds.slice(0, 3) : [],
-              }))
-            }
-          >
-            <option value="">Select a core mode</option>
-            {personalRealityCoreModes.map((coreMode) => (
-              <option key={coreMode.id} value={coreMode.id}>
-                {coreMode.title}
-              </option>
-            ))}
-          </select>
-          <small className="field-hint">
-            Completed jumps currently observed in this chain: <strong>{formatNumber(props.completedJumpCountFromChain)}</strong>
-          </small>
-        </label>
+      <div className="personal-reality-budget-layout">
+        <div className="stack">
+          <div className="personal-reality-reference-table">
+            <div className="personal-reality-reference-table__title">Core mode reference</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Mode</th>
+                  <th>Start</th>
+                  <th>Growth</th>
+                  <th>Purchase rule</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coreModeGuideRows.map((row) => (
+                  <tr className={props.state.coreModeId === row.id ? 'is-active' : ''} key={row.id}>
+                    <td>
+                      <strong>{row.title}</strong>
+                      <span>{row.planningRead}</span>
+                    </td>
+                    <td>{row.startingBudget}</td>
+                    <td>{row.ongoingBudget}</td>
+                    <td>{row.purchaseRule}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        <label className="field">
-          <span>Completed jumps override</span>
-          <input
-            type="number"
-            min={0}
-            value={props.state.budget.completedJumpCountOverride ?? ''}
-            placeholder={String(props.completedJumpCountFromChain)}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                budget: {
-                  ...currentState.budget,
-                  completedJumpCountOverride: parseNullableIntegerInput(event.target.value),
-                },
-              }))
-            }
-          />
-          <small className="field-hint">Leave blank to use the chain’s completed jump count automatically.</small>
-        </label>
-      </div>
+          <div className="personal-reality-reference-table">
+            <div className="personal-reality-reference-table__title">Extra mode reference</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Extra mode</th>
+                  <th>Effect</th>
+                  <th>Planning read</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extraModeGuideRows.map((row) => (
+                  <tr className={props.state.extraModeIds.includes(row.id) ? 'is-active' : ''} key={row.id}>
+                    <td>
+                      <strong>{row.title}</strong>
+                    </td>
+                    <td>{row.effect}</td>
+                    <td>{row.planningRead}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-      <div className="field">
-        <span>Extra modes</span>
-        <div className="checkbox-list">
-          {personalRealityExtraModes.map((extraMode) => {
-            const checked = props.state.extraModeIds.includes(extraMode.id);
+        <div className="stack">
+          <div className="personal-reality-control-panel">
+            <div className="personal-reality-control-panel__title">Live budget inputs</div>
 
-            return (
-              <label className="checkbox-row" key={extraMode.id}>
-                <input
-                  type="checkbox"
-                  checked={checked}
+            <div className="field-grid field-grid--two">
+              <label className="field">
+                <span>Core mode</span>
+                <select
+                  value={props.state.coreModeId}
                   onChange={(event) =>
                     props.onStateChange((currentState) => ({
                       ...currentState,
-                      extraModeIds: event.target.checked
-                        ? Array.from(new Set([...currentState.extraModeIds, extraMode.id]))
-                        : currentState.extraModeIds.filter((entry) => entry !== extraMode.id),
+                      coreModeId: event.target.value as PersonalRealityState['coreModeId'],
+                      discountedGroupIds: event.target.value === 'upfront' ? currentState.discountedGroupIds.slice(0, 3) : [],
+                    }))
+                  }
+                >
+                  <option value="">Select a core mode</option>
+                  {personalRealityCoreModes.map((coreMode) => (
+                    <option key={coreMode.id} value={coreMode.id}>
+                      {coreMode.title}
+                    </option>
+                  ))}
+                </select>
+                <small className="field-hint">{coreModeSummaryText(props.state.coreModeId)}</small>
+              </label>
+
+              <label className="field">
+                <span>Completed jumps override</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={props.state.budget.completedJumpCountOverride ?? ''}
+                  placeholder={String(props.completedJumpCountFromChain)}
+                  onChange={(event) =>
+                    props.onStateChange((currentState) => ({
+                      ...currentState,
+                      budget: {
+                        ...currentState.budget,
+                        completedJumpCountOverride: parseNullableIntegerInput(event.target.value),
+                      },
                     }))
                   }
                 />
-                <span>
-                  <strong>{extraMode.title}</strong> | {extraMode.summary}
-                </span>
+                <small className="field-hint">
+                  Chain currently shows <strong>{formatNumber(props.completedJumpCountFromChain)}</strong> completed jumps.
+                </small>
               </label>
-            );
-          })}
-        </div>
-      </div>
+            </div>
 
-      {props.state.coreModeId === 'upfront' ? (
-        <div className="field-grid field-grid--three">
-          {[0, 1, 2].map((index) => (
-            <label className="field" key={index}>
-              <span>Discount slot {index + 1}</span>
-              <select
-                value={props.state.discountedGroupIds[index] ?? ''}
-                onChange={(event) => setDiscountGroup(index, event.target.value)}
-              >
-                <option value="">No discount</option>
-                {discountGroups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.label}
-                  </option>
+            <div className="field">
+              <span>Extra modes</span>
+              <div className="checkbox-list">
+                {personalRealityExtraModes.map((extraMode) => {
+                  const checked = props.state.extraModeIds.includes(extraMode.id);
+
+                  return (
+                    <label className="checkbox-row" key={extraMode.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) =>
+                          props.onStateChange((currentState) => ({
+                            ...currentState,
+                            extraModeIds: event.target.checked
+                              ? Array.from(new Set([...currentState.extraModeIds, extraMode.id]))
+                              : currentState.extraModeIds.filter((entry) => entry !== extraMode.id),
+                          }))
+                        }
+                      />
+                      <span>
+                        <strong>{extraMode.title}</strong> | {extraMode.summary}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {props.state.coreModeId === 'upfront' ? (
+              <div className="field-grid field-grid--three">
+                {[0, 1, 2].map((index) => (
+                  <label className="field" key={index}>
+                    <span>Discount slot {index + 1}</span>
+                    <select value={props.state.discountedGroupIds[index] ?? ''} onChange={(event) => setDiscountGroup(index, event.target.value)}>
+                      <option value="">No discount</option>
+                      {discountGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 ))}
-              </select>
-            </label>
-          ))}
+              </div>
+            ) : null}
+
+            <div className="field-grid field-grid--two">
+              {props.state.extraModeIds.includes('patient-jumper') ? (
+                <label className="field">
+                  <span>Patient Jumper delayed jumps</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={props.state.budget.patientJumperDelayedJumps}
+                    onChange={(event) =>
+                      props.onStateChange((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          patientJumperDelayedJumps: parseIntegerInput(event.target.value),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+              ) : null}
+
+              {props.state.extraModeIds.includes('swap-out') ? (
+                <label className="field">
+                  <span>Swap-Out experienced jumps</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={props.state.budget.swapOutExperiencedJumps}
+                    onChange={(event) =>
+                      props.onStateChange((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          swapOutExperiencedJumps: parseIntegerInput(event.target.value),
+                        },
+                      }))
+                    }
+                  />
+                  <small className="field-hint">The documented 700 WP Incremental case unlocks at 25+ jumps.</small>
+                </label>
+              ) : null}
+
+              {props.state.extraModeIds.includes('cross-roads') ? (
+                <label className="field">
+                  <span>Crossroads triggered jumps</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={props.state.budget.crossroadsTriggeredJumps}
+                    onChange={(event) =>
+                      props.onStateChange((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          crossroadsTriggeredJumps: parseIntegerInput(event.target.value),
+                        },
+                      }))
+                    }
+                  />
+                  <small className="field-hint">This tracks shared collective WP, not your own spendable pool.</small>
+                </label>
+              ) : null}
+
+              {props.state.coreModeId === 'unlimited' ? (
+                <label className="field">
+                  <span>Unlimited mode transferred WP</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={props.state.budget.unlimitedTransferredWp}
+                    onChange={(event) =>
+                      props.onStateChange((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          unlimitedTransferredWp: parseIntegerInput(event.target.value),
+                        },
+                      }))
+                    }
+                  />
+                  <small className="field-hint">Track the actual 1:1 CP-to-WP transfers you made in Unlimited mode.</small>
+                </label>
+              ) : null}
+
+              <label className="field">
+                <span>Generic CP to WP purchases</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={props.state.budget.generalCpToWpPurchases}
+                  onChange={(event) =>
+                    props.onStateChange((currentState) => ({
+                      ...currentState,
+                      budget: {
+                        ...currentState.budget,
+                        generalCpToWpPurchases: parseIntegerInput(event.target.value),
+                      },
+                    }))
+                  }
+                />
+                <small className="field-hint">Uses the supplement’s generic 50 CP to 2 WP exchange from page 1.</small>
+              </label>
+
+              <label className="field">
+                <span>UDS warehouse WP</span>
+                <input
+                  type="number"
+                  value={props.state.budget.udsWarehouseWp}
+                  onChange={(event) =>
+                    props.onStateChange((currentState) => ({
+                      ...currentState,
+                      budget: {
+                        ...currentState.budget,
+                        udsWarehouseWp: parseSignedNumberInput(event.target.value),
+                      },
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="field">
+                <span>Manual WP adjustment</span>
+                <input
+                  type="number"
+                  value={props.state.budget.manualWpAdjustment}
+                  onChange={(event) =>
+                    props.onStateChange((currentState) => ({
+                      ...currentState,
+                      budget: {
+                        ...currentState.budget,
+                        manualWpAdjustment: parseSignedNumberInput(event.target.value),
+                      },
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="field">
+                <span>Adjustment reason</span>
+                <input
+                  type="text"
+                  value={props.state.budget.manualWpAdjustmentReason}
+                  onChange={(event) =>
+                    props.onStateChange((currentState) => ({
+                      ...currentState,
+                      budget: {
+                        ...currentState.budget,
+                        manualWpAdjustmentReason: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </div>
         </div>
-      ) : null}
-
-      <div className="field-grid field-grid--two">
-        {props.state.extraModeIds.includes('patient-jumper') ? (
-          <label className="field">
-            <span>Patient Jumper delayed jumps</span>
-            <input
-              type="number"
-              min={0}
-              value={props.state.budget.patientJumperDelayedJumps}
-              onChange={(event) =>
-                props.onStateChange((currentState) => ({
-                  ...currentState,
-                  budget: {
-                    ...currentState.budget,
-                    patientJumperDelayedJumps: parseIntegerInput(event.target.value),
-                  },
-                }))
-              }
-            />
-          </label>
-        ) : null}
-
-        {props.state.extraModeIds.includes('swap-out') ? (
-          <label className="field">
-            <span>Swap-Out experienced jumps</span>
-            <input
-              type="number"
-              min={0}
-              value={props.state.budget.swapOutExperiencedJumps}
-              onChange={(event) =>
-                props.onStateChange((currentState) => ({
-                  ...currentState,
-                  budget: {
-                    ...currentState.budget,
-                    swapOutExperiencedJumps: parseIntegerInput(event.target.value),
-                  },
-                }))
-              }
-            />
-            <small className="field-hint">Used to unlock the documented Incremental 700 WP swap-out case.</small>
-          </label>
-        ) : null}
-
-        {props.state.extraModeIds.includes('cross-roads') ? (
-          <label className="field">
-            <span>Crossroads triggered jumps</span>
-            <input
-              type="number"
-              min={0}
-              value={props.state.budget.crossroadsTriggeredJumps}
-              onChange={(event) =>
-                props.onStateChange((currentState) => ({
-                  ...currentState,
-                  budget: {
-                    ...currentState.budget,
-                    crossroadsTriggeredJumps: parseIntegerInput(event.target.value),
-                  },
-                }))
-              }
-            />
-            <small className="field-hint">Tracks collective WP, not your own spendable WP.</small>
-          </label>
-        ) : null}
-
-        {props.state.coreModeId === 'unlimited' ? (
-          <label className="field">
-            <span>Unlimited mode transferred WP</span>
-            <input
-              type="number"
-              min={0}
-              value={props.state.budget.unlimitedTransferredWp}
-              onChange={(event) =>
-                props.onStateChange((currentState) => ({
-                  ...currentState,
-                  budget: {
-                    ...currentState.budget,
-                    unlimitedTransferredWp: parseIntegerInput(event.target.value),
-                  },
-                }))
-              }
-            />
-            <small className="field-hint">Enter the actual WP gained from the mode’s 1:1 per-jump CP transfer.</small>
-          </label>
-        ) : null}
-
-        <label className="field">
-          <span>Generic CP to WP purchases</span>
-          <input
-            type="number"
-            min={0}
-            value={props.state.budget.generalCpToWpPurchases}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                budget: {
-                  ...currentState.budget,
-                  generalCpToWpPurchases: parseIntegerInput(event.target.value),
-                },
-              }))
-            }
-          />
-          <small className="field-hint">Uses the supplement’s baseline 50 CP to 2 WP exchange rate from page 1.</small>
-        </label>
-
-        <label className="field">
-          <span>UDS warehouse WP</span>
-          <input
-            type="number"
-            value={props.state.budget.udsWarehouseWp}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                budget: {
-                  ...currentState.budget,
-                  udsWarehouseWp: parseSignedNumberInput(event.target.value),
-                },
-              }))
-            }
-          />
-          <small className="field-hint">Use this for the multiplied UDS warehouse drawback payouts mentioned on page 1.</small>
-        </label>
-
-        <label className="field">
-          <span>Manual WP adjustment</span>
-          <input
-            type="number"
-            value={props.state.budget.manualWpAdjustment}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                budget: {
-                  ...currentState.budget,
-                  manualWpAdjustment: parseSignedNumberInput(event.target.value),
-                },
-              }))
-            }
-          />
-        </label>
-
-        <label className="field">
-          <span>Adjustment reason</span>
-          <input
-            type="text"
-            value={props.state.budget.manualWpAdjustmentReason}
-            onChange={(event) =>
-              props.onStateChange((currentState) => ({
-                ...currentState,
-                budget: {
-                  ...currentState.budget,
-                  manualWpAdjustmentReason: event.target.value,
-                },
-              }))
-            }
-          />
-        </label>
       </div>
     </section>
   );
@@ -427,7 +650,7 @@ function SelectionControl(props: {
     return (
       <div className="field">
         <span>Included</span>
-        <small className="field-hint">This freebie is part of the supplement’s default baseline.</small>
+        <small className="field-hint">This freebie is part of the supplement’s built-in baseline.</small>
       </div>
     );
   }
@@ -505,7 +728,7 @@ function SelectionControl(props: {
                 }))
               }
             />
-            <small className="field-hint">Extra retries after the unlimited plan still cost 50 WP each.</small>
+            <small className="field-hint">These extra retries still cost 50 WP each after taking the unlimited plan.</small>
           </label>
         ) : null}
       </div>
@@ -607,77 +830,113 @@ function SelectionControl(props: {
   );
 }
 
-function OptionCard(props: {
+function WorksheetRow(props: {
   option: PersonalRealityOption;
   state: PersonalRealityState;
   selection: PersonalRealitySelectionState;
   summary: ReturnType<typeof buildPersonalRealityPlanSummary>['selectionSummaries'][string];
+  highlightQuery: string;
   onSelectionChange: (optionId: string, updater: (selection: PersonalRealitySelectionState) => PersonalRealitySelectionState) => void;
 }) {
-  const { option, summary } = props;
-  const isLimitation = isLimitationOption(option);
+  const { option, selection, summary, state } = props;
+  const missingRequirementTitles = summary.missingRequirementIds
+    .map((requirementId) => personalRealityOptionsById[requirementId]?.title ?? requirementId)
+    .join(', ');
 
   return (
-    <article className={`card stack personal-reality-option${summary.selected ? ' is-selected' : ''}`}>
-      <div className="section-heading">
-        <h3>{option.title}</h3>
-        <span className="pill">Page {option.page}</span>
+    <article className={`personal-reality-row${summary.selected ? ' is-selected' : ''}`}>
+      <div className="personal-reality-row__info">
+        <div className="personal-reality-row__titleline">
+          <strong>
+            <SearchHighlight text={option.title} query={props.highlightQuery} />
+          </strong>
+          <div className="personal-reality-badge-strip">
+            <span className="pill">{option.costText}</span>
+            {option.kind === 'counter' ? <span className="pill pill--soft">Repeatable</span> : null}
+            {option.cpCost ? <span className="pill pill--soft">WP / CP</span> : null}
+            {isLimitationOption(option) ? <span className="pill pill--soft">Limitation</span> : null}
+            {isDiscounted(state, option) ? <span className="pill pill--soft">Upfront discount</span> : null}
+            {option.defaultSelected ? <span className="pill pill--soft">Default freebie</span> : null}
+          </div>
+        </div>
+        <p>
+          <SearchHighlight text={option.description} query={props.highlightQuery} />
+        </p>
+        <div className="personal-reality-row__rules">
+          <div>
+            <span>Requirements</span>
+            <strong>{getRequirementTitles(option)}</strong>
+          </div>
+          {summary.selected && missingRequirementTitles.length > 0 ? (
+            <div className="personal-reality-row__warning">
+              <span>Missing</span>
+              <strong>{missingRequirementTitles}</strong>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <p>{option.description}</p>
-      <div className="inline-meta">
-        <span className="pill">{option.costText}</span>
-        {summary.wpSpent > 0 ? (
-          <span className="pill pill--soft">Spent {formatNumber(summary.wpSpent)} WP</span>
-        ) : null}
-        {summary.wpGain > 0 ? (
-          <span className="pill pill--soft">Gain {formatNumber(summary.wpGain)} WP</span>
-        ) : null}
-        {summary.cpSpent > 0 ? (
-          <span className="pill pill--soft">Committed {formatNumber(summary.cpSpent)} CP</span>
-        ) : null}
+      <div className="personal-reality-row__controls">
+        <SelectionControl option={option} selection={selection} onSelectionChange={(updater) => props.onSelectionChange(option.id, updater)} />
       </div>
 
-      <SelectionControl
-        option={option}
-        selection={props.selection}
-        onSelectionChange={(updater) => props.onSelectionChange(option.id, updater)}
-      />
+      <div className="personal-reality-row__state">
+        <div className="personal-reality-state-list">
+          <div>
+            <span>Status</span>
+            <strong>{summary.selected ? 'Tracked' : 'Not selected'}</strong>
+          </div>
+          {summary.wpSpent > 0 ? (
+            <div>
+              <span>WP spent</span>
+              <strong>{formatNumber(summary.wpSpent)}</strong>
+            </div>
+          ) : null}
+          {summary.wpGain > 0 ? (
+            <div>
+              <span>WP gain</span>
+              <strong>{formatNumber(summary.wpGain)}</strong>
+            </div>
+          ) : null}
+          {summary.cpSpent > 0 ? (
+            <div>
+              <span>CP committed</span>
+              <strong>{formatNumber(summary.cpSpent)}</strong>
+            </div>
+          ) : null}
+          {option.kind === 'counter' && summary.selected ? (
+            <div>
+              <span>Count</span>
+              <strong>{describeCounterState(option, selection)}</strong>
+            </div>
+          ) : null}
+          {isLimitationOption(option) && summary.selected ? (
+            <label className="field">
+              <span>Limitation state</span>
+              <select
+                value={selection.limitationStatus}
+                onChange={(event) =>
+                  props.onSelectionChange(option.id, (currentSelection) => ({
+                    ...currentSelection,
+                    limitationStatus: event.target.value as PersonalRealitySelectionState['limitationStatus'],
+                  }))
+                }
+              >
+                <option value="active">Active now</option>
+                <option value="resolved-by-time">Resolved by time and play</option>
+                <option value="paid-off-wp">Bought off with WP</option>
+                <option value="paid-off-cp">Bought off with CP</option>
+              </select>
+            </label>
+          ) : null}
+        </div>
 
-      {option.kind === 'counter' && summary.selected ? (
-        <small className="field-hint">{describeCounterState(option, props.selection)}</small>
-      ) : null}
-
-      {isLimitation && summary.selected ? (
-        <label className="field">
-          <span>Limitation state</span>
-          <select
-            value={props.selection.limitationStatus}
-            onChange={(event) =>
-              props.onSelectionChange(option.id, (currentSelection) => ({
-                ...currentSelection,
-                limitationStatus: event.target.value as PersonalRealitySelectionState['limitationStatus'],
-              }))
-            }
-          >
-            <option value="active">Active now</option>
-            <option value="resolved-by-time">Resolved by time and play</option>
-            <option value="paid-off-wp">Bought off with WP</option>
-            <option value="paid-off-cp">Bought off with CP</option>
-          </select>
-        </label>
-      ) : null}
-
-      {option.requirementsText ? <small className="field-hint">{option.requirementsText}</small> : null}
-      {summary.missingRequirementIds.length > 0 ? (
-        <small className="field-hint field-hint--error">This choice is missing one or more listed prerequisites.</small>
-      ) : null}
-
-      {option.kind === 'variant' && props.selection.variantId.length > 0 ? (
-        <small className="field-hint">
-          {option.variants?.find((variant) => variant.id === props.selection.variantId)?.summary ?? ''}
-        </small>
-      ) : null}
+        {option.kind === 'variant' && selection.variantId.length > 0 ? (
+          <small className="field-hint">
+            {option.variants?.find((variant) => variant.id === selection.variantId)?.summary ?? ''}
+          </small>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -686,7 +945,15 @@ export function PersonalRealityPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const pageNumber = getPageNumber(searchParams);
+  const currentPage = personalRealityPages.find((entry) => entry.number === pageNumber) ?? personalRealityPages[0];
+  const currentSection = getSectionForPage(currentPage.number);
+  const previousPage = getPreviousPage(currentPage.number);
+  const nextPage = getNextPage(currentPage.number);
   const completedJumpCountFromChain = workspace.jumps.filter((jump) => jump.status === 'completed').length;
+  const currentPageOptions = personalRealityOptionCatalog.filter((entry) => entry.page === currentPage.number);
+  const pageGuideLines = getPageGuideLines(currentPage.number, currentPageOptions);
+  const pageNoteKey = String(currentPage.number);
+  const highlightQuery = searchParams.get('highlight') ?? '';
   const chainAutosave = useAutosaveRecord(workspace.chain, {
     onSave: async (nextChain) => {
       await saveChainEntity(nextChain);
@@ -696,9 +963,7 @@ export function PersonalRealityPage() {
   const draftChain = chainAutosave.draft ?? workspace.chain;
   const state = readPersonalRealityState(draftChain);
   const summary = buildPersonalRealityPlanSummary(state, completedJumpCountFromChain);
-  const currentPage = personalRealityPages.find((entry) => entry.number === pageNumber) ?? personalRealityPages[0];
-  const currentPageOptions = personalRealityOptionCatalog.filter((entry) => entry.page === currentPage.number);
-  const pageNoteKey = String(currentPage.number);
+  const currentModeGuide = getCurrentModeGuide(state.coreModeId);
 
   if (!workspace.activeBranch) {
     return (
@@ -730,11 +995,19 @@ export function PersonalRealityPage() {
     }));
   }
 
+  function goToPage(nextPageNumber: number) {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      nextParams.set('page', String(nextPageNumber));
+      return nextParams;
+    });
+  }
+
   return (
-    <div className="stack">
+    <div className="stack personal-reality-shell">
       <WorkspaceModuleHeader
         title="Personal Reality"
-        description="A supplement-driven builder for the full Personal Reality document, including budgets, page-by-page purchases, and limitation tracking."
+        description="A denser supplement workbench for planning the full Personal Reality build page by page."
         badge={workspace.activeBranch.title}
         actions={
           <>
@@ -748,234 +1021,333 @@ export function PersonalRealityPage() {
         }
       />
 
-      <section className="hero hero--split personal-reality-hero">
-        <div className="stack stack--compact hero__content">
-          <div className="section-heading">
-            <h3>Builder Summary</h3>
+      <section className="personal-reality-panel personal-reality-toolbar">
+        <div className="personal-reality-panel__header">
+          <div>
+            <h3>
+              Page {currentPage.number}: <SearchHighlight text={currentPage.title} query={highlightQuery} />
+            </h3>
+            <p>
+              <SearchHighlight text={`${currentSection.title} | ${currentPage.summary}`} query={highlightQuery} />
+            </p>
+          </div>
+          <div className="personal-reality-toolbar__status">
             <AutosaveStatusIndicator status={chainAutosave.status} />
           </div>
-          <p>
-            This editor now tracks the Personal Reality supplement page by page: mode selection, WP spending, CP-side
-            purchases, repeated facilities, and limitation resolution state.
-          </p>
-          <div className="actions">
-            <button className="button button--secondary" type="button" onClick={() => setSearchParams({ page: '2' })}>
-              Start at Modes
+        </div>
+
+        <div className="personal-reality-toolbar__body">
+          <div className="personal-reality-page-nav">
+            <button className="button button--secondary" disabled={!previousPage} type="button" onClick={() => previousPage && goToPage(previousPage.number)}>
+              Previous Page
             </button>
-            <button className="button button--secondary" type="button" onClick={() => setSearchParams({ page: '48' })}>
-              Review Limitations
+            <button className="button button--secondary" disabled={!nextPage} type="button" onClick={() => nextPage && goToPage(nextPage.number)}>
+              Next Page
+            </button>
+            <button className="button button--secondary" type="button" onClick={() => goToPage(2)}>
+              Modes
+            </button>
+            <button className="button button--secondary" type="button" onClick={() => goToPage(48)}>
+              Limitations
             </button>
             <button
               className="button button--secondary"
               type="button"
               onClick={() => {
                 updateState(() => createDefaultPersonalRealityState());
-                setSearchParams({ page: '2' });
+                goToPage(2);
               }}
             >
-              Reset Builder
+              Reset Build
             </button>
           </div>
-        </div>
 
-        <div className="grid grid--two hero__stats summary-grid">
-          <div className="metric">
-            <strong>{formatNumber(summary.availableWp)}</strong>
-            Available WP
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.wpSpent)}</strong>
-            Spent WP
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.remainingWp)}</strong>
-            Remaining WP
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.cpSpent)}</strong>
-            Committed CP
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.selectedOptionCount)}</strong>
-            Selected entries
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.activeLimitationCount)}</strong>
-            Active limitations
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.collectiveWp)}</strong>
-            Crossroads C-WP
-          </div>
-          <div className="metric">
-            <strong>{formatNumber(summary.completedJumpCount)}</strong>
-            Counted jumps
+          <div className="personal-reality-summary-strip">
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.availableWp)}</strong>
+              <span>Available WP</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.wpSpent)}</strong>
+              <span>Spent WP</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.remainingWp)}</strong>
+              <span>Remaining WP</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.cpSpent)}</strong>
+              <span>Committed CP</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.selectedOptionCount)}</strong>
+              <span>Tracked rows</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.activeLimitationCount)}</strong>
+              <span>Active limitations</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.collectiveWp)}</strong>
+              <span>Crossroads C-WP</span>
+            </div>
+            <div className="personal-reality-summary-stat">
+              <strong>{formatNumber(summary.completedJumpCount)}</strong>
+              <span>Counted jumps</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <BudgetEditor state={state} completedJumpCountFromChain={completedJumpCountFromChain} onStateChange={updateState} />
-
-      {summary.therehouseCpPerCompletedJump > 0 ? (
-        <section className="card stack">
-          <div className="section-heading">
-            <h3>Therehouse Reminder</h3>
-            <span className="pill">Page 2 / 56</span>
-          </div>
-          <p>
-            Therehouse mode grants <strong>{formatNumber(summary.therehouseCpPerCompletedJump)} CP</strong> per completed
-            jump. Based on the counted jumps above, that is <strong>{formatNumber(summary.therehouseEarnedCp)} CP</strong>{' '}
-            earned so far, separate from WP.
-          </p>
-        </section>
-      ) : null}
-
-      {summary.warnings.length > 0 ? (
-        <section className="card stack">
-          <div className="section-heading">
-            <h3>Build Warnings</h3>
-            <span className="pill">{summary.warnings.length}</span>
-          </div>
-          <ul className="list">
-            {summary.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="personal-reality-layout">
-        <aside className="card stack personal-reality-sidebar">
-          <div className="section-heading">
-            <h3>Supplement Pages</h3>
+      <section className="personal-reality-workspace">
+        <aside className="personal-reality-panel personal-reality-rail">
+          <div className="personal-reality-panel__header">
+            <div>
+              <h3>Page Rail</h3>
+              <p>Move through the supplement the way it is written.</p>
+            </div>
             <span className="pill">1-56</span>
           </div>
-          {personalRealitySections.map((section) => (
-            <div className="stack stack--compact" key={section.id}>
-              <div className="section-heading">
-                <h4>{section.title}</h4>
-                <span className="pill">
-                  {section.pageStart}-{section.pageEnd}
-                </span>
-              </div>
-              <p className="field-hint">{section.summary}</p>
-              <div className="selection-list">
-                {personalRealityPages
-                  .filter((page) => page.sectionId === section.id)
-                  .map((page) => {
-                    const selectedCount = getPageSummaryCount(summary.pageSelectionCounts, page.number);
 
-                    return (
+          <div className="personal-reality-rail__body">
+            {personalRealitySections.map((section) => (
+              <section className="personal-reality-rail__section" key={section.id}>
+                <header>
+                  <strong>{section.title}</strong>
+                  <span>
+                    {section.pageStart}-{section.pageEnd}
+                  </span>
+                </header>
+                <p>{section.summary}</p>
+                <div className="personal-reality-rail__pages">
+                  {personalRealityPages
+                    .filter((page) => page.sectionId === section.id)
+                    .map((page) => (
                       <button
-                        className={`selection-list__item${currentPage.number === page.number ? ' is-active' : ''}`}
+                        className={`personal-reality-rail__page${page.number === currentPage.number ? ' is-active' : ''}`}
                         key={page.number}
                         type="button"
-                        onClick={() => setSearchParams({ page: String(page.number) })}
+                        onClick={() => goToPage(page.number)}
                       >
-                        <strong>
-                          {page.number}. {page.title}
-                        </strong>
-                        <span>{page.summary}</span>
-                        <span>{selectedCount} tracked</span>
+                        <span className="personal-reality-rail__page-label">
+                          {page.number}. <SearchHighlight text={page.title} query={highlightQuery} />
+                        </span>
+                        <span className="personal-reality-rail__page-summary">
+                          <SearchHighlight text={page.summary} query={highlightQuery} />
+                        </span>
+                        <span className="personal-reality-rail__page-count">
+                          {getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked
+                        </span>
                       </button>
-                    );
-                  })}
-              </div>
-            </div>
-          ))}
+                    ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </aside>
 
-        <div className="stack personal-reality-main">
-          <section className="card stack">
-            <div className="section-heading">
-              <h3>
-                Page {currentPage.number}: {currentPage.title}
-              </h3>
-              <span className="pill">{currentPage.sectionId}</span>
+        <div className="stack personal-reality-center">
+          <BudgetEditor state={state} completedJumpCountFromChain={completedJumpCountFromChain} onStateChange={updateState} />
+
+          <section className="personal-reality-panel">
+            <div className="personal-reality-panel__header">
+              <div>
+                <h3>Current Page Worksheet</h3>
+                <p>
+                  {currentPageOptions.length > 0
+                    ? `This page has ${currentPageOptions.length} tracked purchase row${currentPageOptions.length === 1 ? '' : 's'}.`
+                    : 'This page is reference-only in the builder right now.'}
+                </p>
+              </div>
+              <span className="pill">{currentSection.title}</span>
             </div>
-            <p>{currentPage.summary}</p>
-            <div className="inline-meta">
-              <span className="metric">
-                <strong>{formatNumber(getPageSummaryCount(summary.pageSelectionCounts, currentPage.number))}</strong>
-                Tracked entries
-              </span>
-              <span className="metric">
-                <strong>{formatNumber(currentPageOptions.length)}</strong>
-                Option cards
-              </span>
-            </div>
-            <label className="field">
-              <span>Page notes</span>
-              <textarea
-                rows={4}
-                value={state.pageNotes[pageNoteKey] ?? ''}
-                onChange={(event) =>
-                  updateState((currentState) => ({
-                    ...currentState,
-                    pageNotes: {
-                      ...currentState.pageNotes,
-                      [pageNoteKey]: event.target.value,
-                    },
-                  }))
-                }
-              />
-              <small className="field-hint">
-                Use this for rulings, interpretations, or page-specific reminders while you build the section out.
-              </small>
-            </label>
+
+            {currentPageOptions.length > 0 ? (
+              <div className="personal-reality-worksheet">
+                <div className="personal-reality-worksheet__header">
+                  <span>Purchase and rules</span>
+                  <span>Selection</span>
+                  <span>State and accounting</span>
+                </div>
+
+                <div className="personal-reality-worksheet__body">
+                  {currentPageOptions.map((option) => {
+                    const optionSummary = summary.selectionSummaries[option.id];
+
+                    return (
+                      <WorksheetRow
+                        key={option.id}
+                        option={option}
+                        state={state}
+                        selection={optionSummary.selection}
+                        summary={optionSummary}
+                        highlightQuery={highlightQuery}
+                        onSelectionChange={updateSelection}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="personal-reality-empty-state">
+                <p>This page does not contain direct tracked purchases in the current builder model.</p>
+                <p>Use the page notes in the right inspector to capture rulings, clarifications, or supplement text you care about here.</p>
+              </div>
+            )}
           </section>
 
-          {currentPageOptions.length > 0 ? (
-            <section className="personal-reality-option-grid">
-              {currentPageOptions.map((option) => {
-                const optionSummary = summary.selectionSummaries[option.id];
-
-                return (
-                  <OptionCard
-                    key={option.id}
-                    option={option}
-                    state={state}
-                    selection={optionSummary.selection}
-                    summary={optionSummary}
-                    onSelectionChange={updateSelection}
-                  />
-                );
-              })}
-            </section>
-          ) : (
-            <section className="card stack">
-              <h3>No direct purchases on this page</h3>
-              <p>
-                This page is reference-only in the builder. Use the notes above to capture how you want to interpret it
-                in your chain.
-              </p>
-            </section>
-          )}
-
-          <section className="card stack">
-            <div className="section-heading">
-              <h3>Build Notes</h3>
-              <span className="pill">Global</span>
+          <section className="personal-reality-panel">
+            <div className="personal-reality-panel__header">
+              <div>
+                <h3>Global Build Notes</h3>
+                <p>Keep interpretation notes, spatial layout plans, and house rulings in one place.</p>
+              </div>
+              <span className="pill">Chain metadata</span>
             </div>
-            <label className="field">
-              <span>Personal Reality notes</span>
-              <textarea
-                rows={6}
-                value={state.notes}
-                onChange={(event) =>
-                  updateState((currentState) => ({
-                    ...currentState,
-                    notes: event.target.value,
-                  }))
-                }
-              />
-              <small className="field-hint">
-                Keep a running interpretation log here for theme choices, facility placement, missing supplements, or
-                house rulings.
-              </small>
-            </label>
+            <div className="personal-reality-panel__body">
+              <label className="field">
+                <span>Personal Reality notes</span>
+                <textarea
+                  rows={8}
+                  value={state.notes}
+                  onChange={(event) =>
+                    updateState((currentState) => ({
+                      ...currentState,
+                      notes: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
           </section>
         </div>
+
+        <aside className="stack personal-reality-inspector">
+          <section className="personal-reality-panel">
+            <div className="personal-reality-panel__header">
+              <div>
+                <h3>Current Page Context</h3>
+                <p>Use this space like a right-hand inspector while you work the worksheet.</p>
+              </div>
+            </div>
+
+            <div className="personal-reality-panel__body stack">
+              <div className="personal-reality-state-list">
+                <div>
+                  <span>Section</span>
+                  <strong>
+                    <SearchHighlight text={currentSection.title} query={highlightQuery} />
+                  </strong>
+                </div>
+                <div>
+                  <span>Tracked rows</span>
+                  <strong>{formatNumber(getPageSummaryCount(summary.pageSelectionCounts, currentPage.number))}</strong>
+                </div>
+                <div>
+                  <span>Current core mode</span>
+                  <strong>{currentModeGuide?.title ?? 'None selected yet'}</strong>
+                </div>
+              </div>
+
+              {currentModeGuide ? (
+                <div className="personal-reality-brief">
+                  <strong>{currentModeGuide.title}</strong>
+                  <p>{currentModeGuide.planningRead}</p>
+                  <p>
+                    Start: {currentModeGuide.startingBudget} | Growth: {currentModeGuide.ongoingBudget}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="stack stack--compact">
+                <strong>Page reading guide</strong>
+                <ul className="list">
+                  {pageGuideLines.map((line) => (
+                    <li key={line}>
+                      <SearchHighlight text={line} query={highlightQuery} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <label className="field">
+                <span>Page notes</span>
+                <textarea
+                  rows={7}
+                  value={state.pageNotes[pageNoteKey] ?? ''}
+                  onChange={(event) =>
+                    updateState((currentState) => ({
+                      ...currentState,
+                      pageNotes: {
+                        ...currentState.pageNotes,
+                        [pageNoteKey]: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="personal-reality-panel">
+            <div className="personal-reality-panel__header">
+              <div>
+                <h3>Purchase Rules</h3>
+                <p>These are the interpretation rules the worksheet is following.</p>
+              </div>
+            </div>
+            <div className="personal-reality-panel__body">
+              <ul className="list">
+                {purchaseGuideItems.map((item) => (
+                  <li key={item}>
+                    <SearchHighlight text={item} query={highlightQuery} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          {summary.therehouseCpPerCompletedJump > 0 ? (
+            <section className="personal-reality-panel">
+              <div className="personal-reality-panel__header">
+                <div>
+                  <h3>Therehouse Accounting</h3>
+                  <p>Tracked separately from the WP pool.</p>
+                </div>
+                <span className="pill">Page 2 / 56</span>
+              </div>
+              <div className="personal-reality-panel__body personal-reality-state-list">
+                <div>
+                  <span>CP per jump</span>
+                  <strong>{formatNumber(summary.therehouseCpPerCompletedJump)}</strong>
+                </div>
+                <div>
+                  <span>Earned so far</span>
+                  <strong>{formatNumber(summary.therehouseEarnedCp)}</strong>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {summary.warnings.length > 0 ? (
+            <section className="personal-reality-panel">
+              <div className="personal-reality-panel__header">
+                <div>
+                  <h3>Warnings</h3>
+                  <p>Things worth checking before you trust the current total.</p>
+                </div>
+                <span className="pill">{summary.warnings.length}</span>
+              </div>
+              <div className="personal-reality-panel__body">
+                <ul className="list">
+                  {summary.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          ) : null}
+        </aside>
       </section>
     </div>
   );

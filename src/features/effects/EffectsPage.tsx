@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { accessModes, effectCategories, effectStates, scopeTypes, ownerEntityTypes, type AccessMode, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery } from '../search/searchUtils';
 import { createBlankEffect, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
@@ -108,16 +110,21 @@ function getDefaultScopeType(ownerEntityType: OwnerEntityType) {
 export function EffectsPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedEffectId, setSelectedEffectId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<FilterValue<ScopeType>>('all');
   const [categoryFilter, setCategoryFilter] = useState<FilterValue<(typeof effectCategories)[number]>>('all');
   const [stateFilter, setStateFilter] = useState<FilterValue<(typeof effectStates)[number]>>('all');
   const [ownerTypeFilter, setOwnerTypeFilter] = useState<FilterValue<OwnerEntityType>>('all');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const selectedEffectId = searchParams.get('effect');
+  const searchQuery = searchParams.get('search') ?? '';
   const focusedOwnerType = searchParams.get('ownerType') as OwnerEntityType | null;
   const focusedOwnerId = searchParams.get('ownerId');
   const ownerOptions = getOwnerOptions(workspace);
   const filteredEffects = workspace.effects.filter((effect) => {
+    if (!matchesSearchQuery(searchQuery, effect.title, effect.description, effect.category, effect.state, effect.importSourceMetadata)) {
+      return false;
+    }
+
     if (scopeFilter !== 'all' && effect.scopeType !== scopeFilter) {
       return false;
     }
@@ -174,7 +181,11 @@ export function EffectsPage() {
 
     try {
       await saveChainRecord(db.effects, effect);
-      setSelectedEffectId(effect.id);
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.set('effect', effect.id);
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Created a new effect record.',
@@ -216,7 +227,11 @@ export function EffectsPage() {
 
     try {
       await deleteChainRecord(db.effects, selectedEffect.id, chainId);
-      setSelectedEffectId(null);
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.delete('effect');
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Effect deleted.',
@@ -245,7 +260,18 @@ export function EffectsPage() {
               Add Effect
             </button>
             {focusedOwnerType && focusedOwnerId ? (
-              <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+                    nextParams.delete('ownerType');
+                    nextParams.delete('ownerId');
+                    return nextParams;
+                  })
+                }
+              >
                 Clear Owner Focus
               </button>
             ) : null}
@@ -273,6 +299,26 @@ export function EffectsPage() {
               <h3>Filters</h3>
               <span className="pill">{filteredEffects.length} shown</span>
             </div>
+            <label className="field">
+              <span>Search effects</span>
+              <input
+                value={searchQuery}
+                placeholder="title, description, category, state..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
+                }
+              />
+            </label>
             <div className="field-grid field-grid--two">
               <label className="field">
                 <span>Scope</span>
@@ -335,11 +381,19 @@ export function EffectsPage() {
                   key={effect.id}
                   className={`selection-list__item${selectedEffect?.id === effect.id ? ' is-active' : ''}`}
                   type="button"
-                  onClick={() => setSelectedEffectId(effect.id)}
+                  onClick={() =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
+                      nextParams.set('effect', effect.id);
+                      return nextParams;
+                    })
+                  }
                 >
-                  <strong>{effect.title}</strong>
+                  <strong>
+                    <SearchHighlight text={effect.title} query={searchQuery} />
+                  </strong>
                   <span>
-                    {effect.category} | {effect.state}
+                    <SearchHighlight text={`${effect.category} | ${effect.state}`} query={searchQuery} />
                   </span>
                 </button>
               ))}
@@ -350,7 +404,9 @@ export function EffectsPage() {
             {draftEffect ? (
               <>
                 <div className="section-heading">
-                  <h3>{draftEffect.title}</h3>
+                  <h3>
+                    <SearchHighlight text={draftEffect.title} query={searchQuery} />
+                  </h3>
                   <button className="button button--secondary" type="button" onClick={() => void handleDeleteEffect()}>
                     Delete
                   </button>
@@ -580,7 +636,9 @@ export function EffectsPage() {
                   </AdvancedJsonDetails>
                 </section>
               </>
-            ) : null}
+            ) : (
+              <p>No effects match the current filters.</p>
+            )}
           </article>
         </section>
       )}

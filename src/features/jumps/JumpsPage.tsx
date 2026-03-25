@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
 import {
   AdvancedJsonDetails,
@@ -19,9 +21,14 @@ import { useChainWorkspace } from '../workspace/useChainWorkspace';
 export function JumpsPage() {
   const navigate = useNavigate();
   const { jumpId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const selectedJump = workspace.jumps.find((jump) => jump.id === jumpId) ?? workspace.jumps[0] ?? null;
+  const searchQuery = searchParams.get('search') ?? '';
+  const filteredJumps = workspace.jumps.filter((jump) =>
+    matchesSearchQuery(searchQuery, jump.title, jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata),
+  );
+  const selectedJump = filteredJumps.find((jump) => jump.id === jumpId) ?? filteredJumps[0] ?? null;
   const jumpAutosave = useAutosaveRecord(selectedJump, {
     onSave: async (nextValue) => {
       await saveChainRecord(db.jumps, nextValue);
@@ -44,7 +51,7 @@ export function JumpsPage() {
         await switchActiveJump(chainId, jump.id);
       }
 
-      navigate(`/chains/${chainId}/jumps/${jump.id}`);
+      navigate(withSearchParams(`/chains/${chainId}/jumps/${jump.id}`, { search: searchQuery }));
       setNotice({
         tone: 'success',
         message: 'Created a new jump record.',
@@ -134,18 +141,38 @@ export function JumpsPage() {
               <h3>Ordered jump list</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
+            <label className="field">
+              <span>Search jumps</span>
+              <input
+                value={searchQuery}
+                placeholder="title, status, jump type..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
+                }
+              />
+            </label>
             <div className="selection-list">
-              {workspace.jumps.map((jump) => (
+              {filteredJumps.map((jump) => (
                 <Link
                   key={jump.id}
                   className={`selection-list__item${selectedJump?.id === jump.id ? ' is-active' : ''}`}
-                  to={`/chains/${chainId}/jumps/${jump.id}`}
+                  to={withSearchParams(`/chains/${chainId}/jumps/${jump.id}`, { search: searchQuery })}
                 >
                   <strong>
-                    {jump.orderIndex + 1}. {jump.title}
+                    {jump.orderIndex + 1}. <SearchHighlight text={jump.title} query={searchQuery} />
                   </strong>
                   <span>
-                    {jump.status} | {jump.jumpType}
+                    <SearchHighlight text={`${jump.status} | ${jump.jumpType}`} query={searchQuery} />
                   </span>
                 </Link>
               ))}
@@ -156,12 +183,14 @@ export function JumpsPage() {
             {draftJump ? (
               <>
                 <div className="section-heading">
-                  <h3>{draftJump.title}</h3>
+                  <h3>
+                    <SearchHighlight text={draftJump.title} query={searchQuery} />
+                  </h3>
                   <div className="actions">
                     <button className="button button--secondary" type="button" onClick={() => void handleMakeCurrentJump()}>
                       Make Current Jump
                     </button>
-                    <Link className="button button--secondary" to={`/chains/${chainId}/participation/${draftJump.id}`}>
+                    <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/participation/${draftJump.id}`, { search: searchQuery })}>
                       Open Participation
                     </Link>
                   </div>
@@ -329,7 +358,9 @@ export function JumpsPage() {
                   />
                 </AdvancedJsonDetails>
               </>
-            ) : null}
+            ) : (
+              <p>No jumps match the current search.</p>
+            )}
           </article>
         </section>
       )}

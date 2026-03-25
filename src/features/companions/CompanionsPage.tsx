@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { companionStatuses } from '../../domain/common';
 import type { Companion } from '../../domain/jumper/types';
 import { db } from '../../db/database';
+import { SearchHighlight } from '../search/SearchHighlight';
+import { matchesSearchQuery } from '../search/searchUtils';
 import { createBlankCompanion, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
@@ -42,6 +44,7 @@ export function CompanionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<CompanionFilter>('all');
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const searchQuery = searchParams.get('search') ?? '';
   const selectedCompanionId = searchParams.get('companion');
   const parentNameById = useMemo(
     () => new Map(workspace.jumpers.map((jumper) => [jumper.id, jumper.name])),
@@ -49,6 +52,12 @@ export function CompanionsPage() {
   );
 
   const filteredCompanions = workspace.companions.filter((companion) => {
+    const parentName = companion.parentJumperId ? parentNameById.get(companion.parentJumperId) ?? '' : '';
+
+    if (!matchesSearchQuery(searchQuery, companion.name, companion.role, companion.status, parentName, companion.importSourceMetadata)) {
+      return false;
+    }
+
     switch (filter) {
       case 'attached':
         return Boolean(companion.parentJumperId);
@@ -62,9 +71,8 @@ export function CompanionsPage() {
   });
 
   const selectedCompanion =
-    workspace.companions.find((companion) => companion.id === selectedCompanionId) ??
+    filteredCompanions.find((companion) => companion.id === selectedCompanionId) ??
     filteredCompanions[0] ??
-    workspace.companions[0] ??
     null;
   const companionAutosave = useAutosaveRecord(selectedCompanion, {
     onSave: async (nextValue) => {
@@ -83,7 +91,11 @@ export function CompanionsPage() {
 
     try {
       await saveChainRecord(db.companions, companion);
-      setSearchParams({ companion: companion.id });
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.set('companion', companion.id);
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Created a new companion record.',
@@ -103,7 +115,11 @@ export function CompanionsPage() {
 
     try {
       await deleteChainRecord(db.companions, selectedCompanion.id, chainId);
-      setSearchParams({});
+      setSearchParams((currentParams) => {
+        const nextParams = new URLSearchParams(currentParams);
+        nextParams.delete('companion');
+        return nextParams;
+      });
       setNotice({
         tone: 'success',
         message: 'Companion deleted.',
@@ -164,6 +180,27 @@ export function CompanionsPage() {
               </select>
             </label>
 
+            <label className="field">
+              <span>Search roster</span>
+              <input
+                value={searchQuery}
+                placeholder="name, role, status, parent jumper..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
+
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
+                }
+              />
+            </label>
+
             <div className="selection-list">
               {filteredCompanions.map((companion) => {
                 const parentName = companion.parentJumperId ? parentNameById.get(companion.parentJumperId) ?? null : null;
@@ -173,10 +210,20 @@ export function CompanionsPage() {
                     key={companion.id}
                     className={`selection-list__item${selectedCompanion?.id === companion.id ? ' is-active' : ''}`}
                     type="button"
-                    onClick={() => setSearchParams({ companion: companion.id })}
+                    onClick={() =>
+                      setSearchParams((currentParams) => {
+                        const nextParams = new URLSearchParams(currentParams);
+                        nextParams.set('companion', companion.id);
+                        return nextParams;
+                      })
+                    }
                   >
-                    <strong>{companion.name}</strong>
-                    <span>{getCompanionFilterSummary(companion, parentName)}</span>
+                    <strong>
+                      <SearchHighlight text={companion.name} query={searchQuery} />
+                    </strong>
+                    <span>
+                      <SearchHighlight text={getCompanionFilterSummary(companion, parentName)} query={searchQuery} />
+                    </span>
                   </button>
                 );
               })}
@@ -187,7 +234,9 @@ export function CompanionsPage() {
             {draftCompanion ? (
               <>
                 <div className="section-heading">
-                  <h3>{draftCompanion.name}</h3>
+                  <h3>
+                    <SearchHighlight text={draftCompanion.name} query={searchQuery} />
+                  </h3>
                   <div className="actions">
                     {draftCompanion.parentJumperId ? (
                       <Link
