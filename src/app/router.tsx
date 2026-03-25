@@ -5,9 +5,11 @@ import { BackupsPage } from '../features/backups/BackupsPage';
 import { HomePage } from '../features/home/HomePage';
 import { ImportDebugPage } from '../features/advanced-import/ImportDebugPage';
 import { JumpersPage } from '../features/jumpers/JumpersPage';
+import { CompanionsPage } from '../features/companions/CompanionsPage';
 import { JumpsPage } from '../features/jumps/JumpsPage';
 import { ParticipationPage } from '../features/participation/ParticipationPage';
 import { EffectsPage } from '../features/effects/EffectsPage';
+import { ChainwideRulesPage } from '../features/chainwide-rules/ChainwideRulesPage';
 import { CurrentJumpRulesPage } from '../features/current-jump-rules/CurrentJumpRulesPage';
 import { BodymodPage } from '../features/bodymod/BodymodPage';
 import { TimelinePage } from '../features/timeline/TimelinePage';
@@ -44,6 +46,10 @@ export const appRouter = createHashRouter([
             element: <JumpersPage />,
           },
           {
+            path: 'companions',
+            element: <CompanionsPage />,
+          },
+          {
             path: 'jumps',
             element: <JumpsPage />,
           },
@@ -61,6 +67,10 @@ export const appRouter = createHashRouter([
           },
           {
             path: 'rules',
+            element: <ChainwideRulesPage />,
+          },
+          {
+            path: 'current-jump-rules',
             element: <CurrentJumpRulesPage />,
           },
           {

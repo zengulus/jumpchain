@@ -77,6 +77,10 @@ export function ChainOverviewPage() {
               Jumpers
             </span>
             <span className="metric">
+              <strong>{workspace.companions.length}</strong>
+              Companions
+            </span>
+            <span className="metric">
               <strong>{workspace.jumps.length}</strong>
               Jumps
             </span>
@@ -163,8 +167,8 @@ export function ChainOverviewPage() {
             <strong>{effectiveState.effectiveAccessModes.supplementAccess}</strong>
           </p>
           <p>{effectiveState.contributingEffects.length} active scoped effects are contributing to this summary.</p>
-          <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
-            Open Rules Editor
+          <Link className="button button--secondary" to={`/chains/${chainId}/current-jump-rules`}>
+            Open Current Jump Rules
           </Link>
         </article>
 
@@ -199,11 +203,20 @@ export function ChainOverviewPage() {
           <Link className="button button--secondary" to={`/chains/${chainId}/jumpers`}>
             Jumpers
           </Link>
+          <Link className="button button--secondary" to={`/chains/${chainId}/companions`}>
+            Companions
+          </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/jumps`}>
             Jumps
           </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/effects`}>
             Effects
+          </Link>
+          <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
+            Chainwide Rules
+          </Link>
+          <Link className="button button--secondary" to={`/chains/${chainId}/current-jump-rules`}>
+            Current Jump Rules
           </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/bodymod`}>
             Bodymod

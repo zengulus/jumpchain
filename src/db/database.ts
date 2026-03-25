@@ -49,6 +49,24 @@ export class JumpchainDatabase extends Dexie {
       attachments: '&id, chainId, branchId, ownerEntityId, updatedAt',
       importReports: '&id, chainId, sourceType, createdAt',
     });
+
+    this.version(2).stores({
+      chains: '&id, title, activeBranchId, updatedAt',
+      branches: '&id, chainId, isActive, updatedAt',
+      jumpers: '&id, chainId, branchId, isPrimary, updatedAt',
+      companions: '&id, chainId, branchId, parentJumperId, updatedAt',
+      jumps: '&id, chainId, branchId, orderIndex, status, updatedAt',
+      participations: '&id, chainId, branchId, jumpId, jumperId, [jumpId+jumperId], updatedAt',
+      effects: '&id, chainId, branchId, scopeType, ownerEntityId, category, state, updatedAt',
+      bodymodProfiles: '&id, chainId, branchId, jumperId, updatedAt',
+      jumpRulesContexts: '&id, chainId, branchId, jumpId, updatedAt',
+      houseRuleProfiles: '&id, chainId, branchId, updatedAt',
+      presetProfiles: '&id, chainId, branchId, category, updatedAt',
+      snapshots: '&id, chainId, branchId, createdAt',
+      notes: '&id, chainId, branchId, ownerEntityId, noteType, updatedAt',
+      attachments: '&id, chainId, branchId, ownerEntityId, updatedAt',
+      importReports: '&id, chainId, sourceType, createdAt',
+    });
   }
 }
 

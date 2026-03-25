@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
@@ -21,10 +20,12 @@ interface WorkspaceState {
 type ModuleKey =
   | 'overview'
   | 'jumpers'
+  | 'companions'
   | 'jumps'
   | 'participation'
   | 'effects'
-  | 'rules'
+  | 'chainwide-rules'
+  | 'current-jump-rules'
   | 'bodymod'
   | 'timeline'
   | 'notes'
@@ -33,28 +34,7 @@ type ModuleKey =
 interface WorkspaceModuleMenuItem {
   key: ModuleKey;
   label: string;
-  description: string;
   to: string | null;
-}
-
-function getModuleGroupId(moduleKey: ModuleKey) {
-  switch (moduleKey) {
-    case 'overview':
-    case 'jumpers':
-    case 'jumps':
-    case 'participation':
-      return 'core';
-    case 'effects':
-    case 'rules':
-    case 'bodymod':
-      return 'systems';
-    case 'timeline':
-    case 'notes':
-    case 'backups':
-      return 'history';
-    default:
-      return 'core';
-  }
 }
 
 function getActiveModuleKey(pathname: string): ModuleKey {
@@ -66,6 +46,10 @@ function getActiveModuleKey(pathname: string): ModuleKey {
     return 'jumpers';
   }
 
+  if (pathname.includes('/companions')) {
+    return 'companions';
+  }
+
   if (pathname.includes('/jumps')) {
     return 'jumps';
   }
@@ -74,8 +58,12 @@ function getActiveModuleKey(pathname: string): ModuleKey {
     return 'effects';
   }
 
+  if (pathname.includes('/current-jump-rules')) {
+    return 'current-jump-rules';
+  }
+
   if (pathname.includes('/rules')) {
-    return 'rules';
+    return 'chainwide-rules';
   }
 
   if (pathname.includes('/bodymod')) {
@@ -102,9 +90,7 @@ export function ChainWorkspaceLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [openModuleGroups, setOpenModuleGroups] = useState<string[]>(['core']);
   const activeModuleKey = getActiveModuleKey(location.pathname);
-  const activeModuleGroupId = getModuleGroupId(activeModuleKey);
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
       if (!chainId) {
         return { status: 'missing-param' };
@@ -122,12 +108,6 @@ export function ChainWorkspaceLayout() {
         workspace: buildBranchWorkspace(bundle, bundle.chain.activeBranchId),
       };
     }, [chainId]);
-
-  useEffect(() => {
-    setOpenModuleGroups((currentGroups) =>
-      currentGroups.includes(activeModuleGroupId) ? currentGroups : [...currentGroups, activeModuleGroupId],
-    );
-  }, [activeModuleGroupId]);
 
   if (!chainId) {
     return <Navigate to="/" replace />;
@@ -194,6 +174,8 @@ export function ChainWorkspaceLayout() {
         return `/chains/${resolvedChainId}/overview`;
       case 'jumpers':
         return `/chains/${resolvedChainId}/jumpers${buildSearch(selectedJumperId)}`;
+      case 'companions':
+        return `/chains/${resolvedChainId}/companions`;
       case 'jumps':
         return currentJump
           ? `/chains/${resolvedChainId}/jumps/${currentJump.id}`
@@ -202,8 +184,10 @@ export function ChainWorkspaceLayout() {
         return currentJump ? `/chains/${resolvedChainId}/participation/${currentJump.id}${buildSearch(selectedJumperId)}` : null;
       case 'effects':
         return `/chains/${resolvedChainId}/effects`;
-      case 'rules':
+      case 'chainwide-rules':
         return `/chains/${resolvedChainId}/rules`;
+      case 'current-jump-rules':
+        return `/chains/${resolvedChainId}/current-jump-rules`;
       case 'bodymod':
         return `/chains/${resolvedChainId}/bodymod${buildSearch(selectedJumperId)}`;
       case 'timeline':
@@ -268,36 +252,35 @@ export function ChainWorkspaceLayout() {
   const moduleGroups: Array<{
     id: string;
     title: string;
-    summary: string;
     items: WorkspaceModuleMenuItem[];
   }> = [
     {
       id: 'core',
       title: 'Core Flow',
-      summary: 'Overview, roster, jumps, and current participation.',
       items: [
         {
           key: 'overview',
           label: 'Overview',
-          description: 'Branch summary and current jump control room.',
           to: getModulePath('overview'),
         },
         {
           key: 'jumpers',
           label: 'Jumpers',
-          description: 'Roster, identities, and baseline editor access.',
           to: getModulePath('jumpers'),
+        },
+        {
+          key: 'companions',
+          label: 'Companions',
+          to: getModulePath('companions'),
         },
         {
           key: 'jumps',
           label: 'Jumps',
-          description: 'Timeline order, statuses, and jump membership.',
           to: getModulePath('jumps'),
         },
         {
           key: 'participation',
           label: 'Participation',
-          description: currentJump ? `Selections for ${currentJump.title}.` : 'Pick a current jump to unlock participation.',
           to: getModulePath('participation'),
         },
       ],
@@ -305,24 +288,25 @@ export function ChainWorkspaceLayout() {
     {
       id: 'systems',
       title: 'Systems',
-      summary: 'Effects, rules, and bodymod continuity layers.',
       items: [
         {
           key: 'effects',
           label: 'Effects',
-          description: 'Scoped perks, drawbacks, statuses, and rule overrides.',
           to: getModulePath('effects'),
         },
         {
-          key: 'rules',
-          label: 'Rules',
-          description: 'Current-jump rules, presets, and branch defaults.',
-          to: getModulePath('rules'),
+          key: 'chainwide-rules',
+          label: 'Chainwide Rules',
+          to: getModulePath('chainwide-rules'),
+        },
+        {
+          key: 'current-jump-rules',
+          label: 'Current Jump Rules',
+          to: getModulePath('current-jump-rules'),
         },
         {
           key: 'bodymod',
           label: 'Bodymod',
-          description: 'Forms, features, and baseline profiles.',
           to: getModulePath('bodymod'),
         },
       ],
@@ -330,37 +314,25 @@ export function ChainWorkspaceLayout() {
     {
       id: 'history',
       title: 'History & Recovery',
-      summary: 'Timeline review, notes, backups, and branch recovery.',
       items: [
         {
           key: 'timeline',
           label: 'Timeline',
-          description: 'Jump order, branches, and continuity markers.',
           to: getModulePath('timeline'),
         },
         {
           key: 'notes',
           label: 'Notes',
-          description: 'Chain, jump, and jumper notes in one place.',
           to: getModulePath('notes'),
         },
         {
           key: 'backups',
           label: 'Backups',
-          description: 'Snapshots, exports, restores, and branch forks.',
           to: getModulePath('backups'),
         },
       ],
     },
   ];
-  function toggleModuleGroup(groupId: string) {
-    setOpenModuleGroups((currentGroups) =>
-      currentGroups.includes(groupId)
-        ? currentGroups.filter((currentGroupId) => currentGroupId !== groupId)
-        : [...currentGroups, groupId],
-    );
-  }
-
   return (
     <div className="workspace-shell stack">
       <section className="workspace-hero">
@@ -372,10 +344,6 @@ export function ChainWorkspaceLayout() {
               <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
             </div>
             <h2>{state.bundle.chain.title}</h2>
-            <p>
-              Navigate from the rail, switch jumpers and jumps from menus, and keep the working branch visible without
-              wasting half the screen on chrome.
-            </p>
           </div>
           <div className="workspace-hero__stats">
             <span className="metric">
@@ -508,63 +476,6 @@ export function ChainWorkspaceLayout() {
                 Bodymod
               </button>
             </div>
-
-            <p className="workspace-sidebar-copy">
-              The rail keeps the big navigation jobs in menus and leaves the buttons for the three most common context
-              jumps.
-            </p>
-          </section>
-
-          <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-            <div className="section-heading">
-              <h3>Module Menu</h3>
-              <span className="pill">{activeModuleKey}</span>
-            </div>
-            {moduleGroups.map((group) => (
-              <details
-                key={group.id}
-                className="details-panel workspace-module-group"
-                open={openModuleGroups.includes(group.id)}
-              >
-                <summary
-                  className="details-panel__summary workspace-module-group__summary"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    toggleModuleGroup(group.id);
-                  }}
-                >
-                  <strong>{group.title}</strong>
-                  <span>{group.summary}</span>
-                </summary>
-                <div className="details-panel__body workspace-module-group__body">
-                  <nav className="workspace-menu-list" aria-label={group.title}>
-                    {group.items.map((item) =>
-                      item.to ? (
-                        <NavLink
-                          key={item.key}
-                          className={({ isActive }) =>
-                            `workspace-menu-item${isActive ? ' active' : ''}`
-                          }
-                          to={item.to}
-                        >
-                          <strong>{item.label}</strong>
-                          <span>{item.description}</span>
-                        </NavLink>
-                      ) : (
-                        <span
-                          key={item.key}
-                          className="workspace-menu-item workspace-menu-item--disabled"
-                          aria-disabled="true"
-                        >
-                          <strong>{item.label}</strong>
-                          <span>{item.description}</span>
-                        </span>
-                      ),
-                    )}
-                  </nav>
-                </div>
-              </details>
-            ))}
           </section>
         </aside>
 

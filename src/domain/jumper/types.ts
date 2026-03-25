@@ -1,4 +1,4 @@
-import type { ChainScopedRecord, JsonMap } from '../common';
+import type { ChainScopedRecord, CompanionStatus, JsonMap } from '../common';
 
 export interface Jumper extends ChainScopedRecord {
   name: string;
@@ -23,6 +23,9 @@ export interface Jumper extends ChainScopedRecord {
 
 export interface Companion extends ChainScopedRecord {
   name: string;
-  parentJumperId?: string | null;
+  parentJumperId: string | null;
+  role: string;
+  status: CompanionStatus;
+  originJumpId: string | null;
   importSourceMetadata: JsonMap;
 }

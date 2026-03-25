@@ -602,14 +602,15 @@ button {
 
 .workspace-utility-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.55rem;
 }
 
 .workspace-utility-button {
   justify-content: center;
   min-height: 2.8rem;
-  padding: 0.55rem 0.7rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
   font-size: 0.92rem;
 }
 

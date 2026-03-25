@@ -4,6 +4,7 @@ import {
   BaseRecordSchema,
   BodymodModeSchema,
   ChainScopedRecordSchema,
+  CompanionStatusSchema,
   EffectCategorySchema,
   EffectStateSchema,
   IdentifierSchema,
@@ -73,7 +74,10 @@ export const JumperSchema = ChainScopedRecordSchema.extend({
 
 export const CompanionSchema = ChainScopedRecordSchema.extend({
   name: z.string().min(1),
-  parentJumperId: IdentifierSchema.nullish(),
+  parentJumperId: IdentifierSchema.nullish().default(null),
+  role: z.string().default(''),
+  status: CompanionStatusSchema.default('active'),
+  originJumpId: IdentifierSchema.nullish().default(null),
   importSourceMetadata: JsonMapSchema,
 });
 

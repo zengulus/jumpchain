@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { accessModes } from '../../domain/common';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import {
@@ -235,8 +236,13 @@ export function CurrentJumpRulesPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Current Jump Rules"
-        description="Branch defaults, preset-driven module customization, and per-jump overrides all live together here."
+        description="Branch defaults and per-jump overrides live here. Chainwide drawbacks and chain-owned rule effects live in Chainwide Rules."
         badge={currentJump.title}
+        actions={
+          <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
+            Open Chainwide Rules
+          </Link>
+        }
       />
 
       <StatusNoticeBanner notice={notice} />

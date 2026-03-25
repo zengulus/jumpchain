@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   accessModes,
   bodymodModes,
+  companionStatuses,
   effectCategories,
   effectStates,
   importModes,
@@ -27,6 +28,7 @@ export const EffectStateSchema = z.enum(effectStates);
 export const JumpStatusSchema = z.enum(jumpStatuses);
 export const JumpTypeSchema = z.enum(jumpTypes);
 export const ParticipationStatusSchema = z.enum(participationStatuses);
+export const CompanionStatusSchema = z.enum(companionStatuses);
 export const NoteTypeSchema = z.enum(noteTypes);
 export const AccessModeSchema = z.enum(accessModes);
 export const BodymodModeSchema = z.enum(bodymodModes);

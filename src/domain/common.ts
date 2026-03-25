@@ -47,6 +47,9 @@ export type JumpType = (typeof jumpTypes)[number];
 export const participationStatuses = ['planned', 'active', 'completed', 'inactive'] as const;
 export type ParticipationStatus = (typeof participationStatuses)[number];
 
+export const companionStatuses = ['active', 'inactive', 'imported', 'retired'] as const;
+export type CompanionStatus = (typeof companionStatuses)[number];
+
 export const noteTypes = ['chain', 'jump', 'jumper', 'participation', 'snapshot', 'import'] as const;
 export type NoteType = (typeof noteTypes)[number];
 

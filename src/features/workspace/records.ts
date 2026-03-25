@@ -4,7 +4,7 @@ import type { JsonMap } from '../../domain/common';
 import type { BodymodProfile } from '../../domain/bodymod/types';
 import type { Chain } from '../../domain/chain/types';
 import type { Effect } from '../../domain/effects/types';
-import type { Jumper } from '../../domain/jumper/types';
+import type { Companion, Jumper } from '../../domain/jumper/types';
 import type { Jump, JumperParticipation } from '../../domain/jump/types';
 import type { Note } from '../../domain/notes/types';
 import { createDefaultRulesModuleSettings, type RulesDefaults } from '../../domain/rules/customization';
@@ -86,6 +86,24 @@ export function createBlankJumper(chainId: string, branchId: string): Jumper {
       summary: '',
       description: '',
     },
+    importSourceMetadata: {},
+  };
+}
+
+export function createBlankCompanion(chainId: string, branchId: string): Companion {
+  const now = createTimestamp();
+
+  return {
+    id: createId('companion'),
+    chainId,
+    branchId,
+    createdAt: now,
+    updatedAt: now,
+    name: 'New Companion',
+    parentJumperId: null,
+    role: '',
+    status: 'active',
+    originJumpId: null,
     importSourceMetadata: {},
   };
 }

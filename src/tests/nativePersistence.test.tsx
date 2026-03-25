@@ -18,6 +18,7 @@ import {
 } from '../db/persistence';
 import { CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION, APP_VERSION } from '../app/config';
 import { migrateNativeSaveEnvelope } from '../migrations';
+import { createBlankCompanion, createBlankEffect, createBlankJumper, saveChainEntity, saveChainRecord } from '../features/workspace/records';
 import { validateNativeChainBundle } from '../schemas';
 
 async function resetDatabase() {
@@ -110,6 +111,69 @@ describe('native persistence and round-trip safety', () => {
     expect(overviews[0].title).toBe('Reloadable Chain');
   });
 
+  it('persists companion records with parent jumper assignment across reload', async () => {
+    await resetDatabase();
+    const createdBundle = await createBlankChain('Companion Reload');
+    const branchId = createdBundle.chain.activeBranchId;
+    const jumper = {
+      ...createBlankJumper(createdBundle.chain.id, branchId),
+      name: 'Lead Jumper',
+    };
+    const companion = {
+      ...createBlankCompanion(createdBundle.chain.id, branchId),
+      name: 'Trusted Ally',
+      role: 'Scout',
+      status: 'active' as const,
+      originJumpId: null,
+      parentJumperId: jumper.id,
+    };
+
+    await saveChainRecord(db.jumpers, jumper);
+    await saveChainRecord(db.companions, companion);
+
+    const reloadedBundle = await getChainBundle(createdBundle.chain.id);
+
+    expect(reloadedBundle?.companions).toHaveLength(1);
+    expect(reloadedBundle?.companions[0]?.name).toBe('Trusted Ally');
+    expect(reloadedBundle?.companions[0]?.role).toBe('Scout');
+    expect(reloadedBundle?.companions[0]?.parentJumperId).toBe(jumper.id);
+  });
+
+  it('persists chainwide rule flags and chain-owned drawback effects across reload', async () => {
+    await resetDatabase();
+    const createdBundle = await createBlankChain('Chainwide Rules');
+    const chainwideDrawback = {
+      ...createBlankEffect(createdBundle.chain.id, createdBundle.chain.activeBranchId, createdBundle.chain.id),
+      title: 'No Outside Context Problem',
+      category: 'drawback' as const,
+      description: 'Chainwide drawback test record.',
+    };
+
+    await saveChainEntity({
+      ...createdBundle.chain,
+      chainSettings: {
+        ...createdBundle.chain.chainSettings,
+        chainDrawbacksForCompanions: true,
+        chainDrawbacksSupplements: false,
+      },
+    });
+    await saveChainRecord(db.effects, chainwideDrawback);
+
+    const reloadedBundle = await getChainBundle(createdBundle.chain.id);
+
+    expect(reloadedBundle?.chain.chainSettings.chainDrawbacksForCompanions).toBe(true);
+    expect(reloadedBundle?.chain.chainSettings.chainDrawbacksSupplements).toBe(false);
+    expect(
+      reloadedBundle?.effects.some(
+        (effect) =>
+          effect.title === 'No Outside Context Problem' &&
+          effect.ownerEntityType === 'chain' &&
+          effect.ownerEntityId === createdBundle.chain.id &&
+          effect.scopeType === 'chain',
+      ),
+    ).toBe(true);
+  });
+
   it('deletes a chain and cascades its chain-owned records out of IndexedDB', async () => {
     await resetDatabase();
     const createdBundle = await createBlankChain('Disposable Chain');
@@ -126,6 +190,20 @@ describe('native persistence and round-trip safety', () => {
   it('imports native saves as safe copies with remapped ids', async () => {
     await resetDatabase();
     const originalBundle = await createBlankChain('Safe Copy Chain');
+    const branchId = originalBundle.chain.activeBranchId;
+    const jumper = {
+      ...createBlankJumper(originalBundle.chain.id, branchId),
+      name: 'Import Parent',
+    };
+    const companion = {
+      ...createBlankCompanion(originalBundle.chain.id, branchId),
+      name: 'Imported Ally',
+      parentJumperId: jumper.id,
+    };
+
+    await saveChainRecord(db.jumpers, jumper);
+    await saveChainRecord(db.companions, companion);
+
     const exportedEnvelope = await exportNativeSave(originalBundle.chain.id);
     const importedEnvelope = await importNativeSave(exportedEnvelope);
     const overviews = await listChainOverviews();
@@ -138,6 +216,11 @@ describe('native persistence and round-trip safety', () => {
     expect(importedBundle.chain.title).toBe(originalBundle.chain.title);
     expect(importedBundle.chain.activeBranchId === originalBundle.chain.activeBranchId).toBe(false);
     expect(importedBundle.chain.activeBranchId === importedBundle.branches[0].id).toBe(true);
+    expect(importedBundle.jumpers).toHaveLength(1);
+    expect(importedBundle.companions).toHaveLength(1);
+    expect(importedBundle.companions[0].id === companion.id).toBe(false);
+    expect(importedBundle.companions[0].parentJumperId === jumper.id).toBe(false);
+    expect(importedBundle.companions[0].parentJumperId).toBe(importedBundle.jumpers[0].id);
 
     const persistedImportedBundle = await getChainBundle(importedBundle.chain.id);
     expect(Boolean(persistedImportedBundle)).toBe(true);
@@ -148,6 +231,7 @@ describe('native persistence and round-trip safety', () => {
 
     expect(persistedImportedBundle.chain.title).toBe('Safe Copy Chain');
     expect(persistedImportedBundle.branches).toHaveLength(1);
+    expect(persistedImportedBundle.companions).toHaveLength(1);
   });
 
   it('persists imported ChainMaker data and reloads preserved unresolved mappings', async () => {
@@ -227,6 +311,14 @@ describe('native persistence and round-trip safety', () => {
     await resetDatabase();
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const savedBundle = await saveImportedChainBundle(session.bundle);
+    const companion = {
+      ...createBlankCompanion(savedBundle.chain.id, savedBundle.chain.activeBranchId),
+      name: 'Snapshot Ally',
+      parentJumperId: savedBundle.jumpers[0]?.id ?? null,
+    };
+
+    await saveChainRecord(db.companions, companion);
+
     const snapshot = await createSnapshotForBranch(
       savedBundle.chain.id,
       savedBundle.chain.activeBranchId,
@@ -245,6 +337,14 @@ describe('native persistence and round-trip safety', () => {
     expect(reloadedBundle.branches).toHaveLength(2);
     expect(reloadedBundle.chain.activeBranchId).toBe(restoredBranch.id);
     expect(restoredBranch.id === savedBundle.chain.activeBranchId).toBe(false);
+
+    const restoredJumpers = reloadedBundle.jumpers.filter((jumper) => jumper.branchId === restoredBranch.id);
+    const restoredCompanions = reloadedBundle.companions.filter((entry) => entry.branchId === restoredBranch.id);
+
+    expect(restoredCompanions).toHaveLength(1);
+    expect(restoredJumpers).toHaveLength(1);
+    expect(restoredCompanions[0].parentJumperId).toBe(restoredJumpers[0].id);
+    expect(restoredCompanions[0].parentJumperId === savedBundle.jumpers[0]?.id).toBe(false);
   });
 
   it('renders the home page with persisted chain list data after reload', async () => {
