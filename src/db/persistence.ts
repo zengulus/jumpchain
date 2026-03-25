@@ -16,8 +16,7 @@ export interface ChainOverview {
 }
 
 async function writeBundle(bundle: NativeChainBundle) {
-  await db.transaction(
-    'rw',
+  const tables = [
     db.chains,
     db.branches,
     db.jumpers,
@@ -33,6 +32,11 @@ async function writeBundle(bundle: NativeChainBundle) {
     db.notes,
     db.attachments,
     db.importReports,
+  ] as const;
+
+  await db.transaction(
+    'rw',
+    tables,
     async () => {
       await db.chains.put(bundle.chain);
       await db.branches.bulkPut(bundle.branches);
