@@ -593,6 +593,24 @@ button {
   color: var(--color-text);
 }
 
+.pill--success {
+  background: rgba(107, 227, 166, 0.12);
+  border-color: rgba(107, 227, 166, 0.18);
+  color: #d3ffe6;
+}
+
+.pill--warning {
+  background: rgba(255, 206, 115, 0.12);
+  border-color: rgba(255, 206, 115, 0.18);
+  color: #ffe6ab;
+}
+
+.pill--muted {
+  background: rgba(159, 196, 220, 0.06);
+  border-color: rgba(159, 196, 220, 0.14);
+  color: var(--color-text-muted);
+}
+
 .status {
   padding: 0.9rem 1rem;
   border-radius: 0.85rem;
@@ -815,6 +833,42 @@ button {
   width: 100%;
   padding: 0.65rem 0.85rem;
   font-size: 0.92rem;
+}
+
+.workspace-action-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.workspace-action-card {
+  display: grid;
+  gap: 0.22rem;
+  width: 100%;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid rgba(159, 196, 220, 0.12);
+  border-radius: 0.85rem;
+  background: rgba(8, 18, 27, 0.68);
+  color: inherit;
+  text-align: left;
+}
+
+.workspace-action-card strong {
+  font-size: 0.96rem;
+}
+
+.workspace-action-card span {
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+}
+
+.workspace-action-card:hover {
+  border-color: rgba(105, 210, 180, 0.24);
+  background: rgba(105, 210, 180, 0.08);
+}
+
+.workspace-action-card.is-accent {
+  border-color: rgba(105, 210, 180, 0.18);
+  background: linear-gradient(180deg, rgba(105, 210, 180, 0.11), rgba(8, 18, 27, 0.72));
 }
 
 .workspace-content {
@@ -2055,6 +2109,24 @@ body::before {
 .workspace-utility-button {
   min-height: 2.5rem;
   padding: 0.54rem 0.72rem;
+}
+
+.workspace-action-grid {
+  gap: 0.5rem;
+}
+
+.workspace-action-card {
+  gap: 0.18rem;
+  padding: 0.72rem 0.78rem;
+  border-radius: 0.76rem;
+}
+
+.workspace-action-card strong {
+  font-size: 0.9rem;
+}
+
+.workspace-action-card span {
+  font-size: 0.8rem;
 }
 
 .workspace-content .card {

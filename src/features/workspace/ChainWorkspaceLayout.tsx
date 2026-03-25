@@ -38,6 +38,14 @@ interface WorkspaceModuleMenuItem {
   to: string | null;
 }
 
+interface WorkspaceQuickAction {
+  id: string;
+  title: string;
+  description: string;
+  to: string;
+  tone?: 'accent' | 'default';
+}
+
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
     return 'participation';
@@ -140,7 +148,16 @@ export function ChainWorkspaceLayout() {
   const workspace = state.workspace;
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
-  const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? '';
+  const selectedJumper =
+    workspace.jumpers.find((jumper) => jumper.id === searchParams.get('jumper')) ??
+    workspace.jumpers[0] ??
+    null;
+  const selectedJumperId = selectedJumper?.id ?? '';
+  const selectedIconicProfile = selectedJumper
+    ? workspace.bodymodProfiles.find((profile) => profile.jumperId === selectedJumper.id) ?? null
+    : null;
+  const hasJumpers = workspace.jumpers.length > 0;
+  const hasJumps = workspace.jumps.length > 0;
 
   function buildSearch(nextJumperId: string) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -155,22 +172,34 @@ export function ChainWorkspaceLayout() {
     return nextSearch.length > 0 ? `?${nextSearch}` : '';
   }
 
-  function openJumperRoute(nextJumperId: string, target: 'jumpers' | 'bodymod' | 'participation') {
-    const search = buildSearch(nextJumperId);
+  function getJumpEditorPath(nextJumpId?: string | null) {
+    const jumpId = nextJumpId ?? currentJump?.id ?? workspace.jumps[0]?.id ?? null;
 
-    if (target === 'jumpers') {
-      navigate(`/chains/${resolvedChainId}/jumpers${search}`);
-      return;
+    if (!jumpId) {
+      return `/chains/${resolvedChainId}/jumps`;
     }
 
-    if (target === 'bodymod') {
-      navigate(`/chains/${resolvedChainId}/bodymod${search}`);
-      return;
+    return `/chains/${resolvedChainId}/jumps/${jumpId}`;
+  }
+
+  function getBodymodPath(nextJumperId = selectedJumperId) {
+    if (!hasJumpers) {
+      return `/chains/${resolvedChainId}/jumpers`;
     }
 
-    if (currentJump) {
-      navigate(`/chains/${resolvedChainId}/participation/${currentJump.id}${search}`);
+    return `/chains/${resolvedChainId}/bodymod${buildSearch(nextJumperId)}`;
+  }
+
+  function getParticipationPath(nextJumperId = selectedJumperId) {
+    if (!hasJumpers) {
+      return `/chains/${resolvedChainId}/jumpers`;
     }
+
+    if (!hasJumps || !currentJump) {
+      return `/chains/${resolvedChainId}/jumps`;
+    }
+
+    return `/chains/${resolvedChainId}/participation/${currentJump.id}${buildSearch(nextJumperId)}`;
   }
 
   function getModulePath(moduleKey: ModuleKey) {
@@ -182,19 +211,17 @@ export function ChainWorkspaceLayout() {
       case 'companions':
         return `/chains/${resolvedChainId}/companions`;
       case 'jumps':
-        return currentJump
-          ? `/chains/${resolvedChainId}/jumps/${currentJump.id}`
-          : `/chains/${resolvedChainId}/jumps`;
+        return getJumpEditorPath();
       case 'participation':
-        return currentJump ? `/chains/${resolvedChainId}/participation/${currentJump.id}${buildSearch(selectedJumperId)}` : null;
+        return getParticipationPath();
       case 'effects':
         return `/chains/${resolvedChainId}/effects`;
       case 'chainwide-rules':
         return `/chains/${resolvedChainId}/rules`;
       case 'current-jump-rules':
-        return `/chains/${resolvedChainId}/current-jump-rules`;
+        return hasJumps ? `/chains/${resolvedChainId}/current-jump-rules` : `/chains/${resolvedChainId}/jumps`;
       case 'bodymod':
-        return `/chains/${resolvedChainId}/bodymod${buildSearch(selectedJumperId)}`;
+        return getBodymodPath();
       case 'personal-reality':
         return `/chains/${resolvedChainId}/personal-reality`;
       case 'timeline':
@@ -255,6 +282,66 @@ export function ChainWorkspaceLayout() {
 
     navigate(`${location.pathname}${search}`);
   }
+
+  const quickActions: WorkspaceQuickAction[] = [
+    !hasJumpers
+      ? {
+          id: 'create-first-jumper',
+          title: 'Create First Jumper',
+          description: 'Start here. Iconic, participation, and most character-focused modules hang off a jumper.',
+          to: `/chains/${resolvedChainId}/jumpers`,
+          tone: 'accent',
+        }
+      : {
+          id: 'open-selected-jumper',
+          title: `Edit ${selectedJumper?.name ?? 'Selected Jumper'}`,
+          description: 'Identity, background, notes, and setup live here.',
+          to: `/chains/${resolvedChainId}/jumpers${buildSearch(selectedJumperId)}`,
+          tone: 'accent',
+        },
+    !hasJumps
+      ? {
+          id: 'create-first-jump',
+          title: 'Create First Jump',
+          description: 'Participation, current-jump rules, and timeline become meaningful once a jump exists.',
+          to: `/chains/${resolvedChainId}/jumps`,
+          tone: 'accent',
+        }
+      : {
+          id: 'open-current-jump',
+          title: `Open ${currentJump?.title ?? 'Current Jump'}`,
+          description: 'Edit status, ordering, duration, and participant membership.',
+          to: getJumpEditorPath(),
+        },
+    hasJumpers
+      ? {
+          id: 'open-iconic',
+          title: selectedIconicProfile ? `Iconic: ${selectedJumper?.name ?? 'Selected Jumper'}` : `Create Iconic For ${selectedJumper?.name ?? 'Selected Jumper'}`,
+          description: selectedIconicProfile
+            ? 'Open the jumper-tied Iconic profile that belongs to the current jumper focus.'
+            : 'No Iconic profile exists for this jumper yet. Start it here.',
+          to: getBodymodPath(),
+        }
+      : {
+          id: 'chain-notes',
+          title: 'Open Chain Notes',
+          description: 'Capture setup decisions while you scaffold the chain.',
+          to: `/chains/${resolvedChainId}/notes`,
+        },
+    hasJumpers && hasJumps
+      ? {
+          id: 'open-participation',
+          title: `Participation: ${selectedJumper?.name ?? 'Selected Jumper'}`,
+          description: `Jump straight into ${selectedJumper?.name ?? 'the jumper'} inside ${currentJump?.title ?? 'the current jump'}.`,
+          to: getParticipationPath(),
+        }
+      : {
+          id: 'overview',
+          title: 'Open Overview',
+          description: 'Use the overview to see what the active branch already has and what is still missing.',
+          to: `/chains/${resolvedChainId}/overview`,
+        },
+  ];
 
   const moduleGroups: Array<{
     id: string;
@@ -428,6 +515,9 @@ export function ChainWorkspaceLayout() {
                   </optgroup>
                 ))}
               </select>
+              <small className="field-hint">
+                Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them.
+              </small>
             </label>
 
             <div className="workspace-switch-grid">
@@ -438,12 +528,21 @@ export function ChainWorkspaceLayout() {
                   onChange={(event) => handleQuickJumperChange(event.target.value)}
                   disabled={workspace.jumpers.length === 0}
                 >
-                  {workspace.jumpers.map((jumper) => (
-                    <option key={jumper.id} value={jumper.id}>
-                      {jumper.name}
-                    </option>
-                  ))}
+                  {workspace.jumpers.length === 0 ? (
+                    <option value="">Create a jumper first</option>
+                  ) : (
+                    workspace.jumpers.map((jumper) => (
+                      <option key={jumper.id} value={jumper.id}>
+                        {jumper.name}
+                      </option>
+                    ))
+                  )}
                 </select>
+                <small className="field-hint">
+                  {selectedJumper
+                    ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                    : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'}
+                </small>
               </label>
 
               <label className="field">
@@ -453,40 +552,41 @@ export function ChainWorkspaceLayout() {
                   onChange={(event) => void handleQuickJumpChange(event.target.value)}
                   disabled={workspace.jumps.length === 0}
                 >
-                  {workspace.jumps.map((jump) => (
-                    <option key={jump.id} value={jump.id}>
-                      {jump.orderIndex + 1}. {jump.title}
-                    </option>
-                  ))}
+                  {workspace.jumps.length === 0 ? (
+                    <option value="">Create a jump first</option>
+                  ) : (
+                    workspace.jumps.map((jump) => (
+                      <option key={jump.id} value={jump.id}>
+                        {jump.orderIndex + 1}. {jump.title}
+                      </option>
+                    ))
+                  )}
                 </select>
+                <small className="field-hint">
+                  {currentJump
+                    ? `Current jump context is ${currentJump.title}.`
+                    : 'Create the first jump to unlock participation and current-jump rules.'}
+                </small>
               </label>
             </div>
 
-            <div className="workspace-utility-row">
-              <button
-                className="button button--secondary workspace-utility-button"
-                type="button"
-                onClick={() => openJumperRoute(selectedJumperId, 'jumpers')}
-                disabled={!selectedJumperId}
-              >
-                Jumpers
-              </button>
-              <button
-                className="button button--secondary workspace-utility-button"
-                type="button"
-                onClick={() => openJumperRoute(selectedJumperId, 'participation')}
-                disabled={!currentJump}
-              >
-                Participation
-              </button>
-              <button
-                className="button button--secondary workspace-utility-button"
-                type="button"
-                onClick={() => openJumperRoute(selectedJumperId, 'bodymod')}
-                disabled={!selectedJumperId}
-              >
-                Iconic
-              </button>
+            <div className="section-heading">
+              <h4>Suggested Next Steps</h4>
+              <span className="pill">Context aware</span>
+            </div>
+
+            <div className="workspace-action-grid">
+              {quickActions.map((action) => (
+                <button
+                  key={action.id}
+                  className={`workspace-action-card${action.tone === 'accent' ? ' is-accent' : ''}`}
+                  type="button"
+                  onClick={() => navigate(action.to)}
+                >
+                  <strong>{action.title}</strong>
+                  <span>{action.description}</span>
+                </button>
+              ))}
             </div>
           </section>
         </aside>

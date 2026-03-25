@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { iconicBodymodModes, type BodymodMode, type IconicBodymodMode } from '../../domain/common';
 import { iconicSelectionKinds, type BodymodProfile, type IconicSelection } from '../../domain/bodymod/types';
 import { db } from '../../db/database';
@@ -173,8 +173,11 @@ export function BodymodPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? null;
-  const selectedJumper = workspace.jumpers.find((jumper) => jumper.id === selectedJumperId) ?? workspace.jumpers[0] ?? null;
+  const selectedJumper =
+    workspace.jumpers.find((jumper) => jumper.id === searchParams.get('jumper')) ??
+    workspace.jumpers[0] ??
+    null;
+  const selectedJumperId = selectedJumper?.id ?? null;
   const profile = selectedJumper
     ? workspace.bodymodProfiles.find((entry) => entry.jumperId === selectedJumper.id) ?? null
     : null;
@@ -253,7 +256,14 @@ export function BodymodPage() {
       <WorkspaceModuleHeader
         title="Iconic"
         description="Structured Iconic bodymod replacer profiles with tier-based packages, concept notes, and preserved imported forms."
-        badge={`${workspace.bodymodProfiles.length} profiles`}
+        badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}
+        actions={
+          selectedJumper ? (
+            <Link className="button button--secondary" to={`/chains/${chainId}/jumpers?jumper=${selectedJumper.id}`}>
+              Open Jumper
+            </Link>
+          ) : undefined
+        }
       />
 
       <StatusNoticeBanner notice={notice} />
@@ -274,7 +284,13 @@ export function BodymodPage() {
                   key={jumper.id}
                   className={`selection-list__item${selectedJumper?.id === jumper.id ? ' is-active' : ''}`}
                   type="button"
-                  onClick={() => setSearchParams({ jumper: jumper.id })}
+                  onClick={() =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
+                      nextParams.set('jumper', jumper.id);
+                      return nextParams;
+                    })
+                  }
                 >
                   <strong>{jumper.name}</strong>
                   <span>{getProfileStatusLabel(jumperProfile)}</span>
@@ -294,7 +310,10 @@ export function BodymodPage() {
                     Create Iconic Profile
                   </button>
                 ) : (
-                  <span className="pill">{tierConfig.title}</span>
+                  <div className="inline-meta">
+                    <span className="pill">{tierConfig.title}</span>
+                    <span className="pill pill--soft">Tied to {selectedJumper.name}</span>
+                  </div>
                 )}
               </div>
 
