@@ -553,6 +553,11 @@ button {
   color: var(--color-text-muted);
 }
 
+.workspace-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .workspace-content {
   min-width: 0;
 }
@@ -674,6 +679,31 @@ button {
   border: 1px solid rgba(159, 196, 220, 0.12);
   background: rgba(8, 19, 27, 0.54);
   box-shadow: none;
+}
+
+.selection-editor-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.selection-editor {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(159, 196, 220, 0.1);
+  background: rgba(4, 11, 17, 0.34);
+}
+
+.selection-editor__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+}
+
+.selection-editor__header strong {
+  font-size: 1rem;
 }
 
 .workspace-two-column {

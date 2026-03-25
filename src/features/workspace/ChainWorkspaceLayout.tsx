@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
-import { getChainBundle } from '../../db/persistence';
+import { getChainBundle, switchActiveJump } from '../../db/persistence';
 
 export interface ChainWorkspaceOutletContext {
   chainId: string;
@@ -31,6 +31,9 @@ const workspaceLinks = [
 
 export function ChainWorkspaceLayout() {
   const { chainId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
       if (!chainId) {
         return { status: 'missing-param' };
@@ -74,6 +77,76 @@ export function ChainWorkspaceLayout() {
   const workspace = state.workspace;
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
+  const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? '';
+
+  function buildSearch(nextJumperId: string) {
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (nextJumperId) {
+      nextSearchParams.set('jumper', nextJumperId);
+    } else {
+      nextSearchParams.delete('jumper');
+    }
+
+    const nextSearch = nextSearchParams.toString();
+    return nextSearch.length > 0 ? `?${nextSearch}` : '';
+  }
+
+  function openJumperRoute(nextJumperId: string, target: 'jumpers' | 'bodymod' | 'participation') {
+    const search = buildSearch(nextJumperId);
+
+    if (target === 'jumpers') {
+      navigate(`/chains/${chainId}/jumpers${search}`);
+      return;
+    }
+
+    if (target === 'bodymod') {
+      navigate(`/chains/${chainId}/bodymod${search}`);
+      return;
+    }
+
+    if (currentJump) {
+      navigate(`/chains/${chainId}/participation/${currentJump.id}${search}`);
+    }
+  }
+
+  async function handleQuickJumpChange(nextJumpId: string) {
+    if (!nextJumpId) {
+      return;
+    }
+
+    await switchActiveJump(chainId, nextJumpId);
+
+    if (location.pathname.endsWith('/jumps') || location.pathname.includes('/jumps/')) {
+      navigate(`/chains/${chainId}/jumps/${nextJumpId}${location.search}`);
+      return;
+    }
+
+    if (location.pathname.includes('/participation/')) {
+      navigate(`/chains/${chainId}/participation/${nextJumpId}${location.search}`);
+    }
+  }
+
+  function handleQuickJumperChange(nextJumperId: string) {
+    const search = buildSearch(nextJumperId);
+
+    if (location.pathname.includes('/jumpers')) {
+      navigate(`/chains/${chainId}/jumpers${search}`);
+      return;
+    }
+
+    if (location.pathname.includes('/bodymod')) {
+      navigate(`/chains/${chainId}/bodymod${search}`);
+      return;
+    }
+
+    if (location.pathname.includes('/participation/')) {
+      navigate(`${location.pathname}${search}`);
+      return;
+    }
+
+    navigate(`${location.pathname}${search}`);
+  }
 
   return (
     <div className="workspace-shell stack">
@@ -118,6 +191,75 @@ export function ChainWorkspaceLayout() {
             </p>
             <p className="workspace-sidebar-copy">
               Modules stay pinned in a left rail so desktop editing flows don&apos;t bounce around between pages.
+            </p>
+          </section>
+
+          <section className="workspace-sidebar-card stack">
+            <div className="section-heading">
+              <h3>Quick Switch</h3>
+              <span className="pill">global</span>
+            </div>
+
+            <label className="field">
+              <span>Jump</span>
+              <select
+                value={currentJump?.id ?? ''}
+                onChange={(event) => void handleQuickJumpChange(event.target.value)}
+                disabled={workspace.jumps.length === 0}
+              >
+                {workspace.jumps.map((jump) => (
+                  <option key={jump.id} value={jump.id}>
+                    {jump.orderIndex + 1}. {jump.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span>Jumper</span>
+              <select
+                value={selectedJumperId}
+                onChange={(event) => handleQuickJumperChange(event.target.value)}
+                disabled={workspace.jumpers.length === 0}
+              >
+                {workspace.jumpers.map((jumper) => (
+                  <option key={jumper.id} value={jumper.id}>
+                    {jumper.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="actions workspace-quick-actions">
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => openJumperRoute(selectedJumperId, 'jumpers')}
+                disabled={!selectedJumperId}
+              >
+                Open Jumper
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => openJumperRoute(selectedJumperId, 'bodymod')}
+                disabled={!selectedJumperId}
+              >
+                Open Bodymod
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => openJumperRoute(selectedJumperId, 'participation')}
+                disabled={!currentJump}
+              >
+                Open Participation
+              </button>
+            </div>
+
+            <p className="workspace-sidebar-copy">
+              Jump switching updates the chain&apos;s active jump. Jumper switching follows you into jumper, bodymod, and
+              participation editors through the URL.
             </p>
           </section>
 

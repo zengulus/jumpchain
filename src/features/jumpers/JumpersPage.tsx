@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
 import { createBlankJumper, saveChainRecord } from '../workspace/records';
 import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
@@ -7,8 +7,9 @@ import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpersPage() {
   const { chainId, workspace } = useChainWorkspace();
-  const [selectedJumperId, setSelectedJumperId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const selectedJumperId = searchParams.get('jumper') ?? workspace.jumpers[0]?.id ?? null;
   const selectedJumper = workspace.jumpers.find((jumper) => jumper.id === selectedJumperId) ?? workspace.jumpers[0] ?? null;
 
   async function handleAddJumper() {
@@ -20,7 +21,7 @@ export function JumpersPage() {
 
     try {
       await saveChainRecord(db.jumpers, jumper);
-      setSelectedJumperId(jumper.id);
+      setSearchParams({ jumper: jumper.id });
       setNotice({
         tone: 'success',
         message: 'Created a new jumper record in IndexedDB.',
@@ -94,7 +95,7 @@ export function JumpersPage() {
                   key={jumper.id}
                   className={`selection-list__item${selectedJumper?.id === jumper.id ? ' is-active' : ''}`}
                   type="button"
-                  onClick={() => setSelectedJumperId(jumper.id)}
+                  onClick={() => setSearchParams({ jumper: jumper.id })}
                 >
                   <strong>{jumper.name}</strong>
                   <span>{jumper.isPrimary ? 'Primary jumper' : 'Secondary jumper'}</span>

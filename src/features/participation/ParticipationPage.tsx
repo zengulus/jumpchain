@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
 import { createBlankParticipation, saveChainRecord } from '../workspace/records';
@@ -16,6 +16,16 @@ interface PurchaseTokenGroups {
   perks: SummaryToken[];
   items: SummaryToken[];
   others: SummaryToken[];
+}
+
+interface SelectionEditorSectionProps {
+  title: string;
+  description: string;
+  items: unknown[];
+  emptyMessage: string;
+  addLabel: string;
+  onChange: (nextItems: unknown[]) => void;
+  createItem: () => unknown;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -96,6 +106,111 @@ function getPurchaseTokenGroups(purchases: unknown[]): PurchaseTokenGroups {
       others: [],
     },
   );
+}
+
+function createBlankSelection(title: string, extraFields: Record<string, unknown> = {}) {
+  return {
+    name: title,
+    summary: title,
+    description: '',
+    tags: [],
+    ...extraFields,
+  };
+}
+
+function normalizeSelectionForEdit(value: unknown, fallbackTitle: string) {
+  const record = asRecord(value);
+
+  if (Object.keys(record).length > 0) {
+    return { ...record };
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return {
+      summary: String(value),
+      description: '',
+      tags: [],
+    };
+  }
+
+  return createBlankSelection(fallbackTitle);
+}
+
+function getSelectionTitleValue(record: Record<string, unknown>, fallbackTitle: string) {
+  if (typeof record.name === 'string' && record.name.trim().length > 0) {
+    return record.name;
+  }
+
+  if (typeof record.summary === 'string' && record.summary.trim().length > 0) {
+    return record.summary;
+  }
+
+  return fallbackTitle;
+}
+
+function setSelectionTitleValue(record: Record<string, unknown>, nextTitle: string) {
+  return {
+    ...record,
+    name: nextTitle,
+    summary: nextTitle,
+  };
+}
+
+function getSelectionDescriptionValue(record: Record<string, unknown>) {
+  return typeof record.description === 'string' ? record.description : '';
+}
+
+function getSelectionTagList(record: Record<string, unknown>) {
+  return getStringList(record.tags);
+}
+
+function setOptionalNumericField(record: Record<string, unknown>, key: string, nextValue: string) {
+  const nextRecord = { ...record };
+
+  if (nextValue.trim().length === 0) {
+    delete nextRecord[key];
+    return nextRecord;
+  }
+
+  nextRecord[key] = Number(nextValue);
+  return nextRecord;
+}
+
+function updateSelectionItems(
+  items: unknown[],
+  index: number,
+  updater: (record: Record<string, unknown>) => Record<string, unknown>,
+) {
+  return items.map((item, itemIndex) =>
+    itemIndex === index ? updater(normalizeSelectionForEdit(item, `Selection ${index + 1}`)) : item,
+  );
+}
+
+function getSelectionMetadata(record: Record<string, unknown>) {
+  const metadata: string[] = [];
+  const sourcePurchaseId = getOptionalNumber(record.sourcePurchaseId);
+  const value = getOptionalNumber(record.value);
+  const purchaseType = getOptionalNumber(record.purchaseType);
+
+  if (sourcePurchaseId !== null) {
+    metadata.push(`Source #${sourcePurchaseId}`);
+  }
+
+  if (value !== null) {
+    metadata.push(`${value > 0 ? '+' : ''}${formatNumericValue(value)} value`);
+  }
+
+  if (purchaseType === 0) {
+    metadata.push('Perk');
+  } else if (purchaseType === 1) {
+    metadata.push('Item');
+  }
+
+  if (record.unresolved === true) {
+    metadata.push('Unresolved import');
+  }
+
+  return metadata;
 }
 
 function getOriginTokens(origins: Record<string, unknown>): SummaryToken[] {
@@ -222,11 +337,140 @@ function SummarySection(props: {
   );
 }
 
+function SelectionEditorSection(props: SelectionEditorSectionProps) {
+  return (
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <div className="stack stack--compact">
+          <h4>{props.title}</h4>
+          <p className="editor-section__copy">{props.description}</p>
+        </div>
+        <span className="pill">{props.items.length}</span>
+      </div>
+
+      {props.items.length === 0 ? (
+        <p className="editor-section__empty">{props.emptyMessage}</p>
+      ) : (
+        <div className="selection-editor-list">
+          {props.items.map((item, index) => {
+            const fallbackTitle = `${props.title.slice(0, -1) || props.title} ${index + 1}`;
+            const record = normalizeSelectionForEdit(item, fallbackTitle);
+            const metadata = getSelectionMetadata(record);
+
+            return (
+              <div className="selection-editor" key={`${props.title}-${index}-${getSelectionToken(item).label}`}>
+                <div className="selection-editor__header">
+                  <div className="stack stack--compact">
+                    <strong>{getSelectionTitleValue(record, fallbackTitle)}</strong>
+                    {metadata.length > 0 ? (
+                      <div className="inline-meta">
+                        {metadata.map((entry) => (
+                          <span className="pill" key={`${props.title}-${index}-${entry}`}>
+                            {entry}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => props.onChange(props.items.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Title</span>
+                    <input
+                      value={getSelectionTitleValue(record, fallbackTitle)}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateSelectionItems(props.items, index, (current) =>
+                            setSelectionTitleValue(current, event.target.value),
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Tags</span>
+                    <input
+                      value={getSelectionTagList(record).join(', ')}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateSelectionItems(props.items, index, (current) => ({
+                            ...current,
+                            tags: event.target.value
+                              .split(',')
+                              .map((entry) => entry.trim())
+                              .filter((entry) => entry.length > 0),
+                          })),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Value</span>
+                    <input
+                      type="number"
+                      value={getOptionalNumber(record.value) ?? ''}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateSelectionItems(props.items, index, (current) =>
+                            setOptionalNumericField(current, 'value', event.target.value),
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>Description</span>
+                  <textarea
+                    rows={4}
+                    value={getSelectionDescriptionValue(record)}
+                    onChange={(event) =>
+                      props.onChange(
+                        updateSelectionItems(props.items, index, (current) => ({
+                          ...current,
+                          description: event.target.value,
+                        })),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="actions">
+        <button className="button button--secondary" type="button" onClick={() => props.onChange([...props.items, props.createItem()])}>
+          {props.addLabel}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function ParticipationPage() {
   const { jumpId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const jump = workspace.jumps.find((entry) => entry.id === jumpId) ?? null;
+  const focusedJumperId = searchParams.get('jumper');
+  const visibleJumpers =
+    focusedJumperId && workspace.jumpers.some((jumper) => jumper.id === focusedJumperId)
+      ? workspace.jumpers.filter((jumper) => jumper.id === focusedJumperId)
+      : workspace.jumpers;
 
   async function ensureParticipation(jumperId: string) {
     if (!workspace.activeBranch || !jump) {
@@ -299,6 +543,13 @@ export function ParticipationPage() {
         title="Participation"
         description="Per-jumper, per-jump editing for perks, items, drawbacks, currencies, narratives, and preserved imported blocks."
         badge={jump.title}
+        actions={
+          focusedJumperId && workspace.jumpers.length > 1 ? (
+            <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
+              Show All Jumpers
+            </button>
+          ) : undefined
+        }
       />
 
       <StatusNoticeBanner notice={notice} />
@@ -309,7 +560,7 @@ export function ParticipationPage() {
           body="Add a jumper before editing participation for this jump."
         />
       ) : (
-        workspace.jumpers.map((jumper) => {
+        visibleJumpers.map((jumper) => {
           const participation = workspace.participations.find(
             (entry) => entry.jumpId === jump.id && entry.jumperId === jumper.id,
           );
@@ -464,35 +715,115 @@ export function ParticipationPage() {
                     </div>
 
                     <div className="editor-section-list">
-                      <SummarySection
+                      <SelectionEditorSection
                         title="Perks"
                         description={purchaseGuidance ?? 'Imported and manual perk purchases are grouped here.'}
-                        items={purchaseGroups?.perks ?? []}
+                        items={participation.purchases.filter(
+                          (purchase) =>
+                            (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+                        )}
                         emptyMessage="No perk purchases are recorded for this jumper in the current jump."
+                        addLabel="Add Perk"
+                        createItem={() => createBlankSelection('New Perk', { purchaseType: 0, selectionKind: 'purchase' })}
+                        onChange={(nextItems) =>
+                          void saveParticipation(participation.id, (current) => ({
+                            ...current,
+                            purchases: [
+                              ...nextItems,
+                              ...current.purchases.filter(
+                                (purchase) =>
+                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) !== 0,
+                              ),
+                            ],
+                          }))
+                        }
                       />
-                      <SummarySection
+                      <SelectionEditorSection
                         title="Items"
                         description="Imported item purchases are grouped separately so physical acquisitions are easier to scan."
-                        items={purchaseGroups?.items ?? []}
+                        items={participation.purchases.filter(
+                          (purchase) =>
+                            (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
+                        )}
                         emptyMessage="No item purchases are recorded for this jumper in the current jump."
+                        addLabel="Add Item"
+                        createItem={() => createBlankSelection('New Item', { purchaseType: 1, selectionKind: 'purchase' })}
+                        onChange={(nextItems) =>
+                          void saveParticipation(participation.id, (current) => ({
+                            ...current,
+                            purchases: [
+                              ...current.purchases.filter(
+                                (purchase) =>
+                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+                              ),
+                              ...nextItems,
+                              ...current.purchases.filter((purchase) => {
+                                const purchaseType =
+                                  getOptionalNumber(asRecord(purchase).purchaseType) ??
+                                  getOptionalNumber(asRecord(purchase)._type);
+
+                                return purchaseType !== 0 && purchaseType !== 1;
+                              }),
+                            ],
+                          }))
+                        }
                       />
-                      <SummarySection
+                      <SelectionEditorSection
                         title="Other purchases"
                         description="Unclassified purchases, companion-like selections, and anything without a perk or item type stay here."
-                        items={purchaseGroups?.others ?? []}
+                        items={participation.purchases.filter((purchase) => {
+                          const purchaseType =
+                            getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type);
+
+                          return purchaseType !== 0 && purchaseType !== 1;
+                        })}
                         emptyMessage="No uncategorized purchases are recorded for this participation."
+                        addLabel="Add Other Purchase"
+                        createItem={() => createBlankSelection('New Purchase', { selectionKind: 'purchase' })}
+                        onChange={(nextItems) =>
+                          void saveParticipation(participation.id, (current) => ({
+                            ...current,
+                            purchases: [
+                              ...current.purchases.filter(
+                                (purchase) =>
+                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 0,
+                              ),
+                              ...current.purchases.filter(
+                                (purchase) =>
+                                  (getOptionalNumber(asRecord(purchase).purchaseType) ?? getOptionalNumber(asRecord(purchase)._type)) === 1,
+                              ),
+                              ...nextItems,
+                            ],
+                          }))
+                        }
                       />
-                      <SummarySection
+                      <SelectionEditorSection
                         title="Drawbacks"
                         description="Active drawbacks attached to this jumper for this jump."
-                        items={participation.drawbacks.map(getSelectionToken)}
+                        items={participation.drawbacks}
                         emptyMessage="No drawbacks recorded for this jumper in the current jump."
+                        addLabel="Add Drawback"
+                        createItem={() => createBlankSelection('New Drawback', { selectionKind: 'drawback' })}
+                        onChange={(nextItems) =>
+                          void saveParticipation(participation.id, (current) => ({
+                            ...current,
+                            drawbacks: nextItems,
+                          }))
+                        }
                       />
-                      <SummarySection
+                      <SelectionEditorSection
                         title="Retained drawbacks"
                         description="Carry-forward drawback selections that remain relevant past their original jump."
-                        items={participation.retainedDrawbacks.map(getSelectionToken)}
+                        items={participation.retainedDrawbacks}
                         emptyMessage="No retained drawbacks recorded."
+                        addLabel="Add Retained Drawback"
+                        createItem={() => createBlankSelection('New Retained Drawback', { selectionKind: 'retained-drawback' })}
+                        onChange={(nextItems) =>
+                          void saveParticipation(participation.id, (current) => ({
+                            ...current,
+                            retainedDrawbacks: nextItems,
+                          }))
+                        }
                       />
                       <SummarySection
                         title="Origins and backgrounds"
