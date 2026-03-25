@@ -53,3 +53,11 @@ export class JumpchainDatabase extends Dexie {
 }
 
 export const db = new JumpchainDatabase();
+
+export async function ensureDatabaseOpen() {
+  if (db.isOpen()) {
+    return;
+  }
+
+  await db.open();
+}

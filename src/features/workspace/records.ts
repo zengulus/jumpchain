@@ -1,5 +1,5 @@
 import type { Table } from 'dexie';
-import { db } from '../../db/database';
+import { db, ensureDatabaseOpen } from '../../db/database';
 import type { JsonMap } from '../../domain/common';
 import type { BodymodProfile } from '../../domain/bodymod/types';
 import type { Chain } from '../../domain/chain/types';
@@ -20,10 +20,12 @@ export function createJsonText(value: unknown) {
 }
 
 export async function touchChain(chainId: string, updatedAt = createTimestamp()) {
+  await ensureDatabaseOpen();
   await db.chains.update(chainId, { updatedAt });
 }
 
 export async function saveChainEntity(chain: Chain) {
+  await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
   await db.chains.put({
     ...chain,
@@ -35,6 +37,7 @@ export async function saveChainRecord<T extends { id: string; chainId: string; u
   table: Table<T, string>,
   record: T,
 ) {
+  await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
 
   await table.put({
@@ -50,6 +53,7 @@ export async function deleteChainRecord<T extends { chainId: string }>(
   recordId: string,
   chainId: string,
 ) {
+  await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
   await table.delete(recordId);
   await touchChain(chainId, updatedAt);
@@ -149,6 +153,7 @@ export async function syncJumpParticipantMembership(
   jumperId: string,
   include: boolean,
 ) {
+  await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
   const participantJumperIds = include
     ? Array.from(new Set([...jump.participantJumperIds, jumperId]))

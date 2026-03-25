@@ -16,7 +16,7 @@ import { buildBranchWorkspace, getCurrentJump, type BranchWorkspace } from '../d
 import { validateNativeChainBundle, validateNativeSaveEnvelope } from '../schemas';
 import { createId } from '../utils/id';
 import { migrateNativeSaveEnvelope } from '../migrations';
-import { db } from './database';
+import { db, ensureDatabaseOpen } from './database';
 
 export interface ChainOverview {
   chainId: string;
@@ -503,6 +503,7 @@ function cloneBranchBundleToExistingChain(
 }
 
 async function writeBundle(bundle: NativeChainBundle) {
+  await ensureDatabaseOpen();
   const validatedBundle = validateNativeChainBundle(bundle);
   const tables = [
     db.chains,
@@ -546,6 +547,7 @@ async function writeBundle(bundle: NativeChainBundle) {
 }
 
 export async function createBlankChain(title: string): Promise<NativeChainBundle> {
+  await ensureDatabaseOpen();
   const now = new Date().toISOString();
   const chainId = createId('chain');
   const branchId = createId('branch');
@@ -611,6 +613,7 @@ export async function saveImportedChainBundle(
   bundle: NativeChainBundle,
   options: SaveImportedChainBundleOptions = {},
 ): Promise<NativeChainBundle> {
+  await ensureDatabaseOpen();
   const importMode = options.importMode ?? 'new-chain';
   const now = new Date().toISOString();
 
@@ -766,6 +769,7 @@ export async function saveImportedChainBundle(
 }
 
 export async function getChainBundle(chainId: string): Promise<NativeChainBundle | undefined> {
+  await ensureDatabaseOpen();
   const chain = await db.chains.get(chainId);
 
   if (!chain) {
@@ -824,6 +828,7 @@ export async function getChainBundle(chainId: string): Promise<NativeChainBundle
 }
 
 export async function getBranchWorkspace(chainId: string, activeBranchId: string): Promise<BranchWorkspace | undefined> {
+  await ensureDatabaseOpen();
   const bundle = await getChainBundle(chainId);
 
   if (!bundle) {
@@ -834,6 +839,7 @@ export async function getBranchWorkspace(chainId: string, activeBranchId: string
 }
 
 export async function getBranchBundle(chainId: string, branchId: string): Promise<NativeChainBundle | undefined> {
+  await ensureDatabaseOpen();
   const bundle = await getChainBundle(chainId);
 
   if (!bundle) {
@@ -870,6 +876,7 @@ export async function getBranchBundle(chainId: string, branchId: string): Promis
 }
 
 export async function listChainOverviews(): Promise<ChainOverview[]> {
+  await ensureDatabaseOpen();
   const chains = await db.chains.orderBy('updatedAt').reverse().toArray();
 
   return Promise.all(
@@ -909,6 +916,7 @@ export function createNativeSaveEnvelope(chains: NativeChainBundle[]): NativeSav
 }
 
 export async function exportNativeSave(chainId?: string): Promise<NativeSaveEnvelope> {
+  await ensureDatabaseOpen();
   if (chainId) {
     const bundle = await getChainBundle(chainId);
 
@@ -925,6 +933,7 @@ export async function exportNativeSave(chainId?: string): Promise<NativeSaveEnve
 }
 
 export async function exportBranchSave(chainId: string, branchId: string): Promise<NativeSaveEnvelope> {
+  await ensureDatabaseOpen();
   const branchBundle = await getBranchBundle(chainId, branchId);
 
   if (!branchBundle) {
@@ -935,6 +944,7 @@ export async function exportBranchSave(chainId: string, branchId: string): Promi
 }
 
 export async function deleteChain(chainId: string): Promise<void> {
+  await ensureDatabaseOpen();
   const chain = await db.chains.get(chainId);
 
   if (!chain) {
@@ -984,6 +994,7 @@ export async function deleteChain(chainId: string): Promise<void> {
 }
 
 export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope> {
+  await ensureDatabaseOpen();
   const migratedEnvelope = migrateNativeSaveEnvelope(raw);
   const importedEnvelope = validateNativeSaveEnvelope({
     ...migratedEnvelope,
@@ -998,6 +1009,7 @@ export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope
 }
 
 export async function switchActiveBranch(chainId: string, branchId: string): Promise<void> {
+  await ensureDatabaseOpen();
   const bundle = await getChainBundle(chainId);
 
   if (!bundle) {
@@ -1029,6 +1041,7 @@ export async function switchActiveBranch(chainId: string, branchId: string): Pro
 }
 
 export async function switchActiveJump(chainId: string, jumpId: string | null): Promise<void> {
+  await ensureDatabaseOpen();
   await db.chains.update(chainId, {
     activeJumpId: jumpId,
     updatedAt: new Date().toISOString(),
@@ -1041,6 +1054,7 @@ export async function createBranchFromJump(
   jumpId: string,
   title: string,
 ): Promise<Branch> {
+  await ensureDatabaseOpen();
   const bundle = await getBranchBundle(chainId, sourceBranchId);
   const fullBundle = await getChainBundle(chainId);
 
@@ -1113,6 +1127,7 @@ export async function createSnapshotForBranch(
   title: string,
   description: string,
 ): Promise<Snapshot> {
+  await ensureDatabaseOpen();
   const branchBundle = await getBranchBundle(chainId, branchId);
 
   if (!branchBundle) {
@@ -1153,6 +1168,7 @@ export async function restoreSnapshotAsBranch(
   snapshotId: string,
   title?: string,
 ): Promise<Branch> {
+  await ensureDatabaseOpen();
   const [chain, snapshot, bundle] = await Promise.all([
     db.chains.get(chainId),
     db.snapshots.get(snapshotId),

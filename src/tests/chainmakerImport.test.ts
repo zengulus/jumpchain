@@ -202,7 +202,7 @@ describe('ChainMaker v2 import foundation', () => {
     expect(detection.sourceVersion).toBe('2.0');
     expect(detection.isSupported).toBe(true);
     expect(session.normalized.summary).toEqual({
-      chainName: 'Erica & Ashlyn',
+      chainName: 'Erica and Ashlyn',
       jumperCount: 4,
       jumpCount: 4,
       chainDrawbackCount: 1,

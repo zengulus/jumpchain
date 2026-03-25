@@ -59,8 +59,22 @@ export function condenseStrayLineBreaks(text: string) {
       continue;
     }
 
-    if (!isInlineWhitespace(nextText[nextText.length - 1]) && !isInlineWhitespace(nextCharacter)) {
+    const previousOutputCharacter = nextText[nextText.length - 1];
+
+    if (isInlineWhitespace(previousOutputCharacter)) {
+      while (isInlineWhitespace(normalizedText[index + 1])) {
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (!isInlineWhitespace(nextCharacter)) {
       nextText += ' ';
+    }
+
+    while (isInlineWhitespace(normalizedText[index + 1])) {
+      index += 1;
     }
   }
 
