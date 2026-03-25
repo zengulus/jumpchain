@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { NativeChainBundle, NativeSaveEnvelope } from '../domain/save';
 import { AttachmentRefSchema, BodymodProfileSchema, BranchSchema, ChainSchema, CompanionSchema, EffectSchema, HouseRuleProfileSchema, JumpRulesContextSchema, JumperParticipationSchema, JumperSchema, JumpSchema, NoteSchema, PresetProfileSchema, SnapshotSchema } from './entities';
 import { ImportReportSchema } from './import';
 
@@ -20,11 +21,24 @@ export const NativeChainBundleSchema = z.object({
   importReports: z.array(ImportReportSchema),
 });
 
-export const NativeSaveEnvelopeSchema = z.object({
+export const NativeSaveEnvelopeHeaderSchema = z.object({
   formatVersion: z.string().min(1),
   schemaVersion: z.number().int().positive(),
+});
+
+export const NativeSaveEnvelopeSchema = z.object({
+  formatVersion: NativeSaveEnvelopeHeaderSchema.shape.formatVersion,
+  schemaVersion: NativeSaveEnvelopeHeaderSchema.shape.schemaVersion,
   exportedAt: z.string().datetime(),
   appVersion: z.string().min(1),
   chains: z.array(NativeChainBundleSchema),
   metadata: z.record(z.string(), z.unknown()),
 });
+
+export function validateNativeChainBundle(bundle: unknown): NativeChainBundle {
+  return NativeChainBundleSchema.parse(bundle);
+}
+
+export function validateNativeSaveEnvelope(envelope: unknown): NativeSaveEnvelope {
+  return NativeSaveEnvelopeSchema.parse(envelope);
+}
