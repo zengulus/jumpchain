@@ -29,6 +29,7 @@ import {
   saveChainRecord,
 } from '../features/workspace/records';
 import { validateNativeChainBundle } from '../schemas';
+import { createDefaultPersonalRealityState } from '../features/personal-reality/model';
 
 async function resetDatabase() {
   db.close();
@@ -226,6 +227,39 @@ describe('native persistence and round-trip safety', () => {
           effect.scopeType === 'chain',
       ),
     ).toBe(true);
+  });
+
+  it('persists Personal Reality supplement state inside chain metadata across reload', async () => {
+    await resetDatabase();
+    const createdBundle = await createBlankChain('Personal Reality Reload');
+    const personalRealityState = createDefaultPersonalRealityState();
+    personalRealityState.coreModeId = 'upfront';
+    personalRealityState.discountedGroupIds = ['medical-suite'];
+    personalRealityState.notes = 'Warehouse village build with a medical core.';
+    personalRealityState.selections['medical-bay'] = {
+      units: 1,
+      cpUnits: 0,
+      variantId: '',
+      limitationStatus: 'active',
+    };
+
+    await saveChainEntity({
+      ...createdBundle.chain,
+      importSourceMetadata: {
+        ...createdBundle.chain.importSourceMetadata,
+        personalReality: personalRealityState,
+      },
+    });
+
+    const reloadedBundle = await getChainBundle(createdBundle.chain.id);
+    const reloadedPersonalReality = reloadedBundle?.chain.importSourceMetadata.personalReality as
+      | { coreModeId?: string; notes?: string; discountedGroupIds?: string[]; selections?: Record<string, { units?: number }> }
+      | undefined;
+
+    expect(reloadedPersonalReality?.coreModeId).toBe('upfront');
+    expect(reloadedPersonalReality?.notes).toContain('medical core');
+    expect(reloadedPersonalReality?.discountedGroupIds?.[0]).toBe('medical-suite');
+    expect(reloadedPersonalReality?.selections?.['medical-bay']?.units).toBe(1);
   });
 
   it('deletes a chain and cascades its chain-owned records out of IndexedDB', async () => {

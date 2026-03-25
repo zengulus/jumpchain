@@ -221,6 +221,9 @@ export function ChainOverviewPage() {
           <Link className="button button--secondary" to={`/chains/${chainId}/bodymod`}>
             Iconic
           </Link>
+          <Link className="button button--secondary" to={`/chains/${chainId}/personal-reality`}>
+            Personal Reality
+          </Link>
           <Link className="button button--secondary" to={`/chains/${chainId}/notes`}>
             Notes
           </Link>

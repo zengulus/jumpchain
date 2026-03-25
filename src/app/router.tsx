@@ -15,6 +15,7 @@ import { BodymodPage } from '../features/bodymod/BodymodPage';
 import { TimelinePage } from '../features/timeline/TimelinePage';
 import { NotesPage } from '../features/notes/NotesPage';
 import { ChainWorkspaceLayout } from '../features/workspace/ChainWorkspaceLayout';
+import { PersonalRealityPage } from '../features/personal-reality/PersonalRealityPage';
 
 export const appRouter = createHashRouter([
   {
@@ -76,6 +77,10 @@ export const appRouter = createHashRouter([
           {
             path: 'bodymod',
             element: <BodymodPage />,
+          },
+          {
+            path: 'personal-reality',
+            element: <PersonalRealityPage />,
           },
           {
             path: 'timeline',

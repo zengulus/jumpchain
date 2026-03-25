@@ -27,6 +27,7 @@ type ModuleKey =
   | 'chainwide-rules'
   | 'current-jump-rules'
   | 'bodymod'
+  | 'personal-reality'
   | 'timeline'
   | 'notes'
   | 'backups';
@@ -68,6 +69,10 @@ function getActiveModuleKey(pathname: string): ModuleKey {
 
   if (pathname.includes('/bodymod')) {
     return 'bodymod';
+  }
+
+  if (pathname.includes('/personal-reality')) {
+    return 'personal-reality';
   }
 
   if (pathname.includes('/timeline')) {
@@ -190,6 +195,8 @@ export function ChainWorkspaceLayout() {
         return `/chains/${resolvedChainId}/current-jump-rules`;
       case 'bodymod':
         return `/chains/${resolvedChainId}/bodymod${buildSearch(selectedJumperId)}`;
+      case 'personal-reality':
+        return `/chains/${resolvedChainId}/personal-reality`;
       case 'timeline':
         return `/chains/${resolvedChainId}/timeline`;
       case 'notes':
@@ -308,6 +315,11 @@ export function ChainWorkspaceLayout() {
           key: 'bodymod',
           label: 'Iconic',
           to: getModulePath('bodymod'),
+        },
+        {
+          key: 'personal-reality',
+          label: 'Personal Reality',
+          to: getModulePath('personal-reality'),
         },
       ],
     },

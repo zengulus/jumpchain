@@ -468,6 +468,12 @@ button {
   color: #ffd8a8;
 }
 
+.pill--soft {
+  background: rgba(159, 196, 220, 0.08);
+  border-color: rgba(159, 196, 220, 0.18);
+  color: var(--color-text);
+}
+
 .status {
   padding: 0.9rem 1rem;
   border-radius: 0.85rem;
@@ -984,6 +990,51 @@ button {
 .selection-list__item span {
   color: var(--color-text-muted);
   font-size: 0.94rem;
+}
+
+.checkbox-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+.personal-reality-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+}
+
+.personal-reality-sidebar {
+  position: sticky;
+  top: 6.9rem;
+  align-self: start;
+  max-height: calc(100vh - 8rem);
+  overflow: auto;
+}
+
+.personal-reality-main {
+  min-width: 0;
+}
+
+.personal-reality-option-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.personal-reality-option.is-selected {
+  border-color: rgba(105, 210, 180, 0.28);
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.38);
 }
 
 .chip-grid {
@@ -1666,8 +1717,14 @@ span {
   }
 
   .workspace-sidebar,
-  .workspace-two-column > aside.card {
+  .workspace-two-column > aside.card,
+  .personal-reality-sidebar {
     position: static;
+  }
+
+  .personal-reality-layout,
+  .personal-reality-option-grid {
+    grid-template-columns: 1fr;
   }
 
   .workspace-hero__stats {
