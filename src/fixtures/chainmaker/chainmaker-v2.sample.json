@@ -1,0 +1,266 @@
+{
+  "purchases": {},
+  "characters": {
+    "0": {
+      "_id": 0,
+      "name": "Jumper",
+      "gender": "Mysterious",
+      "originalAge": 22,
+      "personality": {
+        "personality": "",
+        "motivation": "",
+        "likes": "",
+        "dislikes": "",
+        "quirks": ""
+      },
+      "background": {
+        "summary": "Typical Universe Denizen",
+        "description": ""
+      },
+      "notes": "",
+      "_primary": true,
+      "originalForm": 0,
+      "perkCount": 0,
+      "itemCount": 0
+    }
+  },
+  "jumps": {
+    "0": {
+      "name": "[untitled jump]",
+      "characters": [0],
+      "duration": {
+        "days": 0,
+        "months": 0,
+        "years": 10
+      },
+      "_id": 0,
+      "notes": {
+        "0": ""
+      },
+      "bankDeposits": {
+        "0": 0
+      },
+      "currencyExchanges": {
+        "0": []
+      },
+      "supplementPurchases": {
+        "0": {}
+      },
+      "supplementInvestments": {
+        "0": {}
+      },
+      "useSupplements": true,
+      "originCategories": {
+        "0": {
+          "name": "Age",
+          "singleLine": true,
+          "default": "25"
+        },
+        "1": {
+          "name": "Gender",
+          "singleLine": true,
+          "default": "Unknown"
+        },
+        "2": {
+          "name": "Location",
+          "singleLine": false,
+          "default": "Unknown"
+        },
+        "3": {
+          "name": "Origin",
+          "singleLine": false,
+          "default": "Drop-In"
+        }
+      },
+      "originCategoryList": [0, 1, 2, 3],
+      "currencies": {
+        "0": {
+          "name": "Choice Points",
+          "abbrev": "CP",
+          "budget": 1000,
+          "essential": true
+        }
+      },
+      "purchaseSubtypes": {
+        "0": {
+          "name": "Perk",
+          "stipend": 0,
+          "currency": 0,
+          "type": 0,
+          "essential": true
+        },
+        "1": {
+          "name": "Item",
+          "stipend": 0,
+          "currency": 0,
+          "type": 1,
+          "essential": true
+        },
+        "2": {
+          "name": "Companion Import",
+          "stipend": 0,
+          "currency": 0,
+          "type": 2,
+          "essential": true
+        },
+        "10": {
+          "name": "Power",
+          "stipend": 0,
+          "currency": 0,
+          "type": 0,
+          "essential": false
+        }
+      },
+      "subsystemSummaries": {
+        "0": {}
+      },
+      "purchases": {
+        "0": []
+      },
+      "retainedDrawbacks": {
+        "0": []
+      },
+      "drawbacks": {
+        "0": []
+      },
+      "drawbackOverrides": {
+        "0": {}
+      },
+      "origins": {
+        "0": {
+          "0": {
+            "cost": 0,
+            "summary": "25",
+            "description": ""
+          },
+          "1": {
+            "cost": 0,
+            "summary": "Unknown",
+            "description": ""
+          },
+          "2": {
+            "cost": 0,
+            "summary": "Unknown",
+            "description": ""
+          },
+          "3": {
+            "cost": 0,
+            "summary": "Drop-In",
+            "description": ""
+          }
+        }
+      },
+      "altForms": {
+        "0": []
+      },
+      "useAltForms": true,
+      "narratives": {
+        "0": {
+          "accomplishments": "",
+          "challenges": "",
+          "goals": ""
+        }
+      },
+      "useNarratives": true,
+      "budgets": {
+        "0": {
+          "0": 1000
+        }
+      },
+      "stipends": {
+        "0": {
+          "0": {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "10": 0
+          }
+        }
+      }
+    }
+  },
+  "altforms": {
+    "0": {
+      "characterId": 0,
+      "_id": 0,
+      "imageUploaded": false,
+      "height": {
+        "value": 74.02,
+        "unit": 0
+      },
+      "weight": {
+        "value": 154.69,
+        "unit": 0
+      },
+      "sex": "",
+      "name": "",
+      "species": "",
+      "physicalDescription": "",
+      "capabilities": ""
+    }
+  },
+  "chainDrawbacks": [],
+  "purchaseGroups": {
+    "0": {}
+  },
+  "supplements": {},
+  "notesList": [],
+  "notes": {},
+  "manager": {
+    "updates": []
+  },
+  "current": true,
+  "purchaseCategories": {
+    "0": {
+      "0": "Physical",
+      "1": "Mental",
+      "2": "Social",
+      "3": "Magical",
+      "4": "Spiritual",
+      "5": "Skill",
+      "6": "Crafting",
+      "7": "Technological",
+      "8": "Luck",
+      "9": "Other",
+      "10": "Meta"
+    },
+    "1": {
+      "0": "Weapons",
+      "1": "Apparel",
+      "2": "Equipment",
+      "3": "Materials",
+      "4": "Food & Drugs",
+      "5": "Media",
+      "6": "Wealth",
+      "7": "Vehicles",
+      "8": "Tools",
+      "9": "Locales",
+      "10": "Creatures",
+      "11": "Businesses & Contacts",
+      "12": "Other"
+    },
+    "2": {},
+    "3": {},
+    "4": {},
+    "5": {},
+    "6": {},
+    "7": {},
+    "8": {}
+  },
+  "jumpList": [0],
+  "characterList": [0],
+  "name": "[untitled chain]",
+  "versionNumber": "2.0",
+  "chainSettings": {
+    "chainDrawbacksForCompanions": false,
+    "chainDrawbacksSupplements": true,
+    "narratives": "enabled",
+    "altForms": true
+  },
+  "bankSettings": {
+    "enabled": false,
+    "maxDeposit": 200,
+    "depositRatio": 50,
+    "interestRate": 0
+  }
+}

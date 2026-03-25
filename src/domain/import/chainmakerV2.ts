@@ -1,0 +1,610 @@
+import { CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION } from '../../app/config';
+import type { BodymodProfile } from '../bodymod/types';
+import type { Branch } from '../branch/types';
+import type { Chain } from '../chain/types';
+import type { Effect } from '../effects/types';
+import type { NativeChainBundle } from '../save';
+import type { Jumper } from '../jumper/types';
+import type { Jump, JumperParticipation } from '../jump/types';
+import type {
+  ChainMakerV2Altform,
+  ChainMakerV2Source,
+  ImportReport,
+  NormalizedEffectImport,
+  NormalizedImportModel,
+  NormalizedJumperImport,
+  NormalizedJumpImport,
+  NormalizedParticipationImport,
+  PreparedImportSession,
+} from './types';
+import { ChainMakerV2SourceSchema } from '../../schemas';
+import { createId } from '../../utils/id';
+import { detectImportSource } from './sourceDetection';
+
+const TOP_LEVEL_MAPPED_KEYS = new Set([
+  'name',
+  'versionNumber',
+  'characters',
+  'jumps',
+  'altforms',
+  'chainDrawbacks',
+  'chainSettings',
+  'bankSettings',
+  'characterList',
+  'jumpList',
+]);
+
+const JUMP_MAPPED_KEYS = new Set([
+  '_id',
+  'name',
+  'characters',
+  'duration',
+  'notes',
+  'bankDeposits',
+  'currencyExchanges',
+  'supplementPurchases',
+  'supplementInvestments',
+  'purchases',
+  'retainedDrawbacks',
+  'drawbacks',
+  'drawbackOverrides',
+  'origins',
+  'altForms',
+  'narratives',
+  'budgets',
+  'stipends',
+]);
+
+const CHAIN_SETTINGS_MAPPED_KEYS = new Set([
+  'chainDrawbacksForCompanions',
+  'chainDrawbacksSupplements',
+  'narratives',
+  'altForms',
+]);
+
+const BANK_SETTINGS_MAPPED_KEYS = new Set(['enabled', 'maxDeposit', 'depositRatio', 'interestRate']);
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function sortNumericEntries<T>(record: Record<string, T>): Array<[string, T]> {
+  return Object.entries(record).sort((left, right) => Number(left[0]) - Number(right[0]));
+}
+
+function getUnmappedFields(record: Record<string, unknown>, mappedKeys: Set<string>) {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !mappedKeys.has(key)));
+}
+
+function getNarrativeDefaults() {
+  return {
+    accomplishments: '',
+    challenges: '',
+    goals: '',
+  };
+}
+
+function makeSummary(chainName: string, jumpers: number, jumps: number, chainDrawbacks: number, altforms: number, participations: number) {
+  return {
+    chainName,
+    jumperCount: jumpers,
+    jumpCount: jumps,
+    chainDrawbackCount: chainDrawbacks,
+    altformCount: altforms,
+    participationCount: participations,
+  };
+}
+
+function normalizeJumpers(source: ChainMakerV2Source): NormalizedJumperImport[] {
+  return sortNumericEntries(source.characters).map(([sourceKey, character]) => {
+    const preserved = getUnmappedFields(character, new Set([
+      '_id',
+      'name',
+      'gender',
+      'originalAge',
+      'personality',
+      'background',
+      'notes',
+      '_primary',
+      'originalForm',
+    ]));
+
+    return {
+      sourceKey,
+      sourceId: character._id,
+      name: character.name,
+      isPrimary: character._primary,
+      gender: character.gender,
+      originalAge: character.originalAge ?? null,
+      notes: character.notes,
+      originalFormSourceId: character.originalForm ?? null,
+      personality: character.personality,
+      background: character.background,
+      importSourceMetadata: preserved,
+    };
+  });
+}
+
+function normalizeJumps(source: ChainMakerV2Source): {
+  jumps: NormalizedJumpImport[];
+  participations: NormalizedParticipationImport[];
+  warnings: PreparedImportSession['normalized']['warnings'];
+  unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'];
+} {
+  const warnings: PreparedImportSession['normalized']['warnings'] = [];
+  const unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'] = [];
+
+  const orderedJumpSourceIds = new Map(source.jumpList.map((jumpId, index) => [jumpId, index]));
+  const jumps: NormalizedJumpImport[] = [];
+  const participations: NormalizedParticipationImport[] = [];
+
+  for (const [sourceKey, jump] of sortNumericEntries(source.jumps)) {
+    const importSourceMetadata = getUnmappedFields(jump, JUMP_MAPPED_KEYS);
+
+    if (Object.keys(importSourceMetadata).length > 0) {
+      unresolvedMappings.push({
+        path: `jumps.${sourceKey}`,
+        reason: 'Jump fields were preserved but are not yet mapped into first-sprint native structures.',
+        severity: 'warning',
+        rawFragment: importSourceMetadata,
+        preservedAt: `jump.importSourceMetadata`,
+      });
+    }
+
+    jumps.push({
+      sourceKey,
+      sourceId: jump._id,
+      title: jump.name,
+      orderIndex: orderedJumpSourceIds.get(jump._id) ?? jumps.length,
+      duration: jump.duration,
+      characterSourceIds: jump.characters,
+      importSourceMetadata,
+    });
+
+    for (const characterId of jump.characters) {
+      const characterKey = String(characterId);
+
+      if (!(characterKey in source.characters)) {
+        warnings.push({
+          code: 'missing_character_reference',
+          message: `Jump "${jump.name}" references character ${characterId}, but no matching character was found.`,
+          path: `jumps.${sourceKey}.characters`,
+          severity: 'warning',
+        });
+        continue;
+      }
+
+      participations.push({
+        sourceJumpId: jump._id,
+        sourceCharacterId: characterId,
+        notes: jump.notes[characterKey] ?? '',
+        purchases: jump.purchases[characterKey] ?? [],
+        drawbacks: jump.drawbacks[characterKey] ?? [],
+        retainedDrawbacks: jump.retainedDrawbacks[characterKey] ?? [],
+        origins: jump.origins[characterKey] ?? {},
+        budgets: jump.budgets[characterKey] ?? {},
+        stipends: jump.stipends[characterKey] ?? {},
+        narratives: jump.narratives[characterKey] ?? getNarrativeDefaults(),
+        altForms: jump.altForms[characterKey] ?? [],
+        bankDeposit: jump.bankDeposits[characterKey] ?? 0,
+        currencyExchanges: jump.currencyExchanges[characterKey] ?? [],
+        supplementPurchases: jump.supplementPurchases[characterKey] ?? {},
+        supplementInvestments: jump.supplementInvestments[characterKey] ?? {},
+        drawbackOverrides: jump.drawbackOverrides[characterKey] ?? {},
+        importSourceMetadata: {
+          useSupplements: jump.useSupplements,
+          useAltForms: jump.useAltForms,
+          useNarratives: jump.useNarratives,
+          originCategories: jump.originCategories,
+          originCategoryList: jump.originCategoryList,
+          currencies: jump.currencies,
+          purchaseSubtypes: jump.purchaseSubtypes,
+          subsystemSummaries: jump.subsystemSummaries,
+        },
+      });
+    }
+  }
+
+  return { jumps, participations, warnings, unresolvedMappings };
+}
+
+function normalizeEffects(source: ChainMakerV2Source): NormalizedEffectImport[] {
+  return source.chainDrawbacks.map((drawback, index) => {
+    const drawbackRecord = Array.isArray(drawback)
+      ? { rawValue: drawback }
+      : Object.keys(asRecord(drawback)).length > 0
+        ? asRecord(drawback)
+        : { rawValue: drawback };
+    const rawTitle = drawbackRecord.name ?? drawbackRecord.title ?? drawbackRecord.summary;
+    const rawDescription = drawbackRecord.description ?? drawbackRecord.details ?? drawbackRecord.notes;
+
+    return {
+      sourceIndex: index,
+      title: typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle : `Chain Drawback ${index + 1}`,
+      description: typeof rawDescription === 'string' ? rawDescription : '',
+      importSourceMetadata: drawbackRecord,
+    };
+  });
+}
+
+function groupAltformsByCharacter(source: ChainMakerV2Source) {
+  const grouped = new Map<number, ChainMakerV2Altform[]>();
+
+  for (const [, altform] of sortNumericEntries(source.altforms)) {
+    const existing = grouped.get(altform.characterId) ?? [];
+    existing.push(altform);
+    grouped.set(altform.characterId, existing);
+  }
+
+  return grouped;
+}
+
+function normalizeBodymodProfiles(source: ChainMakerV2Source) {
+  const groupedAltforms = groupAltformsByCharacter(source);
+
+  return Array.from(groupedAltforms.entries()).map(([characterId, altforms]) => ({
+    mode: 'baseline' as const,
+    summary: `${altforms.length} imported altform${altforms.length === 1 ? '' : 's'}`,
+    forms: altforms.map((altform) => ({
+      sourceAltformId: altform._id,
+      name: altform.name,
+      sex: altform.sex,
+      species: altform.species,
+      physicalDescription: altform.physicalDescription,
+      capabilities: altform.capabilities,
+      imageUploaded: altform.imageUploaded,
+      heightValue: altform.height.value,
+      heightUnit: altform.height.unit,
+      weightValue: altform.weight.value,
+      weightUnit: altform.weight.unit,
+      importSourceMetadata: {
+        characterId: altform.characterId,
+        rawAltform: altform,
+      },
+    })),
+    features: [],
+    importSourceMetadata: {
+      sourceCharacterId: characterId,
+    },
+  }));
+}
+
+export function parseChainMakerV2Source(raw: unknown): ChainMakerV2Source {
+  return ChainMakerV2SourceSchema.parse(raw);
+}
+
+export function normalizeChainMakerV2Source(source: ChainMakerV2Source): NormalizedImportModel {
+  const jumpers = normalizeJumpers(source);
+  const jumpData = normalizeJumps(source);
+  const effects = normalizeEffects(source);
+  const bodymodProfiles = normalizeBodymodProfiles(source);
+  const preservedTopLevel = getUnmappedFields(source, TOP_LEVEL_MAPPED_KEYS);
+  const preservedChainSettings = getUnmappedFields(source.chainSettings, CHAIN_SETTINGS_MAPPED_KEYS);
+  const preservedBankSettings = getUnmappedFields(source.bankSettings, BANK_SETTINGS_MAPPED_KEYS);
+  const chainImportSourceMetadata = {
+    ...preservedTopLevel,
+    ...(Object.keys(preservedChainSettings).length > 0 ? { chainSettingsExtra: preservedChainSettings } : {}),
+    ...(Object.keys(preservedBankSettings).length > 0 ? { bankSettingsExtra: preservedBankSettings } : {}),
+  };
+  const topLevelUnresolvedMappings = Object.entries(preservedTopLevel).map(([key, value]) => ({
+    path: key,
+    reason: 'Top-level source block is preserved for future mapping work.',
+    severity: 'warning' as const,
+    rawFragment: value,
+    preservedAt: `chain.importSourceMetadata.${key}`,
+  }));
+  const settingsUnresolvedMappings = [
+    ...(Object.keys(preservedChainSettings).length > 0
+      ? [
+          {
+            path: 'chainSettings',
+            reason: 'Extra chain settings keys were preserved outside the canonical native settings shape.',
+            severity: 'warning' as const,
+            rawFragment: preservedChainSettings,
+            preservedAt: 'chain.importSourceMetadata.chainSettingsExtra',
+          },
+        ]
+      : []),
+    ...(Object.keys(preservedBankSettings).length > 0
+      ? [
+          {
+            path: 'bankSettings',
+            reason: 'Extra bank settings keys were preserved outside the canonical native settings shape.',
+            severity: 'warning' as const,
+            rawFragment: preservedBankSettings,
+            preservedAt: 'chain.importSourceMetadata.bankSettingsExtra',
+          },
+        ]
+      : []),
+  ];
+
+  return {
+    sourceType: 'chainmaker-v2',
+    sourceVersion: source.versionNumber,
+    chain: {
+      title: source.name,
+      sourceVersion: source.versionNumber,
+      chainSettings: {
+        chainDrawbacksForCompanions: source.chainSettings.chainDrawbacksForCompanions,
+        chainDrawbacksSupplements: source.chainSettings.chainDrawbacksSupplements,
+        narratives: source.chainSettings.narratives,
+        altForms: source.chainSettings.altForms,
+      },
+      bankSettings: {
+        enabled: source.bankSettings.enabled,
+        maxDeposit: source.bankSettings.maxDeposit,
+        depositRatio: source.bankSettings.depositRatio,
+        interestRate: source.bankSettings.interestRate,
+      },
+      importSourceMetadata: chainImportSourceMetadata,
+    },
+    jumpers,
+    companions: [],
+    jumps: jumpData.jumps,
+    participations: jumpData.participations,
+    effects,
+    bodymodProfiles,
+    warnings: jumpData.warnings,
+    unresolvedMappings: [...topLevelUnresolvedMappings, ...settingsUnresolvedMappings, ...jumpData.unresolvedMappings],
+    summary: makeSummary(
+      source.name,
+      jumpers.length,
+      jumpData.jumps.length,
+      effects.length,
+      Object.keys(source.altforms).length,
+      jumpData.participations.length,
+    ),
+    preservedSourceSummary: {
+      topLevelBlocks: Object.keys(chainImportSourceMetadata),
+      jumpCount: Object.keys(source.jumps).length,
+      characterCount: Object.keys(source.characters).length,
+      altformCount: Object.keys(source.altforms).length,
+    },
+  };
+}
+
+export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportModel): NativeChainBundle {
+  const now = new Date().toISOString();
+  const chainId = createId('chain');
+  const branchId = createId('branch');
+  const jumperIdBySourceId = new Map<number, string>();
+  const jumpIdBySourceId = new Map<number, string>();
+
+  const chain: Chain = {
+    id: chainId,
+    createdAt: now,
+    updatedAt: now,
+    title: normalized.chain.title,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    formatVersion: NATIVE_FORMAT_VERSION,
+    activeBranchId: branchId,
+    activeJumpId: null,
+    sourceMetadata: {
+      sourceType: 'chainmaker-v2',
+      sourceVersion: normalized.sourceVersion,
+      importedAt: now,
+      preservedFields: normalized.chain.importSourceMetadata,
+    },
+    chainSettings: normalized.chain.chainSettings,
+    bankSettings: normalized.chain.bankSettings,
+    importSourceMetadata: normalized.chain.importSourceMetadata,
+  };
+
+  const branch: Branch = {
+    id: branchId,
+    chainId,
+    createdAt: now,
+    updatedAt: now,
+    title: 'Imported Mainline',
+    sourceBranchId: null,
+    forkedFromJumpId: null,
+    isActive: true,
+    notes: 'Imported from ChainMaker v2.',
+    sourceMetadata: {
+      sourceType: 'chainmaker-v2',
+      sourceVersion: normalized.sourceVersion,
+      importedAt: now,
+    },
+  };
+
+  const jumpers: Jumper[] = normalized.jumpers.map((jumperImport) => {
+    const jumperId = createId('jumper');
+    jumperIdBySourceId.set(jumperImport.sourceId, jumperId);
+
+    return {
+      id: jumperId,
+      chainId,
+      branchId,
+      createdAt: now,
+      updatedAt: now,
+      name: jumperImport.name,
+      isPrimary: jumperImport.isPrimary,
+      gender: jumperImport.gender,
+      originalAge: jumperImport.originalAge ?? null,
+      notes: jumperImport.notes,
+      originalFormSourceId: jumperImport.originalFormSourceId ?? null,
+      personality: jumperImport.personality,
+      background: jumperImport.background,
+      importSourceMetadata: jumperImport.importSourceMetadata,
+    };
+  });
+
+  const jumps: Jump[] = normalized.jumps
+    .slice()
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((jumpImport, index) => {
+      const jumpId = createId('jump');
+      jumpIdBySourceId.set(jumpImport.sourceId, jumpId);
+
+      return {
+        id: jumpId,
+        chainId,
+        branchId,
+        createdAt: now,
+        updatedAt: now,
+        title: jumpImport.title,
+        orderIndex: index,
+        status: index === normalized.jumps.length - 1 ? 'current' : 'planned',
+        jumpType: 'standard',
+        duration: jumpImport.duration,
+        participantJumperIds: jumpImport.characterSourceIds
+          .map((sourceId) => jumperIdBySourceId.get(sourceId))
+          .filter((value): value is string => Boolean(value)),
+        sourceJumpId: jumpImport.sourceId,
+        importSourceMetadata: jumpImport.importSourceMetadata,
+      };
+    });
+
+  const participations: JumperParticipation[] = normalized.participations.flatMap((participationImport) => {
+    const jumpId = jumpIdBySourceId.get(participationImport.sourceJumpId);
+    const jumperId = jumperIdBySourceId.get(participationImport.sourceCharacterId);
+
+    if (!jumpId || !jumperId) {
+      return [];
+    }
+
+    return [
+      {
+        id: createId('part'),
+        chainId,
+        branchId,
+        createdAt: now,
+        updatedAt: now,
+        jumpId,
+        jumperId,
+        status: 'active',
+        notes: participationImport.notes,
+        purchases: participationImport.purchases,
+        drawbacks: participationImport.drawbacks,
+        retainedDrawbacks: participationImport.retainedDrawbacks,
+        origins: participationImport.origins,
+        budgets: participationImport.budgets,
+        stipends: participationImport.stipends,
+        narratives: participationImport.narratives,
+        altForms: participationImport.altForms,
+        bankDeposit: participationImport.bankDeposit,
+        currencyExchanges: participationImport.currencyExchanges,
+        supplementPurchases: participationImport.supplementPurchases,
+        supplementInvestments: participationImport.supplementInvestments,
+        drawbackOverrides: participationImport.drawbackOverrides,
+        importSourceMetadata: participationImport.importSourceMetadata,
+      },
+    ];
+  });
+
+  const effects: Effect[] = normalized.effects.map((effectImport) => ({
+    id: createId('effect'),
+    chainId,
+    branchId,
+    createdAt: now,
+    updatedAt: now,
+    scopeType: 'chain',
+    ownerEntityType: 'chain',
+    ownerEntityId: chainId,
+    title: effectImport.title,
+    description: effectImport.description,
+    category: 'drawback',
+    state: 'active',
+    sourceEffectId: effectImport.sourceIndex,
+    importSourceMetadata: effectImport.importSourceMetadata,
+  }));
+
+  const bodymodProfiles: BodymodProfile[] = normalized.bodymodProfiles.flatMap((profileImport) => {
+    const sourceCharacterId = profileImport.importSourceMetadata.sourceCharacterId;
+    const jumperId =
+      typeof sourceCharacterId === 'number' ? jumperIdBySourceId.get(sourceCharacterId) : undefined;
+
+    if (!jumperId) {
+      return [];
+    }
+
+    return [
+      {
+        id: createId('bodymod'),
+        chainId,
+        branchId,
+        createdAt: now,
+        updatedAt: now,
+        jumperId,
+        mode: profileImport.mode,
+        summary: profileImport.summary,
+        forms: profileImport.forms,
+        features: profileImport.features,
+        importSourceMetadata: profileImport.importSourceMetadata,
+      },
+    ];
+  });
+
+  const jumpRulesContexts = normalized.jumps.map((jumpImport) => ({
+    id: createId('rules'),
+    chainId,
+    branchId,
+    createdAt: now,
+    updatedAt: now,
+    jumpId: jumpIdBySourceId.get(jumpImport.sourceId) ?? null,
+    gauntlet: false,
+    warehouseAccess: 'manual' as const,
+    powerAccess: 'manual' as const,
+    itemAccess: 'manual' as const,
+    altFormAccess: normalized.chain.chainSettings.altForms ? ('full' as const) : ('locked' as const),
+    supplementAccess:
+      jumpImport.importSourceMetadata.useSupplements === true ? ('full' as const) : ('locked' as const),
+    notes: '',
+    importSourceMetadata: jumpImport.importSourceMetadata,
+  }));
+
+  const importReport: ImportReport = {
+    id: createId('report'),
+    createdAt: now,
+    updatedAt: now,
+    chainId,
+    sourceType: 'chainmaker-v2',
+    sourceVersion: normalized.sourceVersion,
+    importMode: 'new-chain',
+    status: 'draft',
+    summary: normalized.summary,
+    warnings: normalized.warnings,
+    unresolvedMappings: normalized.unresolvedMappings,
+    preservedSourceSummary: normalized.preservedSourceSummary,
+  };
+
+  return {
+    chain,
+    branches: [branch],
+    jumpers,
+    companions: [],
+    jumps,
+    participations,
+    effects,
+    bodymodProfiles,
+    jumpRulesContexts,
+    houseRuleProfiles: [],
+    presetProfiles: [],
+    snapshots: [],
+    notes: [],
+    attachments: [],
+    importReports: [importReport],
+  };
+}
+
+export function prepareChainMakerV2ImportSession(raw: unknown): PreparedImportSession {
+  const detection = detectImportSource(raw);
+
+  if (detection.sourceType !== 'chainmaker-v2' || !detection.isSupported) {
+    throw new Error('The provided payload is not a supported ChainMaker v2 export.');
+  }
+
+  const source = parseChainMakerV2Source(raw);
+  const normalized = normalizeChainMakerV2Source(source);
+  const bundle = mapNormalizedImportToNativeBundle(normalized);
+
+  return {
+    sourceDetection: detection,
+    source,
+    normalized,
+    bundle,
+    importReport: bundle.importReports[0],
+  };
+}

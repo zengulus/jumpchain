@@ -1,0 +1,258 @@
+:root {
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #162127;
+  background:
+    radial-gradient(circle at top right, rgba(255, 214, 153, 0.55), transparent 30%),
+    linear-gradient(180deg, #f8f1e7 0%, #eef3f7 50%, #e5ece9 100%);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.page-shell {
+  min-height: 100vh;
+}
+
+.page-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(22, 33, 39, 0.12);
+  background: rgba(248, 241, 231, 0.9);
+  backdrop-filter: blur(12px);
+}
+
+.page-shell__title {
+  margin: 0;
+  font-size: 1.125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.page-shell__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.page-shell__nav a {
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.page-shell__nav a.active {
+  background: #1c4c58;
+  color: #f8f1e7;
+}
+
+.page-shell__main {
+  width: min(1100px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.stack {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.grid--two {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.card {
+  padding: 1.25rem;
+  border: 1px solid rgba(22, 33, 39, 0.12);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 20px 40px rgba(28, 76, 88, 0.08);
+}
+
+.card h2,
+.card h3,
+.card h4,
+.card p {
+  margin-top: 0;
+}
+
+.hero {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.75rem;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(135deg, rgba(28, 76, 88, 0.92), rgba(117, 80, 38, 0.88)),
+    #1c4c58;
+  color: #f8f1e7;
+}
+
+.hero p {
+  margin: 0;
+  max-width: 60ch;
+  color: rgba(248, 241, 231, 0.88);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.button {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.85rem;
+  background: #1c4c58;
+  color: #f8f1e7;
+}
+
+.button--secondary {
+  background: rgba(28, 76, 88, 0.12);
+  color: #162127;
+}
+
+.button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(22, 33, 39, 0.14);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.meta-list,
+.inline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.metric {
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.85rem;
+  background: rgba(28, 76, 88, 0.08);
+}
+
+.metric strong {
+  display: block;
+  font-size: 1.25rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(117, 80, 38, 0.12);
+}
+
+.status {
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+}
+
+.status--success {
+  background: rgba(52, 125, 85, 0.14);
+}
+
+.status--warning {
+  background: rgba(184, 133, 32, 0.18);
+}
+
+.status--error {
+  background: rgba(171, 65, 65, 0.18);
+}
+
+.list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.entity-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(248, 241, 231, 0.85);
+}
+
+.entity-card h3,
+.entity-card p {
+  margin: 0;
+}
+
+.entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .page-shell__main {
+    width: min(100vw, calc(100vw - 1rem));
+  }
+
+  .page-shell__header {
+    padding: 1rem;
+  }
+}
