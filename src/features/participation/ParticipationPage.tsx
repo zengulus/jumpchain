@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
 import { createBlankParticipation, saveChainRecord } from '../workspace/records';
@@ -232,11 +233,40 @@ function getOriginTokens(origins: Record<string, unknown>): SummaryToken[] {
   });
 }
 
-function getBudgetTokens(budgets: Record<string, number>): SummaryToken[] {
-  return Object.entries(budgets).map(([currencyKey, amount]) => ({
-    label: `Currency ${currencyKey}: ${formatNumericValue(amount)}`,
-    detail: 'Budget',
-  }));
+function getCurrencyDefinitions(value: unknown) {
+  return asRecord(value);
+}
+
+function formatCurrencyLabel(currencyKey: string, definitions: Record<string, unknown>) {
+  const definition = asRecord(definitions[currencyKey]);
+  const name =
+    typeof definition.name === 'string' && definition.name.trim().length > 0 ? definition.name : `Currency ${currencyKey}`;
+  const abbreviation =
+    typeof definition.abbrev === 'string' && definition.abbrev.trim().length > 0 ? definition.abbrev : null;
+
+  return abbreviation ? `${name} (${abbreviation})` : name;
+}
+
+function getBudgetTokens(
+  effectiveBudgets: Record<string, number>,
+  baseBudgets: Record<string, number>,
+  chainDrawbackBudgetGrants: Record<string, number>,
+  currencyDefinitions: Record<string, unknown>,
+): SummaryToken[] {
+  return Object.entries(effectiveBudgets).map(([currencyKey, amount]) => {
+    const baseAmount = baseBudgets[currencyKey] ?? 0;
+    const chainDrawbackGrant = chainDrawbackBudgetGrants[currencyKey] ?? 0;
+    const detailParts = [`${formatNumericValue(baseAmount)} base`];
+
+    if (chainDrawbackGrant !== 0) {
+      detailParts.push(`${chainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(chainDrawbackGrant)} from chain drawbacks`);
+    }
+
+    return {
+      label: `${formatCurrencyLabel(currencyKey, currencyDefinitions)}: ${formatNumericValue(amount)}`,
+      detail: detailParts.join(' - '),
+    };
+  });
 }
 
 function getStipendTokens(stipends: Record<string, Record<string, number>>): SummaryToken[] {
@@ -565,6 +595,8 @@ export function ParticipationPage() {
             (entry) => entry.jumpId === jump.id && entry.jumperId === jumper.id,
           );
           const purchaseGroups = participation ? getPurchaseTokenGroups(participation.purchases) : null;
+          const effectiveBudgetState = participation ? getEffectiveParticipationBudgetState(workspace, participation) : null;
+          const currencyDefinitions = participation ? getCurrencyDefinitions(asRecord(participation.importSourceMetadata).currencies) : {};
           const purchaseGuidance = purchaseGroups
             ? `${formatCountLabel(purchaseGroups.perks.length, 'perk')}, ${formatCountLabel(
                 purchaseGroups.items.length,
@@ -833,8 +865,20 @@ export function ParticipationPage() {
                       />
                       <SummarySection
                         title="Budgets and stipends"
-                        description="Currency budgets and stipend allocations for the current jump."
-                        items={[...getBudgetTokens(participation.budgets), ...getStipendTokens(participation.stipends)]}
+                        description={
+                          effectiveBudgetState && effectiveBudgetState.contributingChainDrawbacks.length > 0
+                            ? 'Currency budgets, stipend allocations, and active chain drawback rewards for this jump.'
+                            : 'Currency budgets and stipend allocations for the current jump.'
+                        }
+                        items={[
+                          ...getBudgetTokens(
+                            effectiveBudgetState?.effectiveBudgets ?? participation.budgets,
+                            effectiveBudgetState?.baseBudgets ?? participation.budgets,
+                            effectiveBudgetState?.chainDrawbackBudgetGrants ?? {},
+                            currencyDefinitions,
+                          ),
+                          ...getStipendTokens(participation.stipends),
+                        ]}
                         emptyMessage="No budgets or stipends are defined for this participation."
                       />
                       <SummarySection

@@ -1,6 +1,12 @@
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
-import { buildBranchWorkspace, getCurrentJump, getEffectiveCurrentJumpState } from '../domain/chain/selectors';
+import {
+  buildBranchWorkspace,
+  getActiveChainDrawbackBudgetContributions,
+  getCurrentJump,
+  getEffectiveCurrentJumpState,
+  getEffectiveParticipationBudgetState,
+} from '../domain/chain/selectors';
 import { createDefaultRulesModuleSettings } from '../domain/rules/customization';
 import { validateNativeChainBundle } from '../schemas';
 
@@ -123,5 +129,94 @@ describe('workspace selectors', () => {
     expect(state.gauntlet).toBe(true);
     expect(state.effectiveAccessModes.warehouseAccess).toBe('limited');
     expect(state.effectiveAccessModes.powerAccess).toBe('locked');
+  });
+
+  it('adds active chain drawback rewards into effective participation budgets', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+    const now = new Date().toISOString();
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-drawback-budget',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Chain Budget Tax',
+          description: '',
+          category: 'drawback',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            value: 300,
+            currency: 0,
+          },
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(getActiveChainDrawbackBudgetContributions(workspace)).toHaveLength(1);
+    expect(budgetState.chainDrawbackBudgetGrants).toEqual({ '0': 300 });
+    expect(budgetState.effectiveBudgets['0']).toBe((baseParticipation.budgets['0'] ?? 0) + 300);
+  });
+
+  it('lets explicit drawback budget grants override imported fallback values', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const now = new Date().toISOString();
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-drawback-budget-override',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Explicit Budget Override',
+          description: '',
+          category: 'drawback',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            value: 900,
+            currency: 0,
+            budgetGrants: {
+              '0': 125,
+              bonus: 40,
+            },
+          },
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const contributions = getActiveChainDrawbackBudgetContributions(workspace);
+
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0]?.budgetGrants).toEqual({
+      '0': 125,
+      bonus: 40,
+    });
   });
 });

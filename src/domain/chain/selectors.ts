@@ -58,6 +58,18 @@ export interface EffectiveCurrentJumpState {
   contributingEffects: Effect[];
 }
 
+export interface ChainDrawbackBudgetContribution {
+  effect: Effect;
+  budgetGrants: Record<string, number>;
+}
+
+export interface EffectiveParticipationBudgetState {
+  baseBudgets: Record<string, number>;
+  chainDrawbackBudgetGrants: Record<string, number>;
+  effectiveBudgets: Record<string, number>;
+  contributingChainDrawbacks: ChainDrawbackBudgetContribution[];
+}
+
 interface RuleEffectOverrides {
   gauntlet?: boolean;
   warehouseAccess?: AccessMode;
@@ -65,6 +77,34 @@ interface RuleEffectOverrides {
   itemAccess?: AccessMode;
   altFormAccess?: AccessMode;
   supplementAccess?: AccessMode;
+}
+
+function parseOptionalFiniteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseExplicitBudgetGrants(metadata: Record<string, unknown>) {
+  const rawBudgetGrants = metadata.budgetGrants;
+
+  if (typeof rawBudgetGrants !== 'object' || rawBudgetGrants === null || Array.isArray(rawBudgetGrants)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(rawBudgetGrants).filter(([, amount]) => typeof amount === 'number' && Number.isFinite(amount)),
+  ) as Record<string, number>;
+}
+
+function sumBudgetRecords(records: Array<Record<string, number>>) {
+  const combined: Record<string, number> = {};
+
+  for (const record of records) {
+    for (const [currencyKey, amount] of Object.entries(record)) {
+      combined[currencyKey] = (combined[currencyKey] ?? 0) + amount;
+    }
+  }
+
+  return combined;
 }
 
 function sortJumps(jumps: Jump[]) {
@@ -149,6 +189,81 @@ function extractRuleEffectOverrides(effect: Effect): RuleEffectOverrides {
   }
 
   return nextOverrides;
+}
+
+export function getChainDrawbackBudgetGrants(effect: Effect): Record<string, number> {
+  if (effect.category !== 'drawback') {
+    return {};
+  }
+
+  const metadata = effect.importSourceMetadata as Record<string, unknown>;
+  const explicitBudgetGrants = parseExplicitBudgetGrants(metadata);
+
+  if (explicitBudgetGrants !== null) {
+    return explicitBudgetGrants;
+  }
+
+  const explicitChoicePointGrant = parseOptionalFiniteNumber(metadata.cpGrant);
+
+  if (explicitChoicePointGrant !== null) {
+    return {
+      '0': explicitChoicePointGrant,
+    };
+  }
+
+  const importedValue = parseOptionalFiniteNumber(metadata.value);
+
+  if (importedValue !== null) {
+    const importedCurrency = parseOptionalFiniteNumber(metadata.currency);
+
+    return {
+      [String(importedCurrency ?? 0)]: importedValue,
+    };
+  }
+
+  return {};
+}
+
+export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorkspace): ChainDrawbackBudgetContribution[] {
+  return workspace.effects
+    .filter(
+      (effect) =>
+        effect.state === 'active' &&
+        effect.category === 'drawback' &&
+        effect.scopeType === 'chain' &&
+        effect.ownerEntityType === 'chain' &&
+        effect.ownerEntityId === workspace.chain.id,
+    )
+    .map((effect) => ({
+      effect,
+      budgetGrants: getChainDrawbackBudgetGrants(effect),
+    }))
+    .filter(({ budgetGrants }) => Object.keys(budgetGrants).length > 0);
+}
+
+export function getEffectiveParticipationBudgetState(
+  workspace: BranchWorkspace,
+  participation: Pick<JumperParticipation, 'budgets'> | null,
+): EffectiveParticipationBudgetState {
+  const baseBudgets = participation?.budgets ?? {};
+  const contributingChainDrawbacks = getActiveChainDrawbackBudgetContributions(workspace);
+  const chainDrawbackBudgetGrants = sumBudgetRecords(
+    contributingChainDrawbacks.map((contribution) => contribution.budgetGrants),
+  );
+  const currencyKeys = new Set([...Object.keys(baseBudgets), ...Object.keys(chainDrawbackBudgetGrants)]);
+  const effectiveBudgets = Object.fromEntries(
+    Array.from(currencyKeys).map((currencyKey) => [
+      currencyKey,
+      (baseBudgets[currencyKey] ?? 0) + (chainDrawbackBudgetGrants[currencyKey] ?? 0),
+    ]),
+  );
+
+  return {
+    baseBudgets,
+    chainDrawbackBudgetGrants,
+    effectiveBudgets,
+    contributingChainDrawbacks,
+  };
 }
 
 export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): EffectiveCurrentJumpState {

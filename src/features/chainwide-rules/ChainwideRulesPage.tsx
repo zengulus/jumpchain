@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getActiveChainDrawbackBudgetContributions, getChainDrawbackBudgetGrants } from '../../domain/chain/selectors';
 import { effectCategories, effectStates } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
@@ -8,6 +9,40 @@ import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNot
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type ChainwideCategoryFilter = 'all' | Effect['category'];
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function formatNumericValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function getSingleBudgetGrant(effect: Effect) {
+  const [currencyKey, amount] = Object.entries(getChainDrawbackBudgetGrants(effect))[0] ?? ['0', 0];
+  return {
+    currencyKey,
+    amount,
+  };
+}
+
+function setEffectBudgetGrant(effect: Effect, currencyKey: string, amount: number) {
+  const metadata: Record<string, unknown> = {
+    ...asRecord(effect.importSourceMetadata),
+    budgetGrants: {
+      [currencyKey]: amount,
+    },
+  };
+
+  delete metadata.cpGrant;
+
+  return {
+    ...effect,
+    importSourceMetadata: metadata,
+  };
+}
 
 function isChainwideEffect(effect: Effect, chainId: string) {
   return effect.scopeType === 'chain' && effect.ownerEntityType === 'chain' && effect.ownerEntityId === chainId;
@@ -25,8 +60,13 @@ export function ChainwideRulesPage() {
     filteredEffects[0] ??
     chainwideEffects[0] ??
     null;
+  const activeBudgetContributions = getActiveChainDrawbackBudgetContributions(workspace);
   const chainwideDrawbackCount = chainwideEffects.filter((effect) => effect.category === 'drawback').length;
   const chainwideRuleCount = chainwideEffects.filter((effect) => effect.category === 'rule').length;
+  const activeChoicePointGrant = activeBudgetContributions.reduce(
+    (total, contribution) => total + (contribution.budgetGrants['0'] ?? 0),
+    0,
+  );
 
   async function updateChainSetting<K extends keyof typeof workspace.chain.chainSettings>(
     key: K,
@@ -202,9 +242,13 @@ export function ChainwideRulesPage() {
               <strong>{chainwideEffects.length}</strong>
               Total entries
             </span>
+            <span className="metric">
+              <strong>{activeChoicePointGrant > 0 ? `+${formatNumericValue(activeChoicePointGrant)}` : formatNumericValue(activeChoicePointGrant)}</strong>
+              Jump CP grant
+            </span>
           </div>
 
-          <p>Active chain-owned rule effects contribute to jump rules automatically. Chain drawbacks stay visible here as dedicated chain records.</p>
+          <p>Active chain-owned rule effects contribute to jump rules automatically. Active chain drawbacks can also feed jump budgets.</p>
         </article>
       </section>
 
@@ -347,6 +391,46 @@ export function ChainwideRulesPage() {
                     />
                   </label>
                 </section>
+
+                {selectedEffect.category === 'drawback' ? (
+                  <section className="stack stack--compact">
+                    <h4>Jump budget</h4>
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Grant amount</span>
+                        <input
+                          type="number"
+                          value={getSingleBudgetGrant(selectedEffect).amount}
+                          onChange={(event) =>
+                            void saveSelectedEffect(
+                              setEffectBudgetGrant(
+                                selectedEffect,
+                                getSingleBudgetGrant(selectedEffect).currencyKey,
+                                event.target.value.trim().length > 0 ? Number(event.target.value) : 0,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Currency key</span>
+                        <input
+                          value={getSingleBudgetGrant(selectedEffect).currencyKey}
+                          onChange={(event) =>
+                            void saveSelectedEffect(
+                              setEffectBudgetGrant(
+                                selectedEffect,
+                                event.target.value.trim().length > 0 ? event.target.value.trim() : '0',
+                                getSingleBudgetGrant(selectedEffect).amount,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                    <small className="field-hint">Applied to each jump participation budget while this drawback is active.</small>
+                  </section>
+                ) : null}
 
                 <section className="stack stack--compact">
                   <h4>Advanced</h4>
