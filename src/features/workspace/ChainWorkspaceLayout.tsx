@@ -87,24 +87,61 @@ export function ChainWorkspaceLayout() {
         </div>
       </section>
 
-      <nav className="workspace-subnav" aria-label="Chain modules">
-        {workspaceLinks.map(([path, label]) => (
-          <NavLink key={path} to={`/chains/${chainId}/${path}`}>
-            {label}
-          </NavLink>
-        ))}
-        {currentJump ? (
-          <NavLink to={`/chains/${chainId}/participation/${currentJump.id}`}>Participation</NavLink>
-        ) : null}
-      </nav>
+      <div className="workspace-frame">
+        <aside className="workspace-sidebar">
+          <section className="workspace-sidebar-card stack">
+            <div className="section-heading">
+              <h3>Workspace Focus</h3>
+              <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
+            </div>
+            <div className="summary-grid">
+              <div className="metric">
+                <strong>{workspace.jumpers.length}</strong>
+                Jumpers
+              </div>
+              <div className="metric">
+                <strong>{workspace.jumps.length}</strong>
+                Jumps
+              </div>
+              <div className="metric">
+                <strong>{workspace.effects.length}</strong>
+                Effects
+              </div>
+              <div className="metric">
+                <strong>{workspace.snapshots.length}</strong>
+                Snapshots
+              </div>
+            </div>
+            <p className="workspace-sidebar-copy">
+              Current jump: <strong>{currentJump?.title ?? 'None selected'}</strong>
+            </p>
+            <p className="workspace-sidebar-copy">
+              Modules stay pinned in a left rail so desktop editing flows don&apos;t bounce around between pages.
+            </p>
+          </section>
 
-      <Outlet
-        context={{
-          chainId,
-          bundle: state.bundle,
-          workspace: state.workspace,
-        } satisfies ChainWorkspaceOutletContext}
-      />
+          <nav className="workspace-subnav" aria-label="Chain modules">
+            {workspaceLinks.map(([path, label]) => (
+              <NavLink key={path} to={`/chains/${chainId}/${path}`}>
+                {label}
+              </NavLink>
+            ))}
+            {currentJump ? (
+              <NavLink to={`/chains/${chainId}/participation/${currentJump.id}`}>Participation</NavLink>
+            ) : null}
+          </nav>
+        </aside>
+
+        <section className="workspace-content">
+          <Outlet
+            context={{
+              chainId,
+              bundle: state.bundle,
+              workspace: state.workspace,
+            } satisfies ChainWorkspaceOutletContext}
+          />
+        </section>
+      </div>
     </div>
   );
 }

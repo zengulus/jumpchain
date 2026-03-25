@@ -7,6 +7,7 @@ import { db } from '../db/database';
 import {
   createSnapshotForBranch,
   createBlankChain,
+  deleteChain,
   exportBranchSave,
   exportNativeSave,
   getChainBundle,
@@ -109,6 +110,19 @@ describe('native persistence and round-trip safety', () => {
     expect(overviews[0].title).toBe('Reloadable Chain');
   });
 
+  it('deletes a chain and cascades its chain-owned records out of IndexedDB', async () => {
+    await resetDatabase();
+    const createdBundle = await createBlankChain('Disposable Chain');
+
+    await deleteChain(createdBundle.chain.id);
+
+    const reloadedBundle = await getChainBundle(createdBundle.chain.id);
+    const overviews = await listChainOverviews();
+
+    expect(reloadedBundle).toBe(undefined);
+    expect(overviews).toHaveLength(0);
+  });
+
   it('imports native saves as safe copies with remapped ids', async () => {
     await resetDatabase();
     const originalBundle = await createBlankChain('Safe Copy Chain');
@@ -153,7 +167,7 @@ describe('native persistence and round-trip safety', () => {
     expect(reloadedBundle.participations).toHaveLength(1);
     expect(reloadedBundle.importReports).toHaveLength(1);
     expect(
-      reloadedBundle.importReports[0].unresolvedMappings.some((mapping) => mapping.path === 'purchaseCategories'),
+      reloadedBundle.importReports[0].unresolvedMappings.some((mapping) => mapping.path === 'topLevelPreservedBlocks'),
     ).toBe(true);
     expect(reloadedBundle.importReports[0].unresolvedMappings.length).toBe(
       session.importReport.unresolvedMappings.length,

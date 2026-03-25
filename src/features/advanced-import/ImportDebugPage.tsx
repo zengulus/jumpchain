@@ -25,13 +25,13 @@ function PreviewPanel(props: { title: string; items: string[]; emptyMessage: str
   const hiddenCount = Math.max(0, props.items.length - visibleItems.length);
 
   return (
-    <article className="summary-panel stack stack--compact">
-      <div className="section-heading">
+    <section className="section-surface stack stack--compact">
+      <div className="editor-section__header">
         <h4>{props.title}</h4>
         <span className="pill">{props.items.length}</span>
       </div>
       {props.items.length === 0 ? (
-        <p className="summary-panel__empty">{props.emptyMessage}</p>
+        <p className="editor-section__empty">{props.emptyMessage}</p>
       ) : (
         <div className="token-list">
           {visibleItems.map((item, index) => (
@@ -42,7 +42,7 @@ function PreviewPanel(props: { title: string; items: string[]; emptyMessage: str
           {hiddenCount > 0 ? <span className="token token--muted">+{hiddenCount} more</span> : null}
         </div>
       )}
-    </article>
+    </section>
   );
 }
 
@@ -121,13 +121,17 @@ export function ImportDebugPage() {
   const cleanerTouchedPaths = getStringList(importSession?.importReport.preservedSourceSummary.cleanerTouchedPaths);
   const visibleWarnings = importSession?.normalized.warnings.slice(0, 12) ?? [];
   const hiddenWarningCount = Math.max(0, (importSession?.normalized.warnings.length ?? 0) - visibleWarnings.length);
-  const visibleMappings = importSession?.normalized.unresolvedMappings.slice(0, 12) ?? [];
-  const hiddenMappingCount = Math.max(0, (importSession?.normalized.unresolvedMappings.length ?? 0) - visibleMappings.length);
+  const actionableMappings = importSession?.normalized.unresolvedMappings.filter((mapping) => mapping.severity !== 'info') ?? [];
+  const preservedSourceNotes = importSession?.normalized.unresolvedMappings.filter((mapping) => mapping.severity === 'info') ?? [];
+  const visibleMappings = actionableMappings.slice(0, 12);
+  const hiddenMappingCount = Math.max(0, actionableMappings.length - visibleMappings.length);
+  const visibleSourceNotes = preservedSourceNotes.slice(0, 12);
+  const hiddenSourceNoteCount = Math.max(0, preservedSourceNotes.length - visibleSourceNotes.length);
   const visibleCleanerChanges = importSession?.cleaning.changes.slice(0, 12) ?? [];
   const hiddenCleanerChangeCount = Math.max(0, cleanerChangeCount - visibleCleanerChanges.length);
 
   return (
-    <div className="stack">
+    <div className="stack import-review">
       <section className="hero">
         <span className="pill">ChainMaker v2 adapter</span>
         <h2>Detect, normalize, review, then commit</h2>
@@ -169,6 +173,15 @@ export function ImportDebugPage() {
           hidden
           onChange={handleFileSelection}
         />
+      </section>
+
+      <section className="guidance-strip">
+        <strong>Where imported perks and items end up</strong>
+        <p>
+          After import, open a jump&apos;s Participation page. ChainMaker perk and item selections are already stored on
+          each jumper&apos;s participation record under purchases, and the editor groups them into perks, items, and other
+          purchases instead of hiding them behind raw JSON.
+        </p>
       </section>
 
       {statusMessage ? <div className="status status--success">{statusMessage}</div> : null}
@@ -228,7 +241,7 @@ export function ImportDebugPage() {
               </div>
             </div>
             <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
-            <div className="summary-grid">
+            <div className="section-grid section-grid--two">
               <PreviewPanel
                 title="Jumpers"
                 items={jumperNames}
@@ -262,9 +275,9 @@ export function ImportDebugPage() {
             </div>
           </section>
 
-          <section className="grid grid--two">
-            <article className="card stack">
-              <div className="section-heading">
+          <section className="section-grid section-grid--two">
+            <article className="section-surface stack">
+              <div className="editor-section__header">
                 <h3>Cleaner Adjustments</h3>
                 <span className="pill">{cleanerChangeCount}</span>
               </div>
@@ -284,8 +297,8 @@ export function ImportDebugPage() {
               )}
             </article>
 
-            <article className="card stack">
-              <div className="section-heading">
+            <article className="section-surface stack">
+              <div className="editor-section__header">
                 <h3>Warnings</h3>
                 <span className="pill">{importSession.normalized.warnings.length}</span>
               </div>
@@ -303,12 +316,12 @@ export function ImportDebugPage() {
               )}
             </article>
 
-            <article className="card stack">
-              <div className="section-heading">
-                <h3>Unresolved Mappings</h3>
-                <span className="pill">{importSession.normalized.unresolvedMappings.length}</span>
+            <article className="section-surface stack">
+              <div className="editor-section__header">
+                <h3>Mapping Warnings</h3>
+                <span className="pill">{actionableMappings.length}</span>
               </div>
-              {importSession.normalized.unresolvedMappings.length === 0 ? (
+              {actionableMappings.length === 0 ? (
                 <p>Everything mapped cleanly for this file.</p>
               ) : (
                 <ul className="list">
@@ -317,7 +330,28 @@ export function ImportDebugPage() {
                       <strong>{mapping.path}</strong>: {mapping.reason}
                     </li>
                   ))}
-                  {hiddenMappingCount > 0 ? <li>+{hiddenMappingCount} more preserved mappings in the full import report.</li> : null}
+                  {hiddenMappingCount > 0 ? <li>+{hiddenMappingCount} more mapping warnings in the full import report.</li> : null}
+                </ul>
+              )}
+            </article>
+
+            <article className="section-surface stack">
+              <div className="editor-section__header">
+                <h3>Preserved Source Notes</h3>
+                <span className="pill">{preservedSourceNotes.length}</span>
+              </div>
+              {preservedSourceNotes.length === 0 ? (
+                <p>No informational preservation notes were recorded for this source.</p>
+              ) : (
+                <ul className="list">
+                  {visibleSourceNotes.map((mapping) => (
+                    <li key={mapping.path}>
+                      <strong>{mapping.path}</strong>: {mapping.reason}
+                    </li>
+                  ))}
+                  {hiddenSourceNoteCount > 0 ? (
+                    <li>+{hiddenSourceNoteCount} more preserved-source notes in the full import report.</li>
+                  ) : null}
                 </ul>
               )}
             </article>

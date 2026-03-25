@@ -53,9 +53,17 @@ const JUMP_MAPPED_KEYS = new Set([
   'drawbackOverrides',
   'origins',
   'altForms',
+  'useAltForms',
   'narratives',
+  'useNarratives',
   'budgets',
   'stipends',
+  'useSupplements',
+  'originCategories',
+  'originCategoryList',
+  'currencies',
+  'purchaseSubtypes',
+  'subsystemSummaries',
 ]);
 
 const CHAIN_SETTINGS_MAPPED_KEYS = new Set([
@@ -201,6 +209,26 @@ function makeSummary(chainName: string, jumpers: number, jumps: number, chainDra
     altformCount: altforms,
     participationCount: participations,
   };
+}
+
+function buildTopLevelUnresolvedMappings(preservedTopLevel: Record<string, unknown>) {
+  const keys = Object.keys(preservedTopLevel);
+
+  if (keys.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      path: 'topLevelPreservedBlocks',
+      reason: `Preserved top-level source blocks are available for future mapping work: ${keys.join(', ')}.`,
+      severity: 'info' as const,
+      rawFragment: {
+        keys,
+      },
+      preservedAt: 'chain.importSourceMetadata',
+    },
+  ];
 }
 
 function normalizeJumpers(source: ChainMakerV2Source): NormalizedJumperImport[] {
@@ -476,13 +504,7 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
     ...(Object.keys(preservedChainSettings).length > 0 ? { chainSettingsExtra: preservedChainSettings } : {}),
     ...(Object.keys(preservedBankSettings).length > 0 ? { bankSettingsExtra: preservedBankSettings } : {}),
   };
-  const topLevelUnresolvedMappings = Object.entries(preservedTopLevel).map(([key, value]) => ({
-    path: key,
-    reason: 'Top-level source block is preserved for future mapping work.',
-    severity: 'warning' as const,
-    rawFragment: value,
-    preservedAt: `chain.importSourceMetadata.${key}`,
-  }));
+  const topLevelUnresolvedMappings = buildTopLevelUnresolvedMappings(preservedTopLevel);
   const settingsUnresolvedMappings = [
     ...(purchaseCatalog.size > 0
       ? [

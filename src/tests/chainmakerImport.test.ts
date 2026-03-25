@@ -29,7 +29,7 @@ describe('ChainMaker v2 import foundation', () => {
     expect(session.bundle.jumps).toHaveLength(1);
     expect(session.bundle.participations).toHaveLength(1);
     expect(session.bundle.bodymodProfiles).toHaveLength(1);
-    expect(session.importReport.unresolvedMappings.some((mapping) => mapping.path === 'purchaseCategories')).toBe(
+    expect(session.importReport.unresolvedMappings.some((mapping) => mapping.path === 'topLevelPreservedBlocks')).toBe(
       true,
     );
   });

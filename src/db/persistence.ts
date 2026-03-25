@@ -820,6 +820,55 @@ export async function exportBranchSave(chainId: string, branchId: string): Promi
   return createNativeSaveEnvelope([branchBundle]);
 }
 
+export async function deleteChain(chainId: string): Promise<void> {
+  const chain = await db.chains.get(chainId);
+
+  if (!chain) {
+    throw new Error('Chain not found.');
+  }
+
+  await db.transaction(
+    'rw',
+    [
+      db.chains,
+      db.branches,
+      db.jumpers,
+      db.companions,
+      db.jumps,
+      db.participations,
+      db.effects,
+      db.bodymodProfiles,
+      db.jumpRulesContexts,
+      db.houseRuleProfiles,
+      db.presetProfiles,
+      db.snapshots,
+      db.notes,
+      db.attachments,
+      db.importReports,
+    ],
+    async () => {
+      await Promise.all([
+        db.branches.where('chainId').equals(chainId).delete(),
+        db.jumpers.where('chainId').equals(chainId).delete(),
+        db.companions.where('chainId').equals(chainId).delete(),
+        db.jumps.where('chainId').equals(chainId).delete(),
+        db.participations.where('chainId').equals(chainId).delete(),
+        db.effects.where('chainId').equals(chainId).delete(),
+        db.bodymodProfiles.where('chainId').equals(chainId).delete(),
+        db.jumpRulesContexts.where('chainId').equals(chainId).delete(),
+        db.houseRuleProfiles.where('chainId').equals(chainId).delete(),
+        db.presetProfiles.where('chainId').equals(chainId).delete(),
+        db.snapshots.where('chainId').equals(chainId).delete(),
+        db.notes.where('chainId').equals(chainId).delete(),
+        db.attachments.where('chainId').equals(chainId).delete(),
+        db.importReports.where('chainId').equals(chainId).delete(),
+      ]);
+
+      await db.chains.delete(chainId);
+    },
+  );
+}
+
 export async function importNativeSave(raw: unknown): Promise<NativeSaveEnvelope> {
   const migratedEnvelope = migrateNativeSaveEnvelope(raw);
   const importedEnvelope = validateNativeSaveEnvelope({

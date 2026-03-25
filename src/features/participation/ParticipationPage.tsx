@@ -12,6 +12,12 @@ interface SummaryToken {
   muted?: boolean;
 }
 
+interface PurchaseTokenGroups {
+  perks: SummaryToken[];
+  items: SummaryToken[];
+  others: SummaryToken[];
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -28,6 +34,10 @@ function formatCountLabel(count: number, singular: string, plural = `${singular}
 
 function formatNumericValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function getOptionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function getSelectionToken(value: unknown): SummaryToken {
@@ -61,6 +71,31 @@ function getSelectionToken(value: unknown): SummaryToken {
     label,
     detail: detailParts.length > 0 ? detailParts.join(' - ') : undefined,
   };
+}
+
+function getPurchaseTokenGroups(purchases: unknown[]): PurchaseTokenGroups {
+  return purchases.reduce<PurchaseTokenGroups>(
+    (groups, purchase) => {
+      const token = getSelectionToken(purchase);
+      const record = asRecord(purchase);
+      const purchaseType = getOptionalNumber(record.purchaseType) ?? getOptionalNumber(record._type);
+
+      if (purchaseType === 0) {
+        groups.perks.push(token);
+      } else if (purchaseType === 1) {
+        groups.items.push(token);
+      } else {
+        groups.others.push(token);
+      }
+
+      return groups;
+    },
+    {
+      perks: [],
+      items: [],
+      others: [],
+    },
+  );
 }
 
 function getOriginTokens(origins: Record<string, unknown>): SummaryToken[] {
@@ -147,19 +182,28 @@ function getStructuredImportTokens(participation: {
   return tokens;
 }
 
-function SummaryPanel(props: { title: string; items: SummaryToken[]; emptyMessage: string; previewLimit?: number }) {
+function SummarySection(props: {
+  title: string;
+  items: SummaryToken[];
+  emptyMessage: string;
+  previewLimit?: number;
+  description?: string;
+}) {
   const previewLimit = props.previewLimit ?? 10;
   const visibleItems = props.items.slice(0, previewLimit);
   const hiddenCount = Math.max(0, props.items.length - visibleItems.length);
 
   return (
-    <article className="summary-panel stack stack--compact">
-      <div className="section-heading">
-        <h5>{props.title}</h5>
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <div className="stack stack--compact">
+          <h4>{props.title}</h4>
+          {props.description ? <p className="editor-section__copy">{props.description}</p> : null}
+        </div>
         <span className="pill">{props.items.length}</span>
       </div>
       {props.items.length === 0 ? (
-        <p className="summary-panel__empty">{props.emptyMessage}</p>
+        <p className="editor-section__empty">{props.emptyMessage}</p>
       ) : (
         <div className="token-list">
           {visibleItems.map((item, index) => (
@@ -174,7 +218,7 @@ function SummaryPanel(props: { title: string; items: SummaryToken[]; emptyMessag
           {hiddenCount > 0 ? <span className="token token--muted">+{hiddenCount} more</span> : null}
         </div>
       )}
-    </article>
+    </section>
   );
 }
 
@@ -253,7 +297,7 @@ export function ParticipationPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Participation"
-        description="Per-jumper, per-jump editing for selections, currencies, narratives, and preserved imported blocks."
+        description="Per-jumper, per-jump editing for perks, items, drawbacks, currencies, narratives, and preserved imported blocks."
         badge={jump.title}
       />
 
@@ -269,9 +313,20 @@ export function ParticipationPage() {
           const participation = workspace.participations.find(
             (entry) => entry.jumpId === jump.id && entry.jumperId === jumper.id,
           );
+          const purchaseGroups = participation ? getPurchaseTokenGroups(participation.purchases) : null;
+          const purchaseGuidance = purchaseGroups
+            ? `${formatCountLabel(purchaseGroups.perks.length, 'perk')}, ${formatCountLabel(
+                purchaseGroups.items.length,
+                'item',
+              )}, and ${formatCountLabel(
+                purchaseGroups.others.length,
+                'other purchase',
+                'other purchases',
+              )} are grouped below. Raw imported structures stay editable in Advanced JSON editors.`
+            : null;
 
           return (
-            <article className="card stack" key={jumper.id}>
+            <article className="card editor-sheet stack" key={jumper.id}>
               <div className="section-heading">
                 <h3>{jumper.name}</h3>
                 <span className="pill">{participation ? participation.status : 'not participating yet'}</span>
@@ -285,135 +340,175 @@ export function ParticipationPage() {
                 </div>
               ) : (
                 <>
-                  <section className="stack stack--compact">
-                    <h4>Simple</h4>
-                    <div className="field-grid field-grid--two">
-                      <label className="field">
-                        <span>Status</span>
-                        <select
-                          value={participation.status}
-                          onChange={(event) =>
-                            void saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              status: event.target.value as (typeof participationStatuses)[number],
-                            }))
-                          }
-                        >
-                          {participationStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="field">
-                        <span>Bank deposit</span>
-                        <input
-                          type="number"
-                          value={participation.bankDeposit}
-                          onChange={(event) =>
-                            void saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              bankDeposit: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </label>
+                  <section className="stack">
+                    <div className="guidance-strip guidance-strip--accent">
+                      <strong>Perks and items already live here.</strong>
+                      <p>
+                        Imported ChainMaker selections are stored in this participation record under purchases. The
+                        editor now groups them into perks, items, and other purchases so you do not have to hunt
+                        through raw JSON just to find them.
+                      </p>
                     </div>
 
-                    <label className="field">
-                      <span>Notes</span>
-                      <textarea
-                        rows={5}
-                        value={participation.notes}
-                        onChange={(event) =>
-                          void saveParticipation(participation.id, (current) => ({
-                            ...current,
-                            notes: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
+                    <div className="editor-section">
+                      <div className="editor-section__header">
+                        <div className="stack stack--compact">
+                          <h4>Core Participation</h4>
+                          <p className="editor-section__copy">
+                            Fast fields for status, deposit, notes, and narrative beats for this jumper in the current
+                            jump.
+                          </p>
+                        </div>
+                      </div>
 
-                    <div className="field-grid field-grid--three">
-                      <label className="field">
-                        <span>Accomplishments</span>
-                        <textarea
-                          rows={4}
-                          value={participation.narratives.accomplishments}
-                          onChange={(event) =>
-                            void saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              narratives: {
-                                ...current.narratives,
-                                accomplishments: event.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Challenges</span>
-                        <textarea
-                          rows={4}
-                          value={participation.narratives.challenges}
-                          onChange={(event) =>
-                            void saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              narratives: {
-                                ...current.narratives,
-                                challenges: event.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Goals</span>
-                        <textarea
-                          rows={4}
-                          value={participation.narratives.goals}
-                          onChange={(event) =>
-                            void saveParticipation(participation.id, (current) => ({
-                              ...current,
-                              narratives: {
-                                ...current.narratives,
-                                goals: event.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
+                      <div className="stack stack--compact">
+                        <div className="field-grid field-grid--two">
+                          <label className="field">
+                            <span>Status</span>
+                            <select
+                              value={participation.status}
+                              onChange={(event) =>
+                                void saveParticipation(participation.id, (current) => ({
+                                  ...current,
+                                  status: event.target.value as (typeof participationStatuses)[number],
+                                }))
+                              }
+                            >
+                              {participationStatuses.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Bank deposit</span>
+                            <input
+                              type="number"
+                              value={participation.bankDeposit}
+                              onChange={(event) =>
+                                void saveParticipation(participation.id, (current) => ({
+                                  ...current,
+                                  bankDeposit: Number(event.target.value),
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        <label className="field">
+                          <span>Notes</span>
+                          <textarea
+                            rows={5}
+                            value={participation.notes}
+                            onChange={(event) =>
+                              void saveParticipation(participation.id, (current) => ({
+                                ...current,
+                                notes: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <div className="field-grid field-grid--three">
+                          <label className="field">
+                            <span>Accomplishments</span>
+                            <textarea
+                              rows={4}
+                              value={participation.narratives.accomplishments}
+                              onChange={(event) =>
+                                void saveParticipation(participation.id, (current) => ({
+                                  ...current,
+                                  narratives: {
+                                    ...current.narratives,
+                                    accomplishments: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Challenges</span>
+                            <textarea
+                              rows={4}
+                              value={participation.narratives.challenges}
+                              onChange={(event) =>
+                                void saveParticipation(participation.id, (current) => ({
+                                  ...current,
+                                  narratives: {
+                                    ...current.narratives,
+                                    challenges: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Goals</span>
+                            <textarea
+                              rows={4}
+                              value={participation.narratives.goals}
+                              onChange={(event) =>
+                                void saveParticipation(participation.id, (current) => ({
+                                  ...current,
+                                  narratives: {
+                                    ...current.narratives,
+                                    goals: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="summary-grid">
-                      <SummaryPanel
-                        title="Purchases"
-                        items={participation.purchases.map(getSelectionToken)}
-                        emptyMessage="No purchases recorded for this jumper in the current jump."
+                    <div className="editor-section-list">
+                      <SummarySection
+                        title="Perks"
+                        description={purchaseGuidance ?? 'Imported and manual perk purchases are grouped here.'}
+                        items={purchaseGroups?.perks ?? []}
+                        emptyMessage="No perk purchases are recorded for this jumper in the current jump."
                       />
-                      <SummaryPanel
+                      <SummarySection
+                        title="Items"
+                        description="Imported item purchases are grouped separately so physical acquisitions are easier to scan."
+                        items={purchaseGroups?.items ?? []}
+                        emptyMessage="No item purchases are recorded for this jumper in the current jump."
+                      />
+                      <SummarySection
+                        title="Other purchases"
+                        description="Unclassified purchases, companion-like selections, and anything without a perk or item type stay here."
+                        items={purchaseGroups?.others ?? []}
+                        emptyMessage="No uncategorized purchases are recorded for this participation."
+                      />
+                      <SummarySection
                         title="Drawbacks"
+                        description="Active drawbacks attached to this jumper for this jump."
                         items={participation.drawbacks.map(getSelectionToken)}
                         emptyMessage="No drawbacks recorded for this jumper in the current jump."
                       />
-                      <SummaryPanel
+                      <SummarySection
                         title="Retained drawbacks"
+                        description="Carry-forward drawback selections that remain relevant past their original jump."
                         items={participation.retainedDrawbacks.map(getSelectionToken)}
                         emptyMessage="No retained drawbacks recorded."
                       />
-                      <SummaryPanel
+                      <SummarySection
                         title="Origins and backgrounds"
+                        description="Imported origin picks and background selections for this jumper."
                         items={getOriginTokens(participation.origins)}
                         emptyMessage="No origin or background selections were imported."
                       />
-                      <SummaryPanel
+                      <SummarySection
                         title="Budgets and stipends"
+                        description="Currency budgets and stipend allocations for the current jump."
                         items={[...getBudgetTokens(participation.budgets), ...getStipendTokens(participation.stipends)]}
                         emptyMessage="No budgets or stipends are defined for this participation."
                       />
-                      <SummaryPanel
+                      <SummarySection
                         title="Structured imported blocks"
+                        description="Source-only structured data that still belongs to this participation but does not have a first-class editor yet."
                         items={getStructuredImportTokens(participation)}
                         emptyMessage="No additional imported structured blocks are present."
                       />
@@ -427,8 +522,8 @@ export function ParticipationPage() {
                     </summary>
                     <div className="details-panel__body stack stack--compact">
                       <p className="field-hint">
-                        Imported selections stay readable above, while the raw structures remain editable here for
-                        cleanup, migration work, and edge-case preservation.
+                        The grouped sections above are the primary view. Use these JSON editors for cleanup,
+                        migration work, and edge-case preservation when the structured surface is not enough.
                       </p>
                       <div className="field-grid field-grid--two">
                         <JsonEditorField

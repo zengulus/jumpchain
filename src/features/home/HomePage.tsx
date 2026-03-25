@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { detectImportSource } from '../../domain/import/sourceDetection';
-import { createBlankChain, exportNativeSave, importNativeSave, listChainOverviews, type ChainOverview } from '../../db/persistence';
+import { createBlankChain, deleteChain, exportNativeSave, importNativeSave, listChainOverviews, type ChainOverview } from '../../db/persistence';
 import { downloadJson } from '../../utils/download';
 import { readJsonFile } from '../../utils/file';
 
@@ -19,6 +19,7 @@ export function HomePage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [busyChainId, setBusyChainId] = useState<string | null>(null);
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
 
   async function refreshChains() {
@@ -59,6 +60,30 @@ export function HomePage() {
     }
   }
 
+  async function handleDeleteChain(chain: ChainOverview) {
+    const confirmed = window.confirm(
+      `Delete "${chain.title}" from IndexedDB? This removes the chain, its branches, snapshots, notes, and imported data.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyChainId(chain.chainId);
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await deleteChain(chain.chainId);
+      setStatusMessage(`Deleted "${chain.title}" and all chain-owned records from IndexedDB.`);
+      await refreshChains();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to delete chain.');
+    } finally {
+      setBusyChainId(null);
+    }
+  }
+
   async function handleNativeImportSelection(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -90,34 +115,77 @@ export function HomePage() {
   }
 
   return (
-    <div className="stack">
-      <section className="hero">
-        <span className="pill">Sprint 1 foundation</span>
-        <h2>Local-first chain workspace with live IndexedDB data</h2>
-        <p>
-          This build stays intentionally thin on presentation and heavy on real data flow. You can create blank chains,
-          import or export native saves, review ChainMaker v2 input, and open a chain workspace with live jumpers,
-          jumps, participation, effects, rules, notes, bodymod, timeline, and backup tools.
-        </p>
-        <div className="actions">
-          <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
-            Create Blank Chain
-          </button>
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={() => nativeImportInputRef.current?.click()}
-            disabled={isBusy}
-          >
-            Import Native Save
-          </button>
-          <Link className="button button--secondary" to="/import">
-            Open Import Review
-          </Link>
-        </div>
+    <div className="home-shell stack">
+      <section className="home-stage">
+        <section className="hero hero--split">
+          <div className="hero__content stack stack--compact">
+            <span className="pill">Desktop-first workspace</span>
+            <h2>Local-first chain management with real persistence and import review</h2>
+            <p>
+              This build stays intentionally thin on chrome and heavy on real data flow. You can create blank chains,
+              import or export native saves, review ChainMaker v2 input, and open a live IndexedDB-backed workspace for
+              jumpers, jumps, participation, effects, rules, notes, bodymod, timeline, and backups.
+            </p>
+            <div className="actions">
+              <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
+                Create Blank Chain
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => nativeImportInputRef.current?.click()}
+                disabled={isBusy}
+              >
+                Import Native Save
+              </button>
+              <Link className="button button--secondary" to="/import">
+                Open Import Review
+              </Link>
+            </div>
+          </div>
+          <div className="hero__stats summary-grid">
+            <div className="metric">
+              <strong>{chains.length}</strong>
+              Stored chains
+            </div>
+            <div className="metric">
+              <strong>IndexedDB</strong>
+              Authoritative store
+            </div>
+            <div className="metric">
+              <strong>Native saves</strong>
+              Portable round-trip
+            </div>
+            <div className="metric">
+              <strong>ChainMaker v2</strong>
+              Import foundation
+            </div>
+          </div>
+        </section>
+
+        <aside className="card stack">
+          <div className="section-heading">
+            <h3>Desktop Stance</h3>
+            <span className="pill">No phone layout</span>
+          </div>
+          <p>
+            The shell is tuned for wide screens, dense forms, and side-by-side editing. Instead of collapsing into a
+            mobile layout, the app keeps a stable desktop frame for long-lived chain management work.
+          </p>
+          <div className="summary-grid">
+            <div className="summary-panel stack stack--compact">
+              <h4>Local-first</h4>
+              <p>Repository files stay separate from user data. The working copy lives in the browser.</p>
+            </div>
+            <div className="summary-panel stack stack--compact">
+              <h4>Safe import</h4>
+              <p>Native imports create safe copies, and ChainMaker review happens before commit.</p>
+            </div>
+          </div>
+        </aside>
       </section>
 
-      <section className="grid grid--two">
+      <section className="home-dashboard-grid">
         <article className="card stack">
           <div className="section-heading">
             <h3>Create Local Chain</h3>
@@ -168,7 +236,7 @@ export function HomePage() {
         {chains.length === 0 ? (
           <p>No chains are stored yet. Create a blank chain or import one from the review flow.</p>
         ) : (
-          <div className="grid">
+          <div className="entity-grid entity-grid--two">
             {chains.map((chain) => (
               <article className="entity-card" key={chain.chainId}>
                 <div className="section-heading">
@@ -198,8 +266,17 @@ export function HomePage() {
                     className="button button--secondary"
                     type="button"
                     onClick={() => void handleExport(chain.chainId, chain.title)}
+                    disabled={busyChainId === chain.chainId}
                   >
                     Export Native Save
+                  </button>
+                  <button
+                    className="button button--danger"
+                    type="button"
+                    onClick={() => void handleDeleteChain(chain)}
+                    disabled={busyChainId === chain.chainId}
+                  >
+                    {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
                   </button>
                 </div>
               </article>
