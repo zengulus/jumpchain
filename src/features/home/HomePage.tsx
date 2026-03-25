@@ -119,17 +119,8 @@ export function HomePage() {
       <section className="home-stage">
         <section className="hero hero--split">
           <div className="hero__content stack stack--compact">
-            <span className="pill">Desktop-first workspace</span>
-            <h2>Local-first chain management with real persistence and import review</h2>
-            <p>
-              This build stays intentionally thin on chrome and heavy on real data flow. You can create blank chains,
-              import or export native saves, review ChainMaker v2 input, and open a live IndexedDB-backed workspace for
-              jumpers, jumps, participation, effects, rules, notes, bodymod, timeline, and backups.
-            </p>
+            <h2>Jumpchain Tracker</h2>
             <div className="actions">
-              <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
-                Create Blank Chain
-              </button>
               <button
                 className="button button--secondary"
                 type="button"
@@ -162,34 +153,12 @@ export function HomePage() {
             </div>
           </div>
         </section>
-
-        <aside className="card stack">
-          <div className="section-heading">
-            <h3>Desktop Stance</h3>
-            <span className="pill">No phone layout</span>
-          </div>
-          <p>
-            The shell is tuned for wide screens, dense forms, and side-by-side editing. Instead of collapsing into a
-            mobile layout, the app keeps a stable desktop frame for long-lived chain management work.
-          </p>
-          <div className="summary-grid">
-            <div className="summary-panel stack stack--compact">
-              <h4>Local-first</h4>
-              <p>Repository files stay separate from user data. The working copy lives in the browser.</p>
-            </div>
-            <div className="summary-panel stack stack--compact">
-              <h4>Safe import</h4>
-              <p>Native imports create safe copies, and ChainMaker review happens before commit.</p>
-            </div>
-          </div>
-        </aside>
       </section>
 
       <section className="home-dashboard-grid">
         <article className="card stack">
           <div className="section-heading">
-            <h3>Create Local Chain</h3>
-            <span className="pill">IndexedDB authority</span>
+            <h3>New Chain</h3>
           </div>
           <label className="field">
             <span>Chain title</span>
@@ -199,21 +168,23 @@ export function HomePage() {
               placeholder="Untitled Chain"
             />
           </label>
-          <p>
-            Blank chains start with a mainline branch and versioned native metadata so later migrations, branches,
-            snapshots, and imports all have a stable base.
-          </p>
+          <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
+            Create Blank Chain
+          </button>
         </article>
 
         <article className="card stack">
           <div className="section-heading">
-            <h3>Portable Save Flow</h3>
-            <span className="pill">Native envelope</span>
+            <h3>Native Save</h3>
           </div>
-          <p>
-            Exported files include format version, schema version, export timestamp, app version, and the full chain
-            bundle. Native re-import writes back into IndexedDB without touching repository files.
-          </p>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => nativeImportInputRef.current?.click()}
+            disabled={isBusy}
+          >
+            Import Native Save
+          </button>
           <input
             ref={nativeImportInputRef}
             type="file"
