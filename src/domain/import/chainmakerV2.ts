@@ -97,6 +97,18 @@ function getNarrativeDefaults() {
   };
 }
 
+function getDerivedCurrentJumpSourceId(
+  source: ChainMakerV2Source,
+  jumps: Array<Pick<NormalizedJumpImport, 'sourceId' | 'orderIndex'>>,
+) {
+  if (jumps.length === 0 || source.current === false) {
+    return null;
+  }
+
+  const orderedJumps = jumps.slice().sort((left, right) => left.orderIndex - right.orderIndex);
+  return orderedJumps[orderedJumps.length - 1]?.sourceId ?? null;
+}
+
 function parseOptionalNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -267,18 +279,57 @@ function normalizeJumpers(source: ChainMakerV2Source): NormalizedJumperImport[] 
   });
 }
 
+function buildUnresolvedParticipationFragment(jump: ChainMakerV2Source['jumps'][string], sourceKey: string, sourceCharacterId: number) {
+  const characterKey = String(sourceCharacterId);
+
+  return {
+    sourceJumpKey: sourceKey,
+    sourceJumpId: jump._id,
+    sourceJumpTitle: jump.name,
+    sourceCharacterId,
+    notes: jump.notes[characterKey] ?? '',
+    purchases: jump.purchases[characterKey] ?? [],
+    drawbacks: jump.drawbacks[characterKey] ?? [],
+    retainedDrawbacks: jump.retainedDrawbacks[characterKey] ?? [],
+    origins: jump.origins[characterKey] ?? {},
+    budgets: jump.budgets[characterKey] ?? {},
+    stipends: jump.stipends[characterKey] ?? {},
+    narratives: jump.narratives[characterKey] ?? getNarrativeDefaults(),
+    altForms: jump.altForms[characterKey] ?? [],
+    bankDeposit: jump.bankDeposits[characterKey] ?? 0,
+    currencyExchanges: jump.currencyExchanges[characterKey] ?? [],
+    supplementPurchases: jump.supplementPurchases[characterKey] ?? {},
+    supplementInvestments: jump.supplementInvestments[characterKey] ?? {},
+    drawbackOverrides: jump.drawbackOverrides[characterKey] ?? {},
+    importSourceMetadata: {
+      useSupplements: jump.useSupplements,
+      useAltForms: jump.useAltForms,
+      useNarratives: jump.useNarratives,
+      originCategories: jump.originCategories,
+      originCategoryList: jump.originCategoryList,
+      currencies: jump.currencies,
+      purchaseSubtypes: jump.purchaseSubtypes,
+      subsystemSummaries: jump.subsystemSummaries,
+    },
+  };
+}
+
 function normalizeJumps(source: ChainMakerV2Source, purchaseCatalog: Map<number, Record<string, unknown>>): {
   jumps: NormalizedJumpImport[];
   participations: NormalizedParticipationImport[];
   warnings: PreparedImportSession['normalized']['warnings'];
   unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'];
+  preservedFragments: {
+    unresolvedParticipations: Record<string, unknown>[];
+  };
 } {
   const warnings: PreparedImportSession['normalized']['warnings'] = [];
   const unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'] = [];
+  const unresolvedParticipations: Record<string, unknown>[] = [];
 
   const orderedJumpSourceIds = new Map(source.jumpList.map((jumpId, index) => [jumpId, index]));
-  const jumps: NormalizedJumpImport[] = [];
-  const participations: NormalizedParticipationImport[] = [];
+  const jumps: Array<Omit<NormalizedJumpImport, 'status'>> = [];
+  const participations: Array<Omit<NormalizedParticipationImport, 'status'>> = [];
 
   for (const [sourceKey, jump] of sortNumericEntries(source.jumps)) {
     const importSourceMetadata = getUnmappedFields(jump, JUMP_MAPPED_KEYS);
@@ -307,12 +358,23 @@ function normalizeJumps(source: ChainMakerV2Source, purchaseCatalog: Map<number,
       const characterKey = String(characterId);
 
       if (!(characterKey in source.characters)) {
+        const preservedFragment = buildUnresolvedParticipationFragment(jump, sourceKey, characterId);
+
         warnings.push({
           code: 'missing_character_reference',
           message: `Jump "${jump.name}" references character ${characterId}, but no matching character was found.`,
           path: `jumps.${sourceKey}.characters`,
           severity: 'warning',
         });
+        unresolvedMappings.push({
+          path: `jumps.${sourceKey}.characters.${characterKey}`,
+          reason:
+            'Jump participation data referenced a missing character, so the raw participation fragment was preserved instead of being discarded.',
+          severity: 'warning',
+          rawFragment: preservedFragment,
+          preservedAt: 'chain.importSourceMetadata.unresolvedParticipations',
+        });
+        unresolvedParticipations.push(preservedFragment);
         continue;
       }
 
@@ -365,7 +427,23 @@ function normalizeJumps(source: ChainMakerV2Source, purchaseCatalog: Map<number,
     }
   }
 
-  return { jumps, participations, warnings, unresolvedMappings };
+  const currentJumpSourceId = getDerivedCurrentJumpSourceId(source, jumps);
+
+  return {
+    jumps: jumps.map((jump) => ({
+      ...jump,
+      status: jump.sourceId === currentJumpSourceId ? 'current' : 'completed',
+    })),
+    participations: participations.map((participation) => ({
+      ...participation,
+      status: participation.sourceJumpId === currentJumpSourceId ? 'active' : 'completed',
+    })),
+    warnings,
+    unresolvedMappings,
+    preservedFragments: {
+      unresolvedParticipations,
+    },
+  };
 }
 
 function normalizeEffects(
@@ -429,34 +507,74 @@ function groupAltformsByCharacter(source: ChainMakerV2Source) {
   return grouped;
 }
 
-function normalizeBodymodProfiles(source: ChainMakerV2Source) {
+function normalizeBodymodProfiles(source: ChainMakerV2Source): {
+  bodymodProfiles: Omit<BodymodProfile, 'id' | 'chainId' | 'branchId' | 'createdAt' | 'updatedAt' | 'jumperId'>[];
+  unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'];
+  preservedFragments: {
+    unresolvedBodymodProfiles: Record<string, unknown>[];
+  };
+} {
   const groupedAltforms = groupAltformsByCharacter(source);
+  const unresolvedMappings: PreparedImportSession['normalized']['unresolvedMappings'] = [];
+  const unresolvedBodymodProfiles: Record<string, unknown>[] = [];
+  const bodymodProfiles: Omit<
+    BodymodProfile,
+    'id' | 'chainId' | 'branchId' | 'createdAt' | 'updatedAt' | 'jumperId'
+  >[] = [];
 
-  return Array.from(groupedAltforms.entries()).map(([characterId, altforms]) => ({
-    mode: 'baseline' as const,
-    summary: `${altforms.length} imported altform${altforms.length === 1 ? '' : 's'}`,
-    forms: altforms.map((altform) => ({
-      sourceAltformId: altform._id,
-      name: altform.name,
-      sex: altform.sex,
-      species: altform.species,
-      physicalDescription: altform.physicalDescription,
-      capabilities: altform.capabilities,
-      imageUploaded: altform.imageUploaded,
-      heightValue: altform.height.value,
-      heightUnit: altform.height.unit,
-      weightValue: altform.weight.value,
-      weightUnit: altform.weight.unit,
+  for (const [characterId, altforms] of Array.from(groupedAltforms.entries())) {
+    if (!(String(characterId) in source.characters)) {
+      const preservedFragment = {
+        sourceCharacterId: characterId,
+        altforms,
+      };
+
+      unresolvedMappings.push({
+        path: `altforms.character.${characterId}`,
+        reason:
+          'Altforms referenced a missing character, so the raw bodymod fragment was preserved instead of being discarded.',
+        severity: 'warning',
+        rawFragment: preservedFragment,
+        preservedAt: 'chain.importSourceMetadata.unresolvedBodymodProfiles',
+      });
+      unresolvedBodymodProfiles.push(preservedFragment);
+      continue;
+    }
+
+    bodymodProfiles.push({
+      mode: 'baseline' as const,
+      summary: `${altforms.length} imported altform${altforms.length === 1 ? '' : 's'}`,
+      forms: altforms.map((altform) => ({
+        sourceAltformId: altform._id,
+        name: altform.name,
+        sex: altform.sex,
+        species: altform.species,
+        physicalDescription: altform.physicalDescription,
+        capabilities: altform.capabilities,
+        imageUploaded: altform.imageUploaded,
+        heightValue: altform.height.value,
+        heightUnit: altform.height.unit,
+        weightValue: altform.weight.value,
+        weightUnit: altform.weight.unit,
+        importSourceMetadata: {
+          characterId: altform.characterId,
+          rawAltform: altform,
+        },
+      })),
+      features: [],
       importSourceMetadata: {
-        characterId: altform.characterId,
-        rawAltform: altform,
+        sourceCharacterId: characterId,
       },
-    })),
-    features: [],
-    importSourceMetadata: {
-      sourceCharacterId: characterId,
+    });
+  }
+
+  return {
+    bodymodProfiles,
+    unresolvedMappings,
+    preservedFragments: {
+      unresolvedBodymodProfiles,
     },
-  }));
+  };
 }
 
 export function parseChainMakerV2Source(raw: unknown): ChainMakerV2Source {
@@ -494,12 +612,18 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
   const jumpers = normalizeJumpers(source);
   const jumpData = normalizeJumps(source, purchaseCatalog);
   const effectData = normalizeEffects(source, purchaseCatalog);
-  const bodymodProfiles = normalizeBodymodProfiles(source);
+  const bodymodData = normalizeBodymodProfiles(source);
   const preservedTopLevel = getUnmappedFields(source, TOP_LEVEL_MAPPED_KEYS);
   const preservedChainSettings = getUnmappedFields(source.chainSettings, CHAIN_SETTINGS_MAPPED_KEYS);
   const preservedBankSettings = getUnmappedFields(source.bankSettings, BANK_SETTINGS_MAPPED_KEYS);
   const chainImportSourceMetadata = {
     ...preservedTopLevel,
+    ...(jumpData.preservedFragments.unresolvedParticipations.length > 0
+      ? { unresolvedParticipations: jumpData.preservedFragments.unresolvedParticipations }
+      : {}),
+    ...(bodymodData.preservedFragments.unresolvedBodymodProfiles.length > 0
+      ? { unresolvedBodymodProfiles: bodymodData.preservedFragments.unresolvedBodymodProfiles }
+      : {}),
     ...(purchaseCatalog.size > 0 ? { purchaseCatalog: source.purchases ?? {} } : {}),
     ...(Object.keys(preservedChainSettings).length > 0 ? { chainSettingsExtra: preservedChainSettings } : {}),
     ...(Object.keys(preservedBankSettings).length > 0 ? { bankSettingsExtra: preservedBankSettings } : {}),
@@ -566,13 +690,14 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
     jumps: jumpData.jumps,
     participations: jumpData.participations,
     effects: effectData.effects,
-    bodymodProfiles,
+    bodymodProfiles: bodymodData.bodymodProfiles,
     warnings: jumpData.warnings,
     unresolvedMappings: [
       ...topLevelUnresolvedMappings,
       ...settingsUnresolvedMappings,
       ...jumpData.unresolvedMappings,
       ...effectData.unresolvedMappings,
+      ...bodymodData.unresolvedMappings,
     ],
     summary: makeSummary(
       source.name,
@@ -588,6 +713,8 @@ export function normalizeChainMakerV2Source(source: ChainMakerV2Source): Normali
       characterCount: Object.keys(source.characters).length,
       altformCount: Object.keys(source.altforms).length,
       purchaseCatalogCount: purchaseCatalog.size,
+      unresolvedParticipationCount: jumpData.preservedFragments.unresolvedParticipations.length,
+      unresolvedBodymodProfileCount: bodymodData.preservedFragments.unresolvedBodymodProfiles.length,
     },
   };
 }
@@ -673,7 +800,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
         updatedAt: now,
         title: jumpImport.title,
         orderIndex: index,
-        status: index === normalized.jumps.length - 1 ? 'current' : 'planned',
+        status: jumpImport.status,
         jumpType: 'standard',
         duration: jumpImport.duration,
         participantJumperIds: jumpImport.characterSourceIds
@@ -701,7 +828,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
         updatedAt: now,
         jumpId,
         jumperId,
-        status: 'active',
+        status: participationImport.status,
         notes: participationImport.notes,
         purchases: participationImport.purchases,
         drawbacks: participationImport.drawbacks,
@@ -797,8 +924,13 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     preservedSourceSummary: normalized.preservedSourceSummary,
   };
 
+  const currentJumpId = jumps.find((jump) => jump.status === 'current')?.id ?? null;
+
   return {
-    chain,
+    chain: {
+      ...chain,
+      activeJumpId: currentJumpId,
+    },
     branches: [branch],
     jumpers,
     companions: [],

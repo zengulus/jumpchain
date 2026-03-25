@@ -143,6 +143,40 @@ export function createBlankParticipation(chainId: string, branchId: string, jump
   };
 }
 
+export async function syncJumpParticipantMembership(
+  chainId: string,
+  jump: Jump,
+  jumperId: string,
+  include: boolean,
+) {
+  const updatedAt = createTimestamp();
+  const participantJumperIds = include
+    ? Array.from(new Set([...jump.participantJumperIds, jumperId]))
+    : jump.participantJumperIds.filter((id) => id !== jumperId);
+
+  await db.transaction('rw', [db.chains, db.jumps, db.participations], async () => {
+    await db.jumps.put({
+      ...jump,
+      participantJumperIds,
+      updatedAt,
+    });
+
+    const existingParticipations = await db.participations.where('[jumpId+jumperId]').equals([jump.id, jumperId]).toArray();
+
+    if (include) {
+      if (existingParticipations.length === 0) {
+        await db.participations.put(createBlankParticipation(chainId, jump.branchId, jump.id, jumperId));
+      }
+    } else if (existingParticipations.length > 0) {
+      await db.participations.bulkDelete(existingParticipations.map((participation) => participation.id));
+    }
+
+    await db.chains.update(chainId, { updatedAt });
+  });
+
+  return participantJumperIds;
+}
+
 export function createBlankEffect(chainId: string, branchId: string, ownerEntityId: string): Effect {
   const now = createTimestamp();
 

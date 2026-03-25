@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import { createBlankJump, createBlankParticipation, saveChainRecord } from '../workspace/records';
+import { createBlankJump, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
 import { EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -85,28 +85,13 @@ export function JumpsPage() {
     }
 
     const alreadyParticipating = selectedJump.participantJumperIds.includes(jumperId);
-    const participantJumperIds = alreadyParticipating
-      ? selectedJump.participantJumperIds.filter((id) => id !== jumperId)
-      : [...selectedJump.participantJumperIds, jumperId];
 
     try {
-      await saveSelectedJump({
-        ...selectedJump,
-        participantJumperIds,
+      await syncJumpParticipantMembership(chainId, selectedJump, jumperId, !alreadyParticipating);
+      setNotice({
+        tone: 'success',
+        message: alreadyParticipating ? 'Removed jumper from this jump and cleaned up participation data.' : 'Updated jump participants.',
       });
-
-      if (!alreadyParticipating && workspace.activeBranch) {
-        const existingParticipation = workspace.participations.find(
-          (participation) => participation.jumpId === selectedJump.id && participation.jumperId === jumperId,
-        );
-
-        if (!existingParticipation) {
-          await saveChainRecord(
-            db.participations,
-            createBlankParticipation(chainId, workspace.activeBranch.id, selectedJump.id, jumperId),
-          );
-        }
-      }
     } catch (error) {
       setNotice({
         tone: 'error',

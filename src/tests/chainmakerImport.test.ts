@@ -93,6 +93,59 @@ describe('ChainMaker v2 import foundation', () => {
     expect(participation.origins).toEqual({});
   });
 
+  it('preserves unresolved participation fragments when jumps reference missing characters', () => {
+    const missingCharacterSource = {
+      ...sampleChainMaker,
+      jumps: {
+        ...sampleChainMaker.jumps,
+        '0': {
+          ...sampleChainMaker.jumps['0'],
+          characters: [0, 999],
+          notes: {
+            ...sampleChainMaker.jumps['0'].notes,
+            '999': 'Preserve me',
+          },
+          purchases: {
+            ...sampleChainMaker.jumps['0'].purchases,
+            '999': [404],
+          },
+        },
+      },
+    };
+    const session = prepareChainMakerV2ImportSession(missingCharacterSource);
+    const unresolvedParticipations = session.bundle.chain.importSourceMetadata
+      .unresolvedParticipations as Array<Record<string, unknown>>;
+
+    expect(session.bundle.participations).toHaveLength(1);
+    expect(unresolvedParticipations).toHaveLength(1);
+    expect(unresolvedParticipations[0]?.sourceCharacterId).toBe(999);
+    expect(unresolvedParticipations[0]?.sourceJumpId).toBe(0);
+    expect(session.importReport.unresolvedMappings.some((mapping) => mapping.preservedAt === 'chain.importSourceMetadata.unresolvedParticipations')).toBe(true);
+  });
+
+  it('preserves unresolved altform groups when they reference missing characters', () => {
+    const missingBodymodSource = {
+      ...sampleChainMaker,
+      altforms: {
+        ...sampleChainMaker.altforms,
+        '99': {
+          ...sampleChainMaker.altforms['0'],
+          _id: 99,
+          characterId: 999,
+          name: 'Orphan Altform',
+        },
+      },
+    };
+    const session = prepareChainMakerV2ImportSession(missingBodymodSource);
+    const unresolvedBodymodProfiles = session.bundle.chain.importSourceMetadata
+      .unresolvedBodymodProfiles as Array<Record<string, unknown>>;
+
+    expect(session.bundle.bodymodProfiles).toHaveLength(1);
+    expect(unresolvedBodymodProfiles).toHaveLength(1);
+    expect(unresolvedBodymodProfiles[0]?.sourceCharacterId).toBe(999);
+    expect(session.importReport.unresolvedMappings.some((mapping) => mapping.preservedAt === 'chain.importSourceMetadata.unresolvedBodymodProfiles')).toBe(true);
+  });
+
   it('cleans dirty ChainMaker fields before DTO validation', () => {
     const dirtyJump = { ...sampleChainMaker.jumps['0'] } as Record<string, unknown>;
 
@@ -166,5 +219,22 @@ describe('ChainMaker v2 import foundation', () => {
     expect(session.bundle.effects[0]?.title).toBe('Power Cap');
     expect(importedSelectionNames).toContain('Gotta Read’em All!');
     expect(importedSelectionNames).toContain('Dragon Tongue');
+
+    const orderedJumps = session.bundle.jumps.slice().sort((left, right) => left.orderIndex - right.orderIndex);
+    const lastJump = orderedJumps[orderedJumps.length - 1];
+
+    expect(orderedJumps.slice(0, -1).every((jump) => jump.status === 'completed')).toBe(true);
+    expect(lastJump?.status).toBe('current');
+    expect(session.bundle.chain.activeJumpId).toBe(lastJump?.id ?? null);
+    expect(
+      session.bundle.participations
+        .filter((participation) => participation.jumpId === lastJump?.id)
+        .every((participation) => participation.status === 'active'),
+    ).toBe(true);
+    expect(
+      session.bundle.participations
+        .filter((participation) => participation.jumpId !== lastJump?.id)
+        .every((participation) => participation.status === 'completed'),
+    ).toBe(true);
   });
 });

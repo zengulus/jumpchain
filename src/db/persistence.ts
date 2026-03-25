@@ -1,4 +1,5 @@
 import { APP_VERSION, CURRENT_SCHEMA_VERSION, NATIVE_FORMAT_VERSION } from '../app/config';
+import type { ImportMode } from '../domain/common';
 import type { NativeChainBundle, NativeSaveEnvelope } from '../domain/save';
 import type { AttachmentRef } from '../domain/attachments/types';
 import type { BodymodProfile } from '../domain/bodymod/types';
@@ -58,7 +59,14 @@ interface ClonedBranchBundle {
   presetProfiles: PresetProfile[];
   notes: Note[];
   attachments: AttachmentRef[];
+  importReports: ImportReport[];
   activeJumpId: string | null;
+}
+
+export interface SaveImportedChainBundleOptions {
+  importMode?: ImportMode;
+  targetChainId?: string;
+  branchTitle?: string;
 }
 
 function remapId(id: string, map: Map<string, string>): string {
@@ -307,6 +315,9 @@ function cloneBranchBundleToExistingChain(
   targetChain: NativeChainBundle['chain'],
   options: {
     branchTitle: string;
+    branchNotes?: string;
+    importMode?: ImportMode;
+    includeImportReports?: boolean;
     sourceBranchId?: string | null;
     forkedFromJumpId?: string | null;
     preferredActiveJumpId?: string | null;
@@ -433,6 +444,18 @@ function cloneBranchBundleToExistingChain(
     updatedAt: now,
   }));
 
+  const importReports: ImportReport[] = options.includeImportReports
+    ? branchBundle.importReports.map((report) => ({
+        ...report,
+        id: remapId(report.id, maps.importReport),
+        chainId,
+        importMode: options.importMode ?? 'new-branch',
+        status: 'imported',
+        createdAt: now,
+        updatedAt: now,
+      }))
+    : [];
+
   const remappedPreferredActiveJumpId = remapOptionalId(
     options.preferredActiveJumpId ?? branchBundle.chain.activeJumpId,
     maps.jump,
@@ -456,6 +479,7 @@ function cloneBranchBundleToExistingChain(
     sourceBranchId: options.sourceBranchId ?? sourceBranch.id,
     forkedFromJumpId: remapOptionalId(options.forkedFromJumpId ?? sourceBranch.forkedFromJumpId, maps.jump),
     isActive: true,
+    notes: options.branchNotes ?? sourceBranch.notes,
     createdAt: now,
     updatedAt: now,
   };
@@ -473,6 +497,7 @@ function cloneBranchBundleToExistingChain(
     presetProfiles,
     notes,
     attachments,
+    importReports,
     activeJumpId,
   };
 }
@@ -582,8 +607,96 @@ export async function createBlankChain(title: string): Promise<NativeChainBundle
   return validatedBundle;
 }
 
-export async function saveImportedChainBundle(bundle: NativeChainBundle): Promise<NativeChainBundle> {
+export async function saveImportedChainBundle(
+  bundle: NativeChainBundle,
+  options: SaveImportedChainBundleOptions = {},
+): Promise<NativeChainBundle> {
+  const importMode = options.importMode ?? 'new-chain';
   const now = new Date().toISOString();
+
+  if (importMode !== 'new-chain') {
+    if (!options.targetChainId) {
+      throw new Error('A target chain is required for staged imports.');
+    }
+
+    const targetBundle = await getChainBundle(options.targetChainId);
+
+    if (!targetBundle) {
+      throw new Error('Target chain not found.');
+    }
+
+    const clonedBranch = cloneBranchBundleToExistingChain(bundle, targetBundle.chain, {
+      branchTitle:
+        options.branchTitle?.trim() ||
+        (importMode === 'new-jumpers' ? `Imported Jumpers: ${bundle.chain.title}` : `Imported Branch: ${bundle.chain.title}`),
+      branchNotes:
+        importMode === 'new-jumpers'
+          ? 'Imported into the existing chain as a non-destructive jumper staging branch.'
+          : 'Imported into the existing chain as a non-destructive branch.',
+      includeImportReports: true,
+      importMode,
+      sourceBranchId: bundle.branches[0]?.id ?? null,
+      preferredActiveJumpId: bundle.chain.activeJumpId ?? null,
+    });
+
+    await db.transaction(
+      'rw',
+      [
+        db.chains,
+        db.branches,
+        db.jumpers,
+        db.companions,
+        db.jumps,
+        db.participations,
+        db.effects,
+        db.bodymodProfiles,
+        db.jumpRulesContexts,
+        db.houseRuleProfiles,
+        db.presetProfiles,
+        db.notes,
+        db.attachments,
+        db.importReports,
+      ],
+      async () => {
+        await Promise.all(
+          targetBundle.branches.map((branch) =>
+            db.branches.update(branch.id, {
+              isActive: false,
+              updatedAt: now,
+            }),
+          ),
+        );
+
+        await db.branches.put(clonedBranch.branch);
+        await db.jumpers.bulkPut(clonedBranch.jumpers);
+        await db.companions.bulkPut(clonedBranch.companions);
+        await db.jumps.bulkPut(clonedBranch.jumps);
+        await db.participations.bulkPut(clonedBranch.participations);
+        await db.effects.bulkPut(clonedBranch.effects);
+        await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
+        await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);
+        await db.houseRuleProfiles.bulkPut(clonedBranch.houseRuleProfiles);
+        await db.presetProfiles.bulkPut(clonedBranch.presetProfiles);
+        await db.notes.bulkPut(clonedBranch.notes);
+        await db.attachments.bulkPut(clonedBranch.attachments);
+        await db.importReports.bulkPut(clonedBranch.importReports);
+        await db.chains.update(targetBundle.chain.id, {
+          activeBranchId: clonedBranch.branch.id,
+          activeJumpId: clonedBranch.activeJumpId,
+          updatedAt: now,
+        });
+      },
+    );
+
+    const persistedTargetBundle = await getChainBundle(targetBundle.chain.id);
+
+    if (!persistedTargetBundle) {
+      throw new Error('Unable to reload the staged import target chain.');
+    }
+
+    return persistedTargetBundle;
+  }
+
   const persistedBundle = validateNativeChainBundle({
     ...bundle,
     chain: {
@@ -642,6 +755,7 @@ export async function saveImportedChainBundle(bundle: NativeChainBundle): Promis
     })),
     importReports: bundle.importReports.map((report) => ({
       ...report,
+      importMode,
       status: 'imported',
       updatedAt: now,
     })),

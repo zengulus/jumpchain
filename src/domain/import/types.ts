@@ -209,6 +209,7 @@ export interface NormalizedJumpImport {
   sourceId: number;
   title: string;
   orderIndex: number;
+  status: Jump['status'];
   duration: Jump['duration'];
   characterSourceIds: number[];
   importSourceMetadata: JsonMap;
@@ -217,6 +218,7 @@ export interface NormalizedJumpImport {
 export interface NormalizedParticipationImport {
   sourceJumpId: number;
   sourceCharacterId: number;
+  status: JumperParticipation['status'];
   notes: string;
   purchases: unknown[];
   drawbacks: unknown[];

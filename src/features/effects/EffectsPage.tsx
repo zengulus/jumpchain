@@ -29,6 +29,20 @@ function getOwnerOptions(workspace: ReturnType<typeof useChainWorkspace>['worksp
   } as const;
 }
 
+type OwnerOptions = ReturnType<typeof getOwnerOptions>;
+
+function hasOwnerTargets(ownerOptions: OwnerOptions, ownerEntityType: OwnerEntityType) {
+  return ownerEntityType === 'system' || ownerOptions[ownerEntityType].length > 0;
+}
+
+function isEffectOwnerValid(effect: Effect, ownerOptions: OwnerOptions) {
+  if (effect.ownerEntityType === 'system') {
+    return effect.ownerEntityId === 'system';
+  }
+
+  return ownerOptions[effect.ownerEntityType].some((option) => option.value === effect.ownerEntityId);
+}
+
 function getRuleOverrides(effect: Effect) {
   const metadata = effect.importSourceMetadata as Record<string, unknown>;
   const accessOverrides =
@@ -114,6 +128,20 @@ export function EffectsPage() {
 
   async function saveSelectedEffect(nextValue: Effect | null) {
     if (!nextValue) {
+      return;
+    }
+
+    const currentOwnerValid = selectedEffect ? isEffectOwnerValid(selectedEffect, ownerOptions) : true;
+    const ownerChanged =
+      !selectedEffect ||
+      nextValue.ownerEntityType !== selectedEffect.ownerEntityType ||
+      nextValue.ownerEntityId !== selectedEffect.ownerEntityId;
+
+    if (!isEffectOwnerValid(nextValue, ownerOptions) && (ownerChanged || currentOwnerValid)) {
+      setNotice({
+        tone: 'error',
+        message: 'Choose an owner type and target that both exist in the current workspace.',
+      });
       return;
     }
 
@@ -347,15 +375,27 @@ export function EffectsPage() {
                           const ownerEntityType = event.target.value as OwnerEntityType;
                           const nextOwnerOptions = ownerOptions[ownerEntityType];
 
+                          if (!hasOwnerTargets(ownerOptions, ownerEntityType)) {
+                            setNotice({
+                              tone: 'error',
+                              message: 'That owner type has no valid targets in the current workspace yet.',
+                            });
+                            return;
+                          }
+
                           void saveSelectedEffect({
                             ...selectedEffect,
                             ownerEntityType,
-                            ownerEntityId: nextOwnerOptions[0]?.value ?? selectedEffect.ownerEntityId,
+                            ownerEntityId: ownerEntityType === 'system' ? 'system' : nextOwnerOptions[0]?.value ?? selectedEffect.ownerEntityId,
                           });
                         }}
                       >
                         {ownerEntityTypes.map((ownerType) => (
-                          <option key={ownerType} value={ownerType}>
+                          <option
+                            key={ownerType}
+                            value={ownerType}
+                            disabled={!hasOwnerTargets(ownerOptions, ownerType) && ownerType !== selectedEffect.ownerEntityType}
+                          >
                             {ownerType}
                           </option>
                         ))}
@@ -363,7 +403,9 @@ export function EffectsPage() {
                     </label>
                     <label className="field">
                       <span>Owner target</span>
-                      {selectedOwnerOptions.length > 0 ? (
+                      {selectedEffect.ownerEntityType === 'system' ? (
+                        <input value="system" readOnly />
+                      ) : selectedOwnerOptions.length > 0 ? (
                         <select
                           value={selectedEffect.ownerEntityId}
                           onChange={(event) =>
@@ -389,9 +431,18 @@ export function EffectsPage() {
                             })
                           }
                         />
+                      ) : (
+                        <input value={selectedEffect.ownerEntityId} readOnly />
                       )}
                     </label>
                   </div>
+
+                  {!hasOwnerTargets(ownerOptions, selectedEffect.ownerEntityType) ? (
+                    <p className="editor-section__empty">
+                      This effect currently points at an owner type with no matching records in the active workspace.
+                      Choose a different owner type to repair it.
+                    </p>
+                  ) : null}
 
                   <label className="field">
                     <span>Description</span>

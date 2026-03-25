@@ -174,6 +174,43 @@ describe('native persistence and round-trip safety', () => {
     );
   });
 
+  it('imports reviewed ChainMaker bundles into an existing chain as a staged branch', async () => {
+    await resetDatabase();
+    const targetBundle = await createBlankChain('Target Chain');
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const persistedBundle = await saveImportedChainBundle(session.bundle, {
+      importMode: 'new-branch',
+      targetChainId: targetBundle.chain.id,
+      branchTitle: 'Imported Timeline',
+    });
+    const activeBranch = persistedBundle.branches.find((branch) => branch.id === persistedBundle.chain.activeBranchId);
+
+    expect(persistedBundle.chain.id).toBe(targetBundle.chain.id);
+    expect(persistedBundle.branches).toHaveLength(2);
+    expect(activeBranch?.title).toBe('Imported Timeline');
+    expect(persistedBundle.importReports.some((report) => report.importMode === 'new-branch')).toBe(true);
+    expect(persistedBundle.jumpers).toHaveLength(1);
+    expect(persistedBundle.jumps).toHaveLength(1);
+  });
+
+  it('stages new-jumper imports as non-destructive branches inside an existing chain', async () => {
+    await resetDatabase();
+    const targetBundle = await createBlankChain('Host Chain');
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const persistedBundle = await saveImportedChainBundle(session.bundle, {
+      importMode: 'new-jumpers',
+      targetChainId: targetBundle.chain.id,
+      branchTitle: 'Imported Jumpers',
+    });
+    const activeBranch = persistedBundle.branches.find((branch) => branch.id === persistedBundle.chain.activeBranchId);
+
+    expect(persistedBundle.chain.id).toBe(targetBundle.chain.id);
+    expect(persistedBundle.branches).toHaveLength(2);
+    expect(activeBranch?.title).toBe('Imported Jumpers');
+    expect(activeBranch?.notes.includes('jumper staging branch')).toBe(true);
+    expect(persistedBundle.importReports.some((report) => report.importMode === 'new-jumpers')).toBe(true);
+  });
+
   it('exports a filtered single-branch native save', async () => {
     await resetDatabase();
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);

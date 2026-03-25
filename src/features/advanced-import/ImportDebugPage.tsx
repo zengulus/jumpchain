@@ -1,9 +1,9 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../app/store';
 import { prepareChainMakerV2ImportSession } from '../../domain/import/chainmakerV2';
 import { detectImportSource } from '../../domain/import/sourceDetection';
-import { saveImportedChainBundle } from '../../db/persistence';
+import { listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
 import sampleChainMaker from '../../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { readJsonFile } from '../../utils/file';
 
@@ -53,6 +53,59 @@ export function ImportDebugPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [availableChains, setAvailableChains] = useState<ChainOverview[]>([]);
+  const [importMode, setImportMode] = useState<'new-chain' | 'new-branch' | 'new-jumpers'>('new-chain');
+  const [targetChainId, setTargetChainId] = useState('');
+  const [branchTitle, setBranchTitle] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChains() {
+      const chains = await listChainOverviews();
+
+      if (!cancelled) {
+        setAvailableChains(chains);
+      }
+    }
+
+    void loadChains();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (availableChains.length === 0) {
+      if (importMode !== 'new-chain') {
+        setImportMode('new-chain');
+      }
+
+      if (targetChainId !== '') {
+        setTargetChainId('');
+      }
+
+      return;
+    }
+
+    if (!availableChains.some((chain) => chain.chainId === targetChainId)) {
+      setTargetChainId(availableChains[0]?.chainId ?? '');
+    }
+  }, [availableChains, importMode, targetChainId]);
+
+  useEffect(() => {
+    if (!importSession) {
+      return;
+    }
+
+    const suggestedBranchTitle =
+      importMode === 'new-jumpers'
+        ? `Imported Jumpers: ${importSession.normalized.summary.chainName}`
+        : `Imported Branch: ${importSession.normalized.summary.chainName}`;
+
+    setBranchTitle((currentTitle) => currentTitle || suggestedBranchTitle);
+  }, [importMode, importSession]);
 
   function loadRawSource(raw: unknown, label: string) {
     const detection = detectImportSource(raw);
@@ -69,6 +122,7 @@ export function ImportDebugPage() {
 
     const nextSession = prepareChainMakerV2ImportSession(raw);
     setImportSession(nextSession);
+    setBranchTitle('');
     setStatusMessage(`Loaded ${label} and built a typed import session.`);
     setErrorMessage(null);
   }
@@ -96,14 +150,27 @@ export function ImportDebugPage() {
       return;
     }
 
+    if (importMode !== 'new-chain' && !targetChainId) {
+      setErrorMessage('Choose a target chain for staged imports.');
+      return;
+    }
+
     setIsSaving(true);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
-      const persisted = await saveImportedChainBundle(importSession.bundle);
+      const persisted = await saveImportedChainBundle(importSession.bundle, {
+        importMode,
+        targetChainId: importMode === 'new-chain' ? undefined : targetChainId,
+        branchTitle: importMode === 'new-chain' ? undefined : branchTitle,
+      });
       setImportSession(null);
-      setStatusMessage(`Imported "${persisted.chain.title}" into IndexedDB as a new chain.`);
+      setStatusMessage(
+        importMode === 'new-chain'
+          ? `Imported "${persisted.chain.title}" into IndexedDB as a new chain.`
+          : `Imported into "${persisted.chain.title}" as a non-destructive staged branch.`,
+      );
       navigate(`/chains/${persisted.chain.id}/overview`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to commit imported chain.');
@@ -242,6 +309,59 @@ export function ImportDebugPage() {
             </div>
             <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
             <div className="section-grid section-grid--two">
+              <section className="section-surface stack stack--compact">
+                <div className="editor-section__header">
+                  <h4>Import Target</h4>
+                  <span className="pill">{importMode}</span>
+                </div>
+
+                <label className="field">
+                  <span>Commit mode</span>
+                  <select
+                    value={importMode}
+                    onChange={(event) => {
+                      setImportMode(event.target.value as typeof importMode);
+                      setBranchTitle('');
+                    }}
+                  >
+                    <option value="new-chain">New chain</option>
+                    <option value="new-branch" disabled={availableChains.length === 0}>
+                      Existing chain as branch
+                    </option>
+                    <option value="new-jumpers" disabled={availableChains.length === 0}>
+                      Existing chain as jumper staging branch
+                    </option>
+                  </select>
+                </label>
+
+                {importMode !== 'new-chain' ? (
+                  <>
+                    <label className="field">
+                      <span>Target chain</span>
+                      <select value={targetChainId} onChange={(event) => setTargetChainId(event.target.value)}>
+                        {availableChains.map((chain) => (
+                          <option key={chain.chainId} value={chain.chainId}>
+                            {chain.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Imported branch title</span>
+                      <input value={branchTitle} onChange={(event) => setBranchTitle(event.target.value)} />
+                    </label>
+                    <p className="editor-section__copy">
+                      {importMode === 'new-jumpers'
+                        ? 'This mode stages the import as its own branch inside the existing chain so imported jumpers stay non-destructive until you decide how to merge them.'
+                        : 'This mode imports the ChainMaker payload as a new branch inside an existing chain without overwriting any current data.'}
+                    </p>
+                  </>
+                ) : (
+                  <p className="editor-section__copy">
+                    Commits this reviewed payload into IndexedDB as a standalone chain with its own mainline branch.
+                  </p>
+                )}
+              </section>
               <PreviewPanel
                 title="Jumpers"
                 items={jumperNames}
