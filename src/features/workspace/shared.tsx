@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { cloneElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
 import { createJsonText } from './records';
 import type { AutosaveStatus } from './useAutosaveRecord';
 
@@ -78,6 +78,33 @@ export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) 
     <div className="autosave-status autosave-status--saved" role="status">
       Saved
     </div>
+  );
+}
+
+export function TooltipFrame(props: {
+  tooltip?: string | null;
+  children: ReactElement<{ 'aria-describedby'?: string }>;
+  inline?: boolean;
+}) {
+  if (!props.tooltip) {
+    return props.children;
+  }
+
+  const tooltipId = useId();
+  const Wrapper = props.inline ? 'span' : 'div';
+  const child = cloneElement(props.children, {
+    'aria-describedby': props.children.props['aria-describedby']
+      ? `${props.children.props['aria-describedby']} ${tooltipId}`
+      : tooltipId,
+  });
+
+  return (
+    <Wrapper className={`tooltip-frame${props.inline ? ' tooltip-frame--inline' : ''}`}>
+      {child}
+      <span className="tooltip-frame__bubble" id={tooltipId} role="tooltip">
+        {props.tooltip}
+      </span>
+    </Wrapper>
   );
 }
 

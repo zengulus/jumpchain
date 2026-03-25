@@ -10,7 +10,7 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
-import { StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type OverviewStepTone = 'ready' | 'attention' | 'blocked';
@@ -37,6 +37,13 @@ function formatTimestamp(value: string) {
 
 function formatCountLabel(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`;
+}
+
+function joinHelpText(...parts: Array<string | undefined>) {
+  return parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part && part.length > 0))
+    .join(' ');
 }
 
 function getStepStatusLabel(tone: OverviewStepTone) {
@@ -250,8 +257,8 @@ export function ChainOverviewPage() {
       id: 'jumper',
       title: hasJumpers ? `Jumpers ready: ${formatCountLabel(workspace.jumpers.length, 'jumper')}` : 'Create your first jumper',
       description: hasJumpers
-        ? `Character-focused systems now have someone to hang off. ${selectedJumper ? `${selectedJumper.name} is the current focus.` : 'Pick a focus jumper any time.'}`
-        : 'Iconic, participation, and jumper-owned notes all start here.',
+        ? `${selectedJumper?.name ?? 'Focused jumper'} is ready.`
+        : 'Needed for character setup.',
       context: hasJumpers
         ? `Open ${selectedJumper?.name ?? 'the roster'} to keep identity, background, and concept notes aligned.`
         : 'Start with at least one jumper before worrying about Iconic or participation.',
@@ -272,8 +279,10 @@ export function ChainOverviewPage() {
       id: 'jump',
       title: hasJumps ? `Jumps ready: ${formatCountLabel(workspace.jumps.length, 'jump')}` : 'Create your first jump',
       description: hasJumps
-        ? `${currentJump ? `${currentJump.title} is active right now.` : 'A jump exists, but none is marked current yet.'}`
-        : 'Timeline, participation, and current-jump rules become meaningful once a jump exists.',
+        ? currentJump
+          ? `${currentJump.title} is active.`
+          : 'Jump list exists.'
+        : 'Needed for jump-scoped editing.',
       context: hasJumps
         ? 'Open the jump editor to maintain order, status, and participant membership.'
         : 'Even a rough placeholder jump is enough to unlock the rest of the jump-specific workflow.',
@@ -294,10 +303,10 @@ export function ChainOverviewPage() {
       id: 'current-jump',
       title: currentJump ? 'Current jump selected' : 'Choose the current jump',
       description: currentJump
-        ? `${currentJump.title} drives participation focus, current-jump rules, and the live summary below.`
+        ? `${currentJump.title} is in play.`
         : hasJumps
-          ? 'Pick which existing jump is currently in play so the rest of the workspace can follow it.'
-          : 'There is no jump to select yet. Create one first, then pick the active jump here.',
+          ? 'Set the jump in play.'
+          : 'Blocked until a jump exists.',
       context: currentJump
         ? 'Use the selector in Active Context to switch focus without leaving Overview.'
         : hasJumps
@@ -333,9 +342,9 @@ export function ChainOverviewPage() {
       title: selectedJumper ? `Iconic for ${selectedJumper.name}` : 'Create a jumper before Iconic',
       description: selectedJumper
         ? selectedIconicProfile
-          ? 'The focused jumper already has a jumper-tied Iconic profile.'
-          : 'Iconic is now explicitly per-jumper. Create or fill the profile for the currently focused jumper.'
-        : 'There is no jumper to attach an Iconic profile to yet.',
+          ? 'Profile is ready.'
+          : 'Focused jumper still needs Iconic.'
+        : 'Blocked until a jumper exists.',
       context: selectedJumper
         ? selectedIconicProfile
           ? 'Open the profile to keep preserved concept selections aligned with the jumper.'
@@ -365,13 +374,13 @@ export function ChainOverviewPage() {
       title: selectedJumper && currentJump ? `${selectedJumper.name} @ ${currentJump.title}` : 'Wire participation',
       description: selectedJumper && currentJump
         ? selectedParticipation
-          ? 'A participation record exists for the focused jumper in the current jump.'
-          : 'Create the participation record that holds perks, items, drawbacks, budgets, and jump-specific notes.'
+          ? 'Participation is ready.'
+          : 'Current jump record is missing.'
         : selectedJumper
           ? hasJumps
-            ? 'Pick the current jump first, then wire the focused jumper into it.'
-            : 'Create a jump first, then add participation for the focused jumper.'
-          : 'Participation needs both a jumper and a current jump.',
+            ? 'Pick the current jump first.'
+            : 'Create a jump first.'
+          : 'Needs a jumper and jump.',
       context: selectedJumper && currentJump
         ? selectedParticipation
           ? 'Open the participation editor to keep imports, purchases, and narratives in sync.'
@@ -414,7 +423,8 @@ export function ChainOverviewPage() {
     {
       id: 'jumpers',
       title: selectedJumper ? `Focused Jumper: ${selectedJumper.name}` : 'Jumpers',
-      description: selectedJumper
+      description: selectedJumper ? 'Roster and identity editing.' : 'Create the roster.',
+      hint: selectedJumper
         ? 'Identity, background, and concept edits for the jumper currently driving Iconic and participation routes.'
         : 'Create and manage the chain’s character roster.',
       to: `/chains/${chainId}/jumpers${buildSearch(selectedJumperId)}`,
@@ -422,7 +432,8 @@ export function ChainOverviewPage() {
     {
       id: 'jumps',
       title: currentJump ? `Current Jump: ${currentJump.title}` : 'Jumps',
-      description: currentJump
+      description: currentJump ? 'Jump record and order.' : 'Create or choose the jump in play.',
+      hint: currentJump
         ? 'Ordering, duration, status, and jump-level context live here.'
         : 'Open the jump registry to create or choose the current jump.',
       to: getJumpEditorPath(),
@@ -431,6 +442,11 @@ export function ChainOverviewPage() {
       id: 'iconic',
       title: selectedJumper ? `Iconic: ${selectedJumper.name}` : 'Iconic',
       description: selectedJumper
+        ? selectedIconicProfile
+          ? 'Focused jumper profile.'
+          : 'No profile yet.'
+        : 'Needs a jumper.',
+      hint: selectedJumper
         ? selectedIconicProfile
           ? 'The preserved concept sheet for the focused jumper.'
           : 'No Iconic profile exists yet for the focused jumper.'
@@ -442,6 +458,11 @@ export function ChainOverviewPage() {
       title: selectedJumper && currentJump ? `Participation: ${selectedJumper.name}` : 'Participation',
       description: selectedJumper && currentJump
         ? selectedParticipation
+          ? 'Current jump record.'
+          : 'Record not created yet.'
+        : 'Needs jumper and jump.',
+      hint: selectedJumper && currentJump
+        ? selectedParticipation
           ? `Open ${selectedJumper.name}'s live record inside ${currentJump.title}.`
           : `Create ${selectedJumper.name}'s participation record inside ${currentJump.title}.`
         : 'Needs both a jumper focus and a current jump.',
@@ -450,13 +471,15 @@ export function ChainOverviewPage() {
     {
       id: 'personal-reality',
       title: 'Personal Reality',
-      description: 'Supplement budgeting, page-by-page purchases, and warehouse continuity.',
+      description: 'Supplement builder.',
+      hint: 'Supplement budgeting, page-by-page purchases, and warehouse continuity.',
       to: `/chains/${chainId}/personal-reality`,
     },
     {
       id: 'rules',
       title: currentJump ? 'Current Jump Rules' : 'Chainwide Rules',
-      description: currentJump
+      description: currentJump ? 'Active access rules.' : 'Baseline rule defaults.',
+      hint: currentJump
         ? 'Warehouse, powers, items, and supplement access for the active jump.'
         : 'Review baseline chain rules while the first jump is still being scaffolded.',
       to: currentJump ? `/chains/${chainId}/current-jump-rules` : `/chains/${chainId}/rules`,
@@ -464,13 +487,15 @@ export function ChainOverviewPage() {
     {
       id: 'notes',
       title: 'Notes',
-      description: 'Capture chain decisions, planning notes, and continuity reminders without leaving the workspace.',
+      description: 'Chain notes and reminders.',
+      hint: 'Capture chain decisions, planning notes, and continuity reminders without leaving the workspace.',
       to: `/chains/${chainId}/notes`,
     },
     {
       id: 'recovery',
       title: 'Backups & Branches',
-      description: 'Snapshots, branch switching, exports, and restore controls.',
+      description: 'Snapshots and branch tools.',
+      hint: 'Snapshots, branch switching, exports, and restore controls.',
       to: `/chains/${chainId}/backups`,
     },
   ];
@@ -557,14 +582,17 @@ export function ChainOverviewPage() {
               Snapshots
             </span>
           </div>
-          <div className="guidance-strip guidance-strip--accent">
-            <strong>{nextSetupStep ? 'Setup still in progress.' : 'Core setup is in place.'}</strong>
-            <p>
-              {nextSetupStep
-                ? `${nextSetupStep.title}: ${nextSetupStep.description}`
-                : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'}
-            </p>
-          </div>
+          <TooltipFrame
+            tooltip={
+              nextSetupStep
+                ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
+                : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+            }
+          >
+            <div className="guidance-strip guidance-strip--accent">
+              <strong>{nextSetupStep ? `Next: ${nextSetupStep.title}` : 'Core setup is ready.'}</strong>
+            </div>
+          </TooltipFrame>
           <p>
             Native format <strong>{bundle.chain.formatVersion}</strong> | updated {formatTimestamp(bundle.chain.updatedAt)}
           </p>
@@ -580,61 +608,68 @@ export function ChainOverviewPage() {
             <h3>Active Context</h3>
             <span className="pill">{workspace.activeBranch?.title ?? 'No branch'}</span>
           </div>
-          <label className="field">
-            <span>Active branch</span>
-            <select
-              value={workspace.activeBranch?.id ?? ''}
-              onChange={(event) => void handleBranchChange(event.target.value)}
-            >
-              {workspace.branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.title}
-                </option>
-              ))}
-            </select>
-            <small className="field-hint">Switching branches updates the entire workspace focus, including timeline, notes, and snapshots.</small>
-          </label>
-          <label className="field">
-            <span>Focused jumper</span>
-            <select value={selectedJumperId} onChange={(event) => handleFocusedJumperChange(event.target.value)} disabled={!hasJumpers}>
-              {hasJumpers ? (
-                workspace.jumpers.map((jumper) => (
-                  <option key={jumper.id} value={jumper.id}>
-                    {jumper.name}
+          <TooltipFrame tooltip="Switching branches updates the entire workspace focus, including timeline, notes, and snapshots.">
+            <label className="field">
+              <span>Active branch</span>
+              <select
+                value={workspace.activeBranch?.id ?? ''}
+                onChange={(event) => void handleBranchChange(event.target.value)}
+              >
+                {workspace.branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.title}
                   </option>
-                ))
-              ) : (
-                <option value="">Create a jumper first</option>
-              )}
-            </select>
-            <small className="field-hint">
-              {selectedJumper
+                ))}
+              </select>
+            </label>
+          </TooltipFrame>
+          <TooltipFrame
+            tooltip={
+              selectedJumper
                 ? `Iconic and participation setup will follow ${selectedJumper.name}.`
-                : 'Create the first jumper to unlock jumper-specific setup work.'}
-            </small>
-          </label>
-          <label className="field">
-            <span>Current jump</span>
-            <select
-              value={workspace.currentJump?.id ?? ''}
-              onChange={(event) => void handleJumpChange(event.target.value || null)}
-              disabled={!hasJumps}
-            >
-              <option value="">{hasJumps ? 'No current jump' : 'Create a jump first'}</option>
-              {workspace.jumps.map((jump) => (
-                <option key={jump.id} value={jump.id}>
-                  {jump.orderIndex + 1}. {jump.title}
-                </option>
-              ))}
-            </select>
-            <small className="field-hint">
-              {currentJump
+                : 'Create the first jumper to unlock jumper-specific setup work.'
+            }
+          >
+            <label className="field">
+              <span>Focused jumper</span>
+              <select value={selectedJumperId} onChange={(event) => handleFocusedJumperChange(event.target.value)} disabled={!hasJumpers}>
+                {hasJumpers ? (
+                  workspace.jumpers.map((jumper) => (
+                    <option key={jumper.id} value={jumper.id}>
+                      {jumper.name}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Create a jumper first</option>
+                )}
+              </select>
+            </label>
+          </TooltipFrame>
+          <TooltipFrame
+            tooltip={
+              currentJump
                 ? `${currentJump.title} is the active jump for rules, participation, and overview summaries.`
                 : hasJumps
                   ? 'Pick which jump is currently in play so the rest of the workspace can follow it.'
-                  : 'Create the first jump to unlock current-jump workflows.'}
-            </small>
-          </label>
+                  : 'Create the first jump to unlock current-jump workflows.'
+            }
+          >
+            <label className="field">
+              <span>Current jump</span>
+              <select
+                value={workspace.currentJump?.id ?? ''}
+                onChange={(event) => void handleJumpChange(event.target.value || null)}
+                disabled={!hasJumps}
+              >
+                <option value="">{hasJumps ? 'No current jump' : 'Create a jump first'}</option>
+                {workspace.jumps.map((jump) => (
+                  <option key={jump.id} value={jump.id}>
+                    {jump.orderIndex + 1}. {jump.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </TooltipFrame>
         </article>
       </section>
 
@@ -645,32 +680,33 @@ export function ChainOverviewPage() {
         </div>
         <div className="summary-grid">
           {setupSteps.map((step) => (
-            <article key={step.id} className="summary-panel stack stack--compact">
-              <div className="section-heading">
-                <h4>{step.title}</h4>
-                <span className={getStepPillClassName(step.tone)}>{getStepStatusLabel(step.tone)}</span>
-              </div>
-              <p>{step.description}</p>
-              {step.context ? <p className="field-hint">{step.context}</p> : null}
-              <div className="actions">
-                {step.primaryAction.kind === 'link' ? (
-                  <Link
-                    className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
-                    to={step.primaryAction.to ?? `/chains/${chainId}/overview`}
-                  >
-                    {step.primaryAction.label}
-                  </Link>
-                ) : (
-                  <button
-                    className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
-                    type="button"
-                    onClick={() => void step.primaryAction.onClick?.()}
-                  >
-                    {step.primaryAction.label}
-                  </button>
-                )}
-              </div>
-            </article>
+            <TooltipFrame key={step.id} tooltip={joinHelpText(step.description, step.context)}>
+              <article className="summary-panel stack stack--compact">
+                <div className="section-heading">
+                  <h4>{step.title}</h4>
+                  <span className={getStepPillClassName(step.tone)}>{getStepStatusLabel(step.tone)}</span>
+                </div>
+                <p>{step.description}</p>
+                <div className="actions">
+                  {step.primaryAction.kind === 'link' ? (
+                    <Link
+                      className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
+                      to={step.primaryAction.to ?? `/chains/${chainId}/overview`}
+                    >
+                      {step.primaryAction.label}
+                    </Link>
+                  ) : (
+                    <button
+                      className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
+                      type="button"
+                      onClick={() => void step.primaryAction.onClick?.()}
+                    >
+                      {step.primaryAction.label}
+                    </button>
+                  )}
+                </div>
+              </article>
+            </TooltipFrame>
           ))}
         </div>
       </section>
@@ -682,10 +718,12 @@ export function ChainOverviewPage() {
         </div>
         <div className="summary-grid">
           {workSurfaceCards.map((card) => (
-            <Link key={card.id} className="selection-list__item" to={card.to}>
-              <strong>{card.title}</strong>
-              <span>{card.description}</span>
-            </Link>
+            <TooltipFrame key={card.id} tooltip={card.hint}>
+              <Link className="selection-list__item" to={card.to}>
+                <strong>{card.title}</strong>
+                <span>{card.description}</span>
+              </Link>
+            </TooltipFrame>
           ))}
         </div>
       </section>
@@ -728,10 +766,14 @@ export function ChainOverviewPage() {
           ) : (
             <>
               <p>No current jump is selected yet.</p>
-              <p className="field-hint">Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries.</p>
-              <Link className="button button--secondary" to={`/chains/${chainId}/jumps`}>
-                Open Jumps
-              </Link>
+              <TooltipFrame
+                inline
+                tooltip="Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries."
+              >
+                <Link className="button button--secondary" to={`/chains/${chainId}/jumps`}>
+                  Open Jumps
+                </Link>
+              </TooltipFrame>
             </>
           )}
         </article>
@@ -752,12 +794,13 @@ export function ChainOverviewPage() {
           ) : (
             <>
               <p>No snapshots exist for the active branch yet.</p>
-              <p className="field-hint">Take a snapshot before major imports, branch experiments, or big editing sessions.</p>
             </>
           )}
-          <Link className="button button--secondary" to={`/chains/${chainId}/backups`}>
-            Open Recovery Tools
-          </Link>
+          <TooltipFrame inline tooltip="Take a snapshot before major imports, branch experiments, or big editing sessions.">
+            <Link className="button button--secondary" to={`/chains/${chainId}/backups`}>
+              Open Recovery Tools
+            </Link>
+          </TooltipFrame>
         </article>
       </section>
     </div>

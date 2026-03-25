@@ -449,6 +449,65 @@ button {
   color: var(--color-warning);
 }
 
+.tooltip-frame {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.tooltip-frame--inline {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.tooltip-frame__bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.7rem);
+  z-index: 40;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(159, 196, 220, 0.16);
+  border-radius: 0.82rem;
+  background:
+    linear-gradient(180deg, rgba(17, 34, 46, 0.98), rgba(10, 21, 31, 0.98)),
+    var(--color-bg-elevated);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+  color: var(--color-text);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 0.35rem);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    visibility 160ms ease;
+}
+
+.tooltip-frame__bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-right: 1px solid rgba(159, 196, 220, 0.16);
+  border-bottom: 1px solid rgba(159, 196, 220, 0.16);
+  background: rgba(10, 21, 31, 0.98);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.tooltip-frame:hover .tooltip-frame__bubble,
+.tooltip-frame:focus-within .tooltip-frame__bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
 .json-editor {
   min-height: 12rem;
   resize: vertical;
