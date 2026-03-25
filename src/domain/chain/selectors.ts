@@ -8,6 +8,12 @@ import type { Companion, Jumper } from '../jumper/types';
 import type { Jump, JumperParticipation } from '../jump/types';
 import type { Note } from '../notes/types';
 import type { PresetProfile } from '../presets/types';
+import {
+  createDefaultRulesModuleSettings,
+  getRulesModuleHouseRuleProfile,
+  parseRulesModuleSettings,
+  type RulesModuleSettings,
+} from '../rules/customization';
 import type { HouseRuleProfile, JumpRulesContext } from '../rules/types';
 import type { NativeChainBundle } from '../save';
 import type { Snapshot } from '../snapshot/types';
@@ -45,6 +51,9 @@ export interface EffectiveCurrentJumpState {
     supplementAccess: AccessMode;
   };
   currentRulesContext: JumpRulesContext | null;
+  branchRulesProfile: HouseRuleProfile | null;
+  branchRulesSettings: RulesModuleSettings;
+  currentRulesSource: 'jump-context' | 'branch-defaults' | 'chain-defaults';
   currentJump: Jump | null;
   contributingEffects: Effect[];
 }
@@ -146,6 +155,15 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
   const currentJump = workspace.currentJump;
   const currentRulesContext =
     workspace.jumpRulesContexts.find((context) => context.jumpId === currentJump?.id) ?? null;
+  const branchRulesProfile = getRulesModuleHouseRuleProfile(workspace.houseRuleProfiles);
+  const branchRulesSettings = branchRulesProfile
+    ? parseRulesModuleSettings(branchRulesProfile.settings, workspace.chain.chainSettings.altForms)
+    : createDefaultRulesModuleSettings(workspace.chain.chainSettings.altForms);
+  const currentRulesSource = currentRulesContext
+    ? 'jump-context'
+    : branchRulesProfile
+      ? 'branch-defaults'
+      : 'chain-defaults';
 
   const contributingEffects = workspace.effects.filter((effect) => {
     if (effect.state !== 'active') {
@@ -160,14 +178,16 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
   });
 
   const effectiveAccessModes: EffectiveCurrentJumpState['effectiveAccessModes'] = {
-    warehouseAccess: currentRulesContext?.warehouseAccess ?? 'manual',
-    powerAccess: currentRulesContext?.powerAccess ?? 'manual',
-    itemAccess: currentRulesContext?.itemAccess ?? 'manual',
-    altFormAccess: currentRulesContext?.altFormAccess ?? (workspace.chain.chainSettings.altForms ? 'full' : 'locked'),
-    supplementAccess: currentRulesContext?.supplementAccess ?? 'manual',
+    warehouseAccess: currentRulesContext?.warehouseAccess ?? branchRulesSettings.defaults.warehouseAccess,
+    powerAccess: currentRulesContext?.powerAccess ?? branchRulesSettings.defaults.powerAccess,
+    itemAccess: currentRulesContext?.itemAccess ?? branchRulesSettings.defaults.itemAccess,
+    altFormAccess: currentRulesContext?.altFormAccess ?? branchRulesSettings.defaults.altFormAccess,
+    supplementAccess: currentRulesContext?.supplementAccess ?? branchRulesSettings.defaults.supplementAccess,
   };
 
-  let gauntlet = currentRulesContext?.gauntlet ?? (currentJump?.jumpType === 'gauntlet');
+  let gauntlet = currentRulesContext?.gauntlet ?? (
+    branchRulesProfile ? branchRulesSettings.defaults.gauntlet : currentJump?.jumpType === 'gauntlet'
+  );
 
   for (const effect of contributingEffects) {
     const overrides = extractRuleEffectOverrides(effect);
@@ -186,6 +206,9 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
     gauntlet,
     effectiveAccessModes,
     currentRulesContext,
+    branchRulesProfile,
+    branchRulesSettings,
+    currentRulesSource,
     currentJump,
     contributingEffects,
   };

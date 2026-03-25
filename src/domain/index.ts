@@ -11,5 +11,6 @@ export * from './jumper/types';
 export * from './jump/types';
 export * from './notes/types';
 export * from './presets/types';
+export * from './rules/customization';
 export * from './rules/types';
 export * from './snapshot/types';

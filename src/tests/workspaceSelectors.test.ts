@@ -1,6 +1,7 @@
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
 import { buildBranchWorkspace, getCurrentJump, getEffectiveCurrentJumpState } from '../domain/chain/selectors';
+import { createDefaultRulesModuleSettings } from '../domain/rules/customization';
 import { validateNativeChainBundle } from '../schemas';
 
 describe('workspace selectors', () => {
@@ -77,5 +78,50 @@ describe('workspace selectors', () => {
     expect(state.effectiveAccessModes.warehouseAccess).toBe('full');
     expect(state.effectiveAccessModes.altFormAccess).toBe('limited');
     expect(state.contributingEffects).toHaveLength(1);
+  });
+
+  it('falls back to branch rules profile defaults when no jump context exists', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const currentJump = session.bundle.jumps[0];
+    const now = new Date().toISOString();
+    const baseSettings = createDefaultRulesModuleSettings(true);
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      chain: {
+        ...session.bundle.chain,
+        activeJumpId: currentJump.id,
+      },
+      houseRuleProfiles: [
+        {
+          id: 'house-rules-test',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          title: 'Strict Branch Rules',
+          description: 'Testing fallback behavior.',
+          settings: {
+            ...baseSettings,
+            defaults: {
+              ...baseSettings.defaults,
+              gauntlet: true,
+              warehouseAccess: 'limited',
+              powerAccess: 'locked',
+            },
+          },
+        },
+      ],
+      jumpRulesContexts: [],
+    });
+
+    const state = getEffectiveCurrentJumpState(buildBranchWorkspace(bundle, branchId));
+
+    expect(state.currentRulesSource).toBe('branch-defaults');
+    expect(state.branchRulesProfile?.id).toBe('house-rules-test');
+    expect(state.gauntlet).toBe(true);
+    expect(state.effectiveAccessModes.warehouseAccess).toBe('limited');
+    expect(state.effectiveAccessModes.powerAccess).toBe('locked');
   });
 });

@@ -10,6 +10,10 @@ This repo now starts from an importer-first foundation:
 
 The current implementation intentionally favors schema safety and preservation of unmapped source data over polished module screens.
 
+Additional planning docs:
+
+- `docs/companion-management-suite.md` outlines the next-step companion management suite.
+
 ## GitHub Pages
 
 This app is intended to run on GitHub Pages as built static assets, not by serving the source tree directly.

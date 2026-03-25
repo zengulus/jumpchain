@@ -7,7 +7,8 @@ import type { Effect } from '../../domain/effects/types';
 import type { Jumper } from '../../domain/jumper/types';
 import type { Jump, JumperParticipation } from '../../domain/jump/types';
 import type { Note } from '../../domain/notes/types';
-import type { JumpRulesContext } from '../../domain/rules/types';
+import { createDefaultRulesModuleSettings, type RulesDefaults } from '../../domain/rules/customization';
+import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/types';
 import { createId } from '../../utils/id';
 
 function createTimestamp() {
@@ -207,7 +208,7 @@ export function createBlankJumpRulesContext(
   chainId: string,
   branchId: string,
   jumpId: string,
-  allowAltForms: boolean,
+  defaults: RulesDefaults,
 ): JumpRulesContext {
   const now = createTimestamp();
 
@@ -218,14 +219,33 @@ export function createBlankJumpRulesContext(
     createdAt: now,
     updatedAt: now,
     jumpId,
-    gauntlet: false,
-    warehouseAccess: 'manual',
-    powerAccess: 'manual',
-    itemAccess: 'manual',
-    altFormAccess: allowAltForms ? 'full' : 'locked',
-    supplementAccess: 'manual',
+    gauntlet: defaults.gauntlet,
+    warehouseAccess: defaults.warehouseAccess,
+    powerAccess: defaults.powerAccess,
+    itemAccess: defaults.itemAccess,
+    altFormAccess: defaults.altFormAccess,
+    supplementAccess: defaults.supplementAccess,
     notes: '',
     importSourceMetadata: {},
+  };
+}
+
+export function createBlankHouseRuleProfile(
+  chainId: string,
+  branchId: string,
+  allowAltForms: boolean,
+): HouseRuleProfile {
+  const now = createTimestamp();
+
+  return {
+    id: createId('house'),
+    chainId,
+    branchId,
+    createdAt: now,
+    updatedAt: now,
+    title: 'Current Jump Rules Profile',
+    description: 'Branch-level defaults and module customization for the rules workspace.',
+    settings: createDefaultRulesModuleSettings(allowAltForms) as unknown as JsonMap,
   };
 }
 
