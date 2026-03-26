@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { db } from '../../db/database';
+import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import { switchActiveBranch, switchActiveJump } from '../../db/persistence';
 import {
@@ -11,7 +12,8 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
-import { AssistiveHint, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { AssistiveHint, AutosaveStatusIndicator, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type OverviewStepTone = 'ready' | 'attention' | 'blocked';
@@ -30,6 +32,29 @@ interface OverviewSetupStep {
   context?: string;
   tone: OverviewStepTone;
   primaryAction: OverviewStepAction;
+}
+
+type SimpleSetupWizardStepId =
+  | 'create-jumper'
+  | 'jumper-name'
+  | 'jumper-gender'
+  | 'jumper-age'
+  | 'jumper-notes'
+  | 'create-jump'
+  | 'jump-title'
+  | 'jump-status'
+  | 'jump-type'
+  | 'jump-duration'
+  | 'iconic-prompt'
+  | 'personal-reality-prompt'
+  | 'iconic-guide'
+  | 'personal-reality-guide'
+  | 'complete';
+
+interface SimpleSetupWizardStep {
+  id: SimpleSetupWizardStepId;
+  title: string;
+  description: string;
 }
 
 function formatTimestamp(value: string) {
@@ -69,12 +94,29 @@ function getStepPillClassName(tone: OverviewStepTone) {
   }
 }
 
+function getLatestJump<T extends { orderIndex: number; createdAt: string }>(jumps: T[]) {
+  const orderedJumps = jumps
+    .slice()
+    .sort((left, right) => {
+      if (left.orderIndex !== right.orderIndex) {
+        return left.orderIndex - right.orderIndex;
+      }
+
+      return left.createdAt.localeCompare(right.createdAt);
+    });
+
+  return orderedJumps.length > 0 ? orderedJumps[orderedJumps.length - 1] : null;
+}
+
 export function ChainOverviewPage() {
   const { chainId, bundle, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, getSimpleModeWizardState, updateSimpleModeWizardState } = useUiPreferences();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [simpleWizardStepId, setSimpleWizardStepId] = useState<SimpleSetupWizardStepId | null>(null);
   const effectiveState = getEffectiveCurrentJumpState(workspace);
+  const simpleModeWizardKey = workspace.activeBranch ? `${chainId}:${workspace.activeBranch.id}` : chainId;
+  const simpleModeWizardState = getSimpleModeWizardState(simpleModeWizardKey);
   const latestSnapshot = workspace.snapshots.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   const hasJumpers = workspace.jumpers.length > 0;
   const hasJumps = workspace.jumps.length > 0;
@@ -88,10 +130,33 @@ export function ChainOverviewPage() {
     ? workspace.bodymodProfiles.find((profile) => profile.jumperId === selectedJumper.id) ?? null
     : null;
   const firstJump = workspace.jumps[0] ?? null;
+  const latestJump = getLatestJump(workspace.jumps);
+  const hasUnguidedJump = workspace.jumps.length > simpleModeWizardState.guidedJumpCount;
+  const wizardJump =
+    (hasUnguidedJump ? latestJump : null) ??
+    workspace.jumps.find((jump) => jump.id === searchParams.get('jump')) ??
+    currentJump ??
+    latestJump ??
+    null;
   const selectedParticipation =
     currentJump && selectedJumper
       ? workspace.participations.find((participation) => participation.jumpId === currentJump.id && participation.jumperId === selectedJumper.id) ?? null
       : null;
+  const jumperAutosave = useAutosaveRecord(selectedJumper, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.jumpers, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode jumper changes.'),
+  });
+  const jumpAutosave = useAutosaveRecord(wizardJump, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.jumps, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode jump changes.'),
+  });
+  const draftJumper = jumperAutosave.draft ?? selectedJumper;
+  const draftWizardJump = jumpAutosave.draft ?? wizardJump;
+  const simpleWizardAutosaveStatus = mergeAutosaveStatuses([jumperAutosave.status, jumpAutosave.status]);
 
   function buildSearch(nextJumperId = selectedJumperId) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -104,6 +169,20 @@ export function ChainOverviewPage() {
 
     const nextSearch = nextSearchParams.toString();
     return nextSearch.length > 0 ? `?${nextSearch}` : '';
+  }
+
+  function handleWizardJumpFocusChange(nextJumpId: string | null) {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+
+      if (nextJumpId) {
+        nextParams.set('jump', nextJumpId);
+      } else {
+        nextParams.delete('jump');
+      }
+
+      return nextParams;
+    });
   }
 
   function getJumpEditorPath(nextJumpId?: string | null) {
@@ -186,6 +265,8 @@ export function ChainOverviewPage() {
         await switchActiveJump(chainId, jump.id);
       }
 
+      handleWizardJumpFocusChange(jump.id);
+
       setNotice({
         tone: 'success',
         message: 'Created a new jump from Overview.',
@@ -251,6 +332,235 @@ export function ChainOverviewPage() {
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to create participation from Overview.',
       });
+    }
+  }
+
+  useEffect(() => {
+    if (
+      simpleModeWizardState.iconicDecision !== 'not-now' ||
+      simpleModeWizardState.personalRealityDecision !== 'not-now' ||
+      workspace.jumps.length <= simpleModeWizardState.lastSupplementPromptJumpCount
+    ) {
+      return;
+    }
+
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => {
+      if (
+        current.iconicDecision !== 'not-now' ||
+        current.personalRealityDecision !== 'not-now' ||
+        workspace.jumps.length <= current.lastSupplementPromptJumpCount
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        iconicDecision: 'undecided',
+        personalRealityDecision: 'undecided',
+        iconicGuideCompleted: false,
+        personalRealityGuideCompleted: false,
+      };
+    });
+  }, [
+    simpleModeWizardKey,
+    simpleModeWizardState.iconicDecision,
+    simpleModeWizardState.lastSupplementPromptJumpCount,
+    simpleModeWizardState.personalRealityDecision,
+    updateSimpleModeWizardState,
+    workspace.jumps.length,
+  ]);
+
+  function markJumperWizardComplete() {
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => ({
+      ...current,
+      jumperWizardCompleted: true,
+    }));
+    setSimpleWizardStepId(null);
+  }
+
+  function markJumpWizardComplete() {
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => ({
+      ...current,
+      guidedJumpCount: Math.max(current.guidedJumpCount, workspace.jumps.length),
+    }));
+    setSimpleWizardStepId(null);
+  }
+
+  function updateSupplementDecision(feature: 'iconic' | 'personalReality', decision: 'yes' | 'not-now' | 'skip-future') {
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => {
+      const nextState = {
+        ...current,
+        iconicDecision: feature === 'iconic' ? decision : current.iconicDecision,
+        personalRealityDecision: feature === 'personalReality' ? decision : current.personalRealityDecision,
+        iconicGuideCompleted: feature === 'iconic' && decision === 'yes' ? false : current.iconicGuideCompleted,
+        personalRealityGuideCompleted:
+          feature === 'personalReality' && decision === 'yes' ? false : current.personalRealityGuideCompleted,
+      };
+
+      if (nextState.iconicDecision === 'not-now' && nextState.personalRealityDecision === 'not-now') {
+        return {
+          ...nextState,
+          lastSupplementPromptJumpCount: workspace.jumps.length,
+        };
+      }
+
+      return nextState;
+    });
+    setSimpleWizardStepId(null);
+  }
+
+  function markSupplementGuideComplete(feature: 'iconic' | 'personalReality') {
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => ({
+      ...current,
+      iconicGuideCompleted: feature === 'iconic' ? true : current.iconicGuideCompleted,
+      personalRealityGuideCompleted: feature === 'personalReality' ? true : current.personalRealityGuideCompleted,
+    }));
+    setSimpleWizardStepId(null);
+  }
+
+  const simpleSetupWizardSteps: SimpleSetupWizardStep[] = [];
+
+  if (!simpleModeWizardState.jumperWizardCompleted) {
+    if (!draftJumper) {
+      simpleSetupWizardSteps.push({
+        id: 'create-jumper',
+        title: 'Create your jumper',
+        description: 'Start by making the jumper record this branch will follow.',
+      });
+    } else {
+      simpleSetupWizardSteps.push(
+        {
+          id: 'jumper-name',
+          title: 'Name your jumper',
+          description: 'Give the main jumper a name the rest of the workspace can follow.',
+        },
+        {
+          id: 'jumper-gender',
+          title: 'Set identity basics',
+          description: 'Record the gender or identity note you want visible in simple mode.',
+        },
+        {
+          id: 'jumper-age',
+          title: 'Set starting age',
+          description: 'Track the original age if it matters for this chain. Leaving it blank is fine.',
+        },
+        {
+          id: 'jumper-notes',
+          title: 'Add a quick concept note',
+          description: 'Capture the short reminder that will help future-you remember who this jumper is.',
+        },
+      );
+    }
+  }
+
+  if (!hasJumps) {
+    simpleSetupWizardSteps.push({
+      id: 'create-jump',
+      title: 'Create your first jump',
+      description: 'Once a jump exists, participation, rules, and the rest of the workflow can attach to it.',
+    });
+  } else if (hasUnguidedJump && draftWizardJump) {
+    simpleSetupWizardSteps.push(
+      {
+        id: 'jump-title',
+        title: 'Name this jump',
+        description: 'Start with the jump title you want to see everywhere else in the workspace.',
+      },
+      {
+        id: 'jump-status',
+        title: 'Pick the jump status',
+        description: 'If planned is still right, keep it and continue.',
+      },
+      {
+        id: 'jump-type',
+        title: 'Pick the jump type',
+        description: 'Choose the kind of jump this is before the deeper modules start assuming context.',
+      },
+      {
+        id: 'jump-duration',
+        title: 'Set the jump duration',
+        description: 'Use the supplement or document default if you do not need anything unusual here.',
+      },
+    );
+  }
+
+  if (hasJumps && simpleModeWizardState.iconicDecision === 'undecided') {
+    simpleSetupWizardSteps.push({
+      id: 'iconic-prompt',
+      title: 'Decide on Iconic',
+      description: 'Iconic keeps a jumper recognisable through gauntlets, harsh restrictions, and setting changes.',
+    });
+  }
+
+  if (hasJumps && simpleModeWizardState.personalRealityDecision === 'undecided') {
+    simpleSetupWizardSteps.push({
+      id: 'personal-reality-prompt',
+      title: 'Decide on Personal Reality',
+      description: 'Personal Reality is the warehouse-style supplement builder for long-term housing, utilities, and infrastructure.',
+    });
+  }
+
+  if (hasJumps && simpleModeWizardState.iconicDecision === 'yes' && !simpleModeWizardState.iconicGuideCompleted) {
+    simpleSetupWizardSteps.push({
+      id: 'iconic-guide',
+      title: 'How to use Iconic',
+      description: 'This is the quick path through the Iconic page once you decide to use it.',
+    });
+  }
+
+  if (hasJumps && simpleModeWizardState.personalRealityDecision === 'yes' && !simpleModeWizardState.personalRealityGuideCompleted) {
+    simpleSetupWizardSteps.push({
+      id: 'personal-reality-guide',
+      title: 'How to use Personal Reality',
+      description: 'This is the quick path through the Personal Reality builder once you decide to use it.',
+    });
+  }
+
+  if (simpleSetupWizardSteps.length === 0) {
+    simpleSetupWizardSteps.push({
+      id: 'complete',
+      title: 'Simple setup is in good shape',
+      description:
+        simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.personalRealityDecision === 'not-now'
+          ? 'You passed on both supplements for now. If you add another jump later, simple mode will check back in.'
+          : 'The main simple-mode setup steps are done. You can keep working from the cards below whenever you want.',
+    });
+  }
+
+  const activeSimpleWizardStep =
+    simpleSetupWizardSteps.find((step) => step.id === simpleWizardStepId) ??
+    simpleSetupWizardSteps[0] ?? {
+      id: 'complete',
+      title: 'Simple setup is in good shape',
+      description: 'The main simple-mode setup steps are done.',
+    };
+  const activeSimpleWizardStepIndex = Math.max(
+    0,
+    simpleSetupWizardSteps.findIndex((step) => step.id === activeSimpleWizardStep.id),
+  );
+  const hasPreviousSimpleWizardStep = activeSimpleWizardStepIndex > 0;
+
+  useEffect(() => {
+    if (simpleSetupWizardSteps.some((step) => step.id === simpleWizardStepId)) {
+      return;
+    }
+
+    setSimpleWizardStepId(simpleSetupWizardSteps[0]?.id ?? null);
+  }, [simpleSetupWizardSteps, simpleWizardStepId]);
+
+  function goToPreviousSimpleWizardStep() {
+    const previousStep = simpleSetupWizardSteps[activeSimpleWizardStepIndex - 1];
+
+    if (previousStep) {
+      setSimpleWizardStepId(previousStep.id);
+    }
+  }
+
+  function goToNextSimpleWizardStep() {
+    const nextStep = simpleSetupWizardSteps[activeSimpleWizardStepIndex + 1];
+
+    if (nextStep) {
+      setSimpleWizardStepId(nextStep.id);
     }
   }
 
@@ -501,7 +811,11 @@ export function ChainOverviewPage() {
       to: `/chains/${chainId}/backups`,
     },
   ];
-  const visibleWorkSurfaceCards = simpleMode ? workSurfaceCards.slice(0, 3) : workSurfaceCards;
+  const visibleWorkSurfaceCards = simpleMode
+    ? simpleModeWizardState.personalRealityDecision === 'yes'
+      ? [workSurfaceCards[0], workSurfaceCards[1], workSurfaceCards[2], workSurfaceCards[4]]
+      : workSurfaceCards.slice(0, 3)
+    : workSurfaceCards;
 
   async function handleBranchChange(branchId: string) {
     try {
@@ -710,46 +1024,534 @@ export function ChainOverviewPage() {
         </article>
       </section>
 
-      <section className="card stack">
-        <div className="section-heading">
-          <h3>Setup Checklist</h3>
-          <span className="pill">{nextSetupStep ? 'Actionable' : 'Ready to work'}</span>
-        </div>
-        <div className="summary-grid">
-          {setupSteps.map((step) => (
-            <TooltipFrame key={step.id} tooltip={!simpleMode ? joinHelpText(step.description, step.context) : undefined}>
-              <article className="summary-panel stack stack--compact">
-                <div className="section-heading">
-                  <h4>{step.title}</h4>
-                  <span className={getStepPillClassName(step.tone)}>{getStepStatusLabel(step.tone)}</span>
-                </div>
-                {simpleMode ? <p>{step.description}</p> : null}
-                {simpleMode && step.context ? (
-                  <AssistiveHint as="p" text={step.context} triggerLabel={`Explain ${step.title}`} />
+      {simpleMode ? (
+        <section className="card stack">
+          <div className="section-heading">
+            <h3>Simple Setup Wizard</h3>
+            <span className="pill">
+              Step {activeSimpleWizardStepIndex + 1} of {simpleSetupWizardSteps.length}
+            </span>
+          </div>
+
+          <div className="guidance-strip guidance-strip--accent">
+            <strong>{activeSimpleWizardStep.title}</strong>
+            <p>{activeSimpleWizardStep.description}</p>
+          </div>
+
+          <AutosaveStatusIndicator status={simpleWizardAutosaveStatus} />
+
+          <div className="inline-meta">
+            <span className="pill pill--soft">{draftJumper?.name ?? 'No jumper yet'}</span>
+            <span className="pill pill--soft">{draftWizardJump?.title ?? 'No jump yet'}</span>
+          </div>
+
+          {activeSimpleWizardStep.id === 'create-jumper' ? (
+            <div className="selection-editor">
+              <p>Create the jumper record first, then the wizard will walk you through the important fields one at a time.</p>
+              <div className="actions">
+                <button className="button" type="button" onClick={() => void handleCreateJumper()}>
+                  Create Jumper
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jumper-name' && draftJumper ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Name</span>
+                <input
+                  autoFocus
+                  value={draftJumper.name}
+                  onChange={(event) =>
+                    jumperAutosave.updateDraft({
+                      ...draftJumper,
+                      name: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
                 ) : null}
-                <div className="actions">
-                  {step.primaryAction.kind === 'link' ? (
-                    <Link
-                      className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
-                      to={step.primaryAction.to ?? `/chains/${chainId}/overview`}
-                    >
-                      {step.primaryAction.label}
-                    </Link>
-                  ) : (
-                    <button
-                      className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
-                      type="button"
-                      onClick={() => void step.primaryAction.onClick?.()}
-                    >
-                      {step.primaryAction.label}
-                    </button>
-                  )}
-                </div>
-              </article>
-            </TooltipFrame>
-          ))}
-        </div>
-      </section>
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumperWizardComplete}>
+                  Jumper Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jumper-gender' && draftJumper ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Gender</span>
+                <input
+                  autoFocus
+                  value={draftJumper.gender}
+                  onChange={(event) =>
+                    jumperAutosave.updateDraft({
+                      ...draftJumper,
+                      gender: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="field field--checkbox">
+                <input
+                  type="checkbox"
+                  checked={draftJumper.isPrimary}
+                  onChange={(event) =>
+                    jumperAutosave.updateDraft({
+                      ...draftJumper,
+                      isPrimary: event.target.checked,
+                    })
+                  }
+                />
+                <span>Primary jumper</span>
+              </label>
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumperWizardComplete}>
+                  Jumper Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jumper-age' && draftJumper ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Original age</span>
+                <input
+                  autoFocus
+                  type="number"
+                  value={draftJumper.originalAge ?? ''}
+                  onChange={(event) =>
+                    jumperAutosave.updateDraft({
+                      ...draftJumper,
+                      originalAge: event.target.value === '' ? null : Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <AssistiveHint
+                as="p"
+                text="Blank is okay here if age is not something you care about tracking."
+                triggerLabel="Explain original age"
+              />
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumperWizardComplete}>
+                  Jumper Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jumper-notes' && draftJumper ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Notes</span>
+                <textarea
+                  autoFocus
+                  rows={5}
+                  value={draftJumper.notes}
+                  onChange={(event) =>
+                    jumperAutosave.updateDraft({
+                      ...draftJumper,
+                      notes: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <AssistiveHint
+                as="p"
+                text="A sentence or two about the concept is enough. You can always add personality and background later."
+                triggerLabel="Explain jumper notes"
+              />
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={markJumperWizardComplete}>
+                  Finish Jumper Setup
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'create-jump' ? (
+            <div className="selection-editor">
+              <p>Create the next jump record here, then the wizard will walk you through its main fields.</p>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <button className="button" type="button" onClick={() => void handleCreateJump()}>
+                  Create Jump
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jump-title' && draftWizardJump ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Title</span>
+                <input
+                  autoFocus
+                  value={draftWizardJump.title}
+                  onChange={(event) =>
+                    jumpAutosave.updateDraft({
+                      ...draftWizardJump,
+                      title: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumpWizardComplete}>
+                  Jump Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jump-status' && draftWizardJump ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Status</span>
+                <select
+                  autoFocus
+                  value={draftWizardJump.status}
+                  onChange={(event) =>
+                    jumpAutosave.updateDraft({
+                      ...draftWizardJump,
+                      status: event.target.value as (typeof jumpStatuses)[number],
+                    })
+                  }
+                >
+                  {jumpStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumpWizardComplete}>
+                  Jump Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jump-type' && draftWizardJump ? (
+            <div className="selection-editor">
+              <label className="field">
+                <span>Jump type</span>
+                <select
+                  autoFocus
+                  value={draftWizardJump.jumpType}
+                  onChange={(event) =>
+                    jumpAutosave.updateDraft({
+                      ...draftWizardJump,
+                      jumpType: event.target.value as (typeof jumpTypes)[number],
+                    })
+                  }
+                >
+                  {jumpTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={goToNextSimpleWizardStep}>
+                  Continue
+                </button>
+                <button className="button button--secondary" type="button" onClick={markJumpWizardComplete}>
+                  Jump Is Ready
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'jump-duration' && draftWizardJump ? (
+            <div className="selection-editor">
+              <div className="field-grid field-grid--three">
+                <label className="field">
+                  <span>Years</span>
+                  <input
+                    autoFocus
+                    type="number"
+                    value={draftWizardJump.duration.years}
+                    onChange={(event) =>
+                      jumpAutosave.updateDraft({
+                        ...draftWizardJump,
+                        duration: {
+                          ...draftWizardJump.duration,
+                          years: Number(event.target.value),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Months</span>
+                  <input
+                    type="number"
+                    value={draftWizardJump.duration.months}
+                    onChange={(event) =>
+                      jumpAutosave.updateDraft({
+                        ...draftWizardJump,
+                        duration: {
+                          ...draftWizardJump.duration,
+                          months: Number(event.target.value),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Days</span>
+                  <input
+                    type="number"
+                    value={draftWizardJump.duration.days}
+                    onChange={(event) =>
+                      jumpAutosave.updateDraft({
+                        ...draftWizardJump,
+                        duration: {
+                          ...draftWizardJump.duration,
+                          days: Number(event.target.value),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="actions">
+                <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                  Back
+                </button>
+                <button className="button" type="button" onClick={markJumpWizardComplete}>
+                  Finish Jump Setup
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'iconic-prompt' ? (
+            <div className="selection-editor">
+              <p>
+                Iconic is the bodymod-replacer workflow for preserving the jumper&apos;s defining concept when the chain strips
+                them down. It is useful when you want a stable, recognisable signature package.
+              </p>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <button className="button" type="button" onClick={() => updateSupplementDecision('iconic', 'yes')}>
+                  Yes, Show Me
+                </button>
+                <button className="button button--secondary" type="button" onClick={() => updateSupplementDecision('iconic', 'not-now')}>
+                  Not This Jump
+                </button>
+                <button className="button button--secondary" type="button" onClick={() => updateSupplementDecision('iconic', 'skip-future')}>
+                  Stop Asking
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'personal-reality-prompt' ? (
+            <div className="selection-editor">
+              <p>
+                Personal Reality is the supplement builder for warehouse-like space, facilities, budgets, and long-term chain
+                infrastructure. Use it when you want to plan the reality itself, not just the jumper.
+              </p>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <button className="button" type="button" onClick={() => updateSupplementDecision('personalReality', 'yes')}>
+                  Yes, Show Me
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => updateSupplementDecision('personalReality', 'not-now')}
+                >
+                  Not This Jump
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => updateSupplementDecision('personalReality', 'skip-future')}
+                >
+                  Stop Asking
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'iconic-guide' ? (
+            <div className="selection-editor">
+              <ol className="list">
+                <li>Open Iconic for {selectedJumper?.name ?? 'the focused jumper'}.</li>
+                <li>Create a profile if this jumper does not have one yet, then pick the Iconic tier that matches the concept.</li>
+                <li>Fill in the concept summary and the preserved package slots so the character stays recognisable.</li>
+              </ol>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <Link className="button" to={getBodymodPath()} onClick={() => markSupplementGuideComplete('iconic')}>
+                  Open Iconic
+                </Link>
+                <button className="button button--secondary" type="button" onClick={() => markSupplementGuideComplete('iconic')}>
+                  I Know The Flow
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'personal-reality-guide' ? (
+            <div className="selection-editor">
+              <ol className="list">
+                <li>Open Personal Reality and start in the budget and mode ledger on pages 2 and 3.</li>
+                <li>Pick one core mode first, then only add extra modes that actually apply to this chain.</li>
+                <li>Move page by page through the supplement and track purchases as infrastructure, logistics, and rule modules.</li>
+              </ol>
+              <div className="actions">
+                {hasPreviousSimpleWizardStep ? (
+                  <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
+                    Back
+                  </button>
+                ) : null}
+                <Link
+                  className="button"
+                  to={`/chains/${chainId}/personal-reality`}
+                  onClick={() => markSupplementGuideComplete('personalReality')}
+                >
+                  Open Personal Reality
+                </Link>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => markSupplementGuideComplete('personalReality')}
+                >
+                  I Know The Flow
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSimpleWizardStep.id === 'complete' ? (
+            <div className="selection-editor">
+              <p>
+                {simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.personalRealityDecision === 'not-now'
+                  ? 'Both supplements are parked for now. Add another jump later if you want simple mode to bring them up again.'
+                  : 'The guided setup pass is finished. From here you can keep editing normally or jump into the deeper modules when you want them.'}
+              </p>
+              <div className="actions">
+                <Link className="button" to={`/chains/${chainId}/jumpers${buildSearch(selectedJumperId)}`}>
+                  Open Jumpers
+                </Link>
+                <Link className="button button--secondary" to={getJumpEditorPath(wizardJump?.id ?? currentJump?.id ?? null)}>
+                  Open Jumps
+                </Link>
+                <Link className="button button--secondary" to={getParticipationPath()}>
+                  Open Participation
+                </Link>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : (
+        <section className="card stack">
+          <div className="section-heading">
+            <h3>Setup Checklist</h3>
+            <span className="pill">{nextSetupStep ? 'Actionable' : 'Ready to work'}</span>
+          </div>
+          <div className="summary-grid">
+            {setupSteps.map((step) => (
+              <TooltipFrame key={step.id} tooltip={!simpleMode ? joinHelpText(step.description, step.context) : undefined}>
+                <article className="summary-panel stack stack--compact">
+                  <div className="section-heading">
+                    <h4>{step.title}</h4>
+                    <span className={getStepPillClassName(step.tone)}>{getStepStatusLabel(step.tone)}</span>
+                  </div>
+                  {simpleMode ? <p>{step.description}</p> : null}
+                  {simpleMode && step.context ? (
+                    <AssistiveHint as="p" text={step.context} triggerLabel={`Explain ${step.title}`} />
+                  ) : null}
+                  <div className="actions">
+                    {step.primaryAction.kind === 'link' ? (
+                      <Link
+                        className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
+                        to={step.primaryAction.to ?? `/chains/${chainId}/overview`}
+                      >
+                        {step.primaryAction.label}
+                      </Link>
+                    ) : (
+                      <button
+                        className={step.tone === 'attention' ? 'button' : 'button button--secondary'}
+                        type="button"
+                        onClick={() => void step.primaryAction.onClick?.()}
+                      >
+                        {step.primaryAction.label}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              </TooltipFrame>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="card stack">
         <div className="section-heading">
