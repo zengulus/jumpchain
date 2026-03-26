@@ -78,6 +78,20 @@ function AppNavigationLinks({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+function ViewModeToggle(props: { simpleMode: boolean; onToggle: () => void }) {
+  return (
+    <button
+      className={`page-shell__mode-toggle${props.simpleMode ? ' is-active' : ''}`}
+      type="button"
+      aria-pressed={props.simpleMode}
+      onClick={props.onToggle}
+    >
+      <span>View mode</span>
+      <strong>{props.simpleMode ? 'Simple' : 'Normal'}</strong>
+    </button>
+  );
+}
+
 function PageShellContent() {
   const location = useLocation();
   const { simpleMode, setSimpleMode } = useUiPreferences();
@@ -139,22 +153,11 @@ function PageShellContent() {
               <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
               <p className="page-shell__subtitle">
                 {simpleMode
-                  ? 'A calmer, guided workspace for keeping a complicated chain understandable.'
-                  : 'Roomy local-first continuity tracking for branches, imports, snapshots, and supplement planning.'}
+                  ? 'Calmer continuity tracking for complicated chains.'
+                  : 'Local-first continuity, imports, snapshots, and supplement planning.'}
               </p>
             </div>
             <UniversalSearchBar />
-            <div className="page-shell__header-controls">
-              <button
-                className={`page-shell__mode-toggle${simpleMode ? ' is-active' : ''}`}
-                type="button"
-                aria-pressed={simpleMode}
-                onClick={() => setSimpleMode(!simpleMode)}
-              >
-                <span>View mode</span>
-                <strong>{simpleMode ? 'Simple' : 'Normal'}</strong>
-              </button>
-            </div>
           </header>
 
           {!workspaceDrawerRegistered ? (
@@ -167,15 +170,18 @@ function PageShellContent() {
                   onClick={closeNav}
                 />
               ) : null}
-              <aside className={`page-shell__drawer${navOpen ? ' is-open' : ''}`} id="page-shell-drawer">
-                <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                  <div className="section-heading">
-                    <h3>App</h3>
-                    <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
-                  </div>
-                  <AppNavigationLinks onNavigate={closeNav} />
-                </section>
-              </aside>
+                <aside className={`page-shell__drawer${navOpen ? ' is-open' : ''}`} id="page-shell-drawer">
+                  <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+                    <div className="section-heading">
+                      <h3>App</h3>
+                      <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
+                    </div>
+                    <AppNavigationLinks onNavigate={closeNav} />
+                    <div className="workspace-sidebar-controls">
+                      <ViewModeToggle simpleMode={simpleMode} onToggle={() => setSimpleMode(!simpleMode)} />
+                    </div>
+                  </section>
+                </aside>
             </>
           ) : null}
 
