@@ -27,6 +27,8 @@ import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { saveChainEntity } from '../workspace/records';
 
+const PERSONAL_REALITY_WP_CURRENCY_KEY = 'personal-reality-wp';
+
 interface CoreModeGuideRow {
   id: PersonalRealityState['coreModeId'];
   title: string;
@@ -144,6 +146,103 @@ function parseSignedNumberInput(value: string) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getRecordStringValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return null;
+}
+
+function getRecordNumberValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsedValue = Number(value);
+
+      if (Number.isFinite(parsedValue)) {
+        return parsedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getJumpTrackedPersonalRealityBudget(workspace: ReturnType<typeof useChainWorkspace>['workspace']) {
+  return workspace.participations.reduce(
+    (totals, participation) => {
+      const rawCurrencyDefinitions =
+        typeof participation.importSourceMetadata === 'object' &&
+        participation.importSourceMetadata !== null &&
+        !Array.isArray(participation.importSourceMetadata)
+          ? (participation.importSourceMetadata.currencies as Record<string, unknown> | undefined)
+          : undefined;
+
+      for (const exchange of participation.currencyExchanges) {
+        const record =
+          typeof exchange === 'object' && exchange !== null && !Array.isArray(exchange)
+            ? (exchange as Record<string, unknown>)
+            : {};
+        const fromCurrency =
+          getRecordStringValue(record, ['fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??
+          getRecordStringValue(record, ['currency']) ??
+          '0';
+        const toCurrency = getRecordStringValue(record, ['toCurrency', 'targetCurrency', 'currencyTo', 'targetCurrencyKey', 'to', 'target']);
+        const fromAmount = getRecordNumberValue(record, ['fromAmount', 'sourceAmount', 'spent', 'amount', 'value']) ?? 0;
+        const toAmount = getRecordNumberValue(record, ['toAmount', 'targetAmount', 'receivedAmount', 'convertedAmount', 'received']) ?? 0;
+
+        if (toCurrency !== PERSONAL_REALITY_WP_CURRENCY_KEY || toAmount === 0) {
+          continue;
+        }
+
+        totals.jumpTrackedWp += toAmount;
+
+        const fromCurrencyDefinition =
+          rawCurrencyDefinitions && typeof rawCurrencyDefinitions === 'object' && fromCurrency in rawCurrencyDefinitions
+            ? (rawCurrencyDefinitions[fromCurrency] as Record<string, unknown> | undefined)
+            : undefined;
+        const fromCurrencyName =
+          fromCurrencyDefinition && typeof fromCurrencyDefinition.name === 'string'
+            ? fromCurrencyDefinition.name.toLowerCase()
+            : '';
+        const fromCurrencyAbbrev =
+          fromCurrencyDefinition && typeof fromCurrencyDefinition.abbrev === 'string'
+            ? fromCurrencyDefinition.abbrev.toLowerCase()
+            : '';
+        const countsAsCp =
+          fromCurrency === '0' ||
+          fromCurrency.toLowerCase() === 'cp' ||
+          fromCurrencyName.includes('choice point') ||
+          fromCurrencyAbbrev === 'cp';
+
+        if (countsAsCp) {
+          totals.jumpTrackedCpSpent += fromAmount;
+        }
+      }
+
+      return totals;
+    },
+    {
+      jumpTrackedWp: 0,
+      jumpTrackedCpSpent: 0,
+    },
+  );
 }
 
 function getPageSummaryCount(counts: Record<number, number>, pageNumber: number) {
@@ -298,6 +397,10 @@ function getPageGuideLines(pageNumber: number, options: PersonalRealityOption[])
 function BudgetEditor(props: {
   state: PersonalRealityState;
   completedJumpCountFromChain: number;
+  jumpTrackedBudget: {
+    jumpTrackedWp: number;
+    jumpTrackedCpSpent: number;
+  };
   onStateChange: (updater: (state: PersonalRealityState) => PersonalRealityState) => void;
 }) {
   const { simpleMode } = useUiPreferences();
@@ -631,6 +734,20 @@ function BudgetEditor(props: {
                   }
                 />
               </label>
+
+              {props.jumpTrackedBudget.jumpTrackedWp > 0 || props.jumpTrackedBudget.jumpTrackedCpSpent > 0 ? (
+                <>
+                  <label className="field">
+                    <span>Jump-tracked WP transfers</span>
+                    <input type="number" readOnly value={props.jumpTrackedBudget.jumpTrackedWp} />
+                  </label>
+
+                  <label className="field">
+                    <span>Jump-tracked CP spent</span>
+                    <input type="number" readOnly value={props.jumpTrackedBudget.jumpTrackedCpSpent} />
+                  </label>
+                </>
+              ) : null}
 
               <label className="field">
                 <span>UDS warehouse WP</span>
@@ -1025,7 +1142,8 @@ export function PersonalRealityPage() {
   });
   const draftChain = chainAutosave.draft ?? workspace.chain;
   const state = readPersonalRealityState(draftChain);
-  const summary = buildPersonalRealityPlanSummary(state, completedJumpCountFromChain);
+  const jumpTrackedBudget = getJumpTrackedPersonalRealityBudget(workspace);
+  const summary = buildPersonalRealityPlanSummary(state, completedJumpCountFromChain, jumpTrackedBudget);
   const currentModeGuide = getCurrentModeGuide(state.coreModeId);
 
   if (!workspace.activeBranch) {
@@ -1286,7 +1404,12 @@ export function PersonalRealityPage() {
         </aside>
 
         <div className="stack personal-reality-center">
-          <BudgetEditor state={state} completedJumpCountFromChain={completedJumpCountFromChain} onStateChange={updateState} />
+          <BudgetEditor
+            state={state}
+            completedJumpCountFromChain={completedJumpCountFromChain}
+            jumpTrackedBudget={jumpTrackedBudget}
+            onStateChange={updateState}
+          />
 
           <section className="personal-reality-panel">
             <div className="personal-reality-panel__header">

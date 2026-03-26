@@ -21,12 +21,14 @@ type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other
 type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
 type DiscountLevel = 0 | 1 | 2;
 type BeginningSlotId = 'origin' | 'background' | 'race' | 'age';
+type PurchaseSubtypeSectionId = 'perks' | 'subsystems' | 'items' | 'other';
 
 const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }> = [
   { level: 0, label: 'Full price', factor: 1 },
   { level: 1, label: 'Discounted', factor: 0.5 },
   { level: 2, label: 'Double discounted', factor: 0.25 },
 ];
+const PERSONAL_REALITY_WP_CURRENCY_KEY = 'personal-reality-wp';
 
 interface SummaryToken {
   label: string;
@@ -103,6 +105,43 @@ const CORE_BEGINNING_SLOTS: Array<{ id: BeginningSlotId; label: string; defaultK
   { id: 'race', label: 'Race', defaultKey: 'race', singleLine: true },
   { id: 'age', label: 'Age / starting state', defaultKey: 'age', singleLine: true },
 ];
+const DEFAULT_CURRENCY_DEFINITIONS: Record<string, CurrencyDefinition> = {
+  '0': {
+    name: 'Choice Points',
+    abbrev: 'CP',
+    budget: 1000,
+    essential: true,
+  },
+  [PERSONAL_REALITY_WP_CURRENCY_KEY]: {
+    name: 'Personal Reality WP',
+    abbrev: 'WP',
+    budget: null,
+    essential: false,
+  },
+};
+const DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS: Record<string, PurchaseSubtypeDefinition> = {
+  '0': {
+    name: 'Perk',
+    stipend: null,
+    currencyKey: '0',
+    type: 0,
+    essential: true,
+  },
+  '1': {
+    name: 'Item',
+    stipend: null,
+    currencyKey: '0',
+    type: 1,
+    essential: true,
+  },
+  '10': {
+    name: 'Subsystem',
+    stipend: null,
+    currencyKey: '0',
+    type: 2,
+    essential: true,
+  },
+};
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -151,19 +190,41 @@ function getOptionalNumber(value: unknown) {
   return null;
 }
 
+function getOptionalIdentifier(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return null;
+}
+
+function toStoredIdentifier(value: string) {
+  const trimmedValue = value.trim();
+
+  if (trimmedValue.length === 0) {
+    return '';
+  }
+
+  return /^-?\d+(\.\d+)?$/.test(trimmedValue) ? Number(trimmedValue) : trimmedValue;
+}
+
 function getSelectionPurchaseType(value: unknown) {
   const record = asRecord(value);
   return getOptionalNumber(record.purchaseType) ?? getOptionalNumber(record._type);
 }
 
 function getSelectionSubtypeKey(value: unknown) {
-  const subtypeValue = getOptionalNumber(asRecord(value).subtype);
-  return subtypeValue !== null ? String(subtypeValue) : null;
+  const record = asRecord(value);
+  return getOptionalIdentifier(record.subtype) ?? getOptionalIdentifier(record.subtypeKey);
 }
 
 function getSelectionCurrencyKey(value: unknown) {
-  const currencyValue = getOptionalNumber(asRecord(value).currency);
-  return currencyValue !== null ? String(currencyValue) : '0';
+  const record = asRecord(value);
+  return getOptionalIdentifier(record.currency) ?? getOptionalIdentifier(record.currencyKey) ?? '0';
 }
 
 function getSelectionIsFree(value: unknown) {
@@ -474,10 +535,10 @@ function getCurrencyDefinitions(value: unknown): Record<string, CurrencyDefiniti
           name:
             typeof record.name === 'string' && record.name.trim().length > 0
               ? record.name
-              : `Currency ${key}`,
+              : DEFAULT_CURRENCY_DEFINITIONS[key]?.name ?? `Currency ${key}`,
           abbrev: typeof record.abbrev === 'string' ? record.abbrev : '',
           budget: getOptionalNumber(record.budget),
-          essential: record.essential === true,
+          essential: record.essential === true || DEFAULT_CURRENCY_DEFINITIONS[key]?.essential === true,
         },
       ];
     }),
@@ -488,33 +549,19 @@ function ensureCurrencyDefinitions(
   definitions: Record<string, CurrencyDefinition>,
   budgetKeys: string[],
 ): Record<string, CurrencyDefinition> {
-  const nextDefinitions = { ...definitions };
-
-  if (Object.keys(nextDefinitions).length === 0) {
-    nextDefinitions['0'] = {
-      name: 'Choice Points',
-      abbrev: 'CP',
-      budget: 1000,
-      essential: true,
-    };
-  }
+  const nextDefinitions = {
+    ...DEFAULT_CURRENCY_DEFINITIONS,
+    ...definitions,
+  };
 
   for (const budgetKey of budgetKeys) {
     if (!(budgetKey in nextDefinitions)) {
-      nextDefinitions[budgetKey] =
-        budgetKey === '0'
-          ? {
-              name: 'Choice Points',
-              abbrev: 'CP',
-              budget: 1000,
-              essential: true,
-            }
-          : {
-              name: `Currency ${budgetKey}`,
-              abbrev: '',
-              budget: null,
-              essential: false,
-            };
+      nextDefinitions[budgetKey] = {
+        name: budgetKey.startsWith('custom-currency') ? 'New currency' : `Currency ${budgetKey}`,
+        abbrev: '',
+        budget: null,
+        essential: false,
+      };
     }
   }
 
@@ -532,15 +579,39 @@ function getPurchaseSubtypeDefinitions(value: unknown): Record<string, PurchaseS
           name:
             typeof record.name === 'string' && record.name.trim().length > 0
               ? record.name
-              : `Subtype ${key}`,
+              : DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS[key]?.name ?? `Subtype ${key}`,
           stipend: getOptionalNumber(record.stipend),
-          currencyKey: String(getOptionalNumber(record.currency) ?? key),
+          currencyKey: getOptionalIdentifier(record.currency) ?? getOptionalIdentifier(record.currencyKey) ?? DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS[key]?.currencyKey ?? '0',
           type: getOptionalNumber(record.type),
-          essential: record.essential === true,
+          essential: record.essential === true || DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS[key]?.essential === true,
         },
       ];
     }),
   );
+}
+
+function ensurePurchaseSubtypeDefinitions(
+  definitions: Record<string, PurchaseSubtypeDefinition>,
+  subtypeKeys: string[],
+): Record<string, PurchaseSubtypeDefinition> {
+  const nextDefinitions = {
+    ...DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS,
+    ...definitions,
+  };
+
+  for (const subtypeKey of subtypeKeys) {
+    if (!(subtypeKey in nextDefinitions)) {
+      nextDefinitions[subtypeKey] = {
+        name: subtypeKey.startsWith('stipend-subtype') ? 'New stipend type' : `Subtype ${subtypeKey}`,
+        stipend: null,
+        currencyKey: '0',
+        type: subtypeKey === '1' ? 1 : subtypeKey === '10' ? 2 : null,
+        essential: false,
+      };
+    }
+  }
+
+  return nextDefinitions;
 }
 
 function getOriginCategoryDefinitions(value: unknown): Record<string, OriginCategoryDefinition> {
@@ -591,6 +662,8 @@ function formatCurrencyLabel(currencyKey: string, definitions: Record<string, Cu
     definition?.name ??
     (currencyKey === '0'
       ? 'Choice Points'
+      : currencyKey === PERSONAL_REALITY_WP_CURRENCY_KEY
+        ? 'Personal Reality WP'
       : currencyKey.startsWith('custom-currency')
         ? 'Custom currency'
         : titleCaseIdentifier(currencyKey) || 'Custom currency');
@@ -613,6 +686,31 @@ function formatPurchaseSubtypeLabel(
   return `${definition.name} • ${formatCurrencyLabel(definition.currencyKey, currencyDefinitions)}`;
 }
 
+function getPurchaseSubtypeSection(
+  subtypeKey: string,
+  definition: PurchaseSubtypeDefinition,
+): PurchaseSubtypeSectionId {
+  const lowerName = definition.name.toLowerCase();
+
+  if (definition.type === 1) {
+    return 'items';
+  }
+
+  if (definition.type === 2) {
+    return 'subsystems';
+  }
+
+  if (definition.type === 3) {
+    return 'other';
+  }
+
+  if (definition.type === 0 && (subtypeKey === '0' || lowerName.includes('perk'))) {
+    return 'perks';
+  }
+
+  return 'subsystems';
+}
+
 function getOriginCustomLabel(record: Record<string, unknown>) {
   return getRecordStringValue(record, ['label', 'title', 'name']);
 }
@@ -633,10 +731,10 @@ function getOriginDisplayName(
   }
 
   if (originKey.startsWith('origin-field') || originKey.startsWith('custom-beginning')) {
-    return 'Custom beginning';
+    return 'Origin';
   }
 
-  return titleCaseIdentifier(originKey) || 'Custom beginning';
+  return titleCaseIdentifier(originKey) || 'Origin';
 }
 
 function inferBeginningSlotId(
@@ -1237,7 +1335,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
                         props.onChange(
                           updateSelectionItems(props.items, index, (current) => ({
                             ...current,
-                            currency: Number(event.target.value),
+                            currency: toStoredIdentifier(event.target.value),
                           })),
                         )
                       }
@@ -1266,7 +1364,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
 
                               return {
                                 ...current,
-                                subtype: Number(event.target.value),
+                                subtype: toStoredIdentifier(event.target.value),
                               };
                             }),
                           )
@@ -1530,11 +1628,280 @@ function CurrencyExchangeEditorSection(props: {
           onClick={() =>
             props.onChange([
               ...props.items,
+              normalizeCurrencyExchangeForEdit(
+                {
+                  fromCurrency: props.defaultCurrencyKey,
+                  toCurrency: PERSONAL_REALITY_WP_CURRENCY_KEY,
+                  fromAmount: 0,
+                  toAmount: 0,
+                  notes: '',
+                },
+                props.defaultCurrencyKey,
+              ),
+            ])
+          }
+        >
+          Add Personal Reality Transfer
+        </button>
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={() =>
+            props.onChange([
+              ...props.items,
               normalizeCurrencyExchangeForEdit({}, props.defaultCurrencyKey),
             ])
           }
         >
           Add Exchange
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function CurrencyDefinitionEditorSection(props: {
+  definitions: Record<string, CurrencyDefinition>;
+  onChange: (nextDefinitions: Record<string, CurrencyDefinition>) => void;
+}) {
+  const definitionKeys = Object.keys(props.definitions).sort((left, right) => {
+    if (left === '0') {
+      return -1;
+    }
+
+    if (right === '0') {
+      return 1;
+    }
+
+    if (left === PERSONAL_REALITY_WP_CURRENCY_KEY) {
+      return -1;
+    }
+
+    if (right === PERSONAL_REALITY_WP_CURRENCY_KEY) {
+      return 1;
+    }
+
+    return formatCurrencyLabel(left, props.definitions).localeCompare(formatCurrencyLabel(right, props.definitions));
+  });
+
+  return (
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <h4>Currencies</h4>
+        <span className="pill">{definitionKeys.length}</span>
+      </div>
+
+      <div className="selection-editor-list">
+        {definitionKeys.map((currencyKey) => {
+          const definition = props.definitions[currencyKey];
+          const canRemove = currencyKey !== '0' && currencyKey !== PERSONAL_REALITY_WP_CURRENCY_KEY;
+
+          return (
+            <div className="selection-editor" key={`currency-definition-${currencyKey}`}>
+              <div className="selection-editor__header">
+                <strong>{formatCurrencyLabel(currencyKey, props.definitions)}</strong>
+                {canRemove ? (
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => {
+                      const nextDefinitions = { ...props.definitions };
+                      delete nextDefinitions[currencyKey];
+                      props.onChange(nextDefinitions);
+                    }}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="field-grid field-grid--two">
+                <label className="field">
+                  <span>Name</span>
+                  <input
+                    value={definition.name}
+                    onChange={(event) =>
+                      props.onChange({
+                        ...props.definitions,
+                        [currencyKey]: {
+                          ...definition,
+                          name: event.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Abbreviation</span>
+                  <input
+                    value={definition.abbrev}
+                    onChange={(event) =>
+                      props.onChange({
+                        ...props.definitions,
+                        [currencyKey]: {
+                          ...definition,
+                          abbrev: event.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="actions">
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={() => {
+            const nextKey = getNextCustomKey(Object.keys(props.definitions), 'custom-currency');
+            props.onChange({
+              ...props.definitions,
+              [nextKey]: {
+                name: 'New currency',
+                abbrev: '',
+                budget: null,
+                essential: false,
+              },
+            });
+          }}
+        >
+          Add Currency
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PurchaseSubtypeDefinitionEditorSection(props: {
+  title: string;
+  section: Extract<PurchaseSubtypeSectionId, 'subsystems' | 'items'>;
+  definitions: Record<string, PurchaseSubtypeDefinition>;
+  currencyDefinitions: Record<string, CurrencyDefinition>;
+  onChange: (nextDefinitions: Record<string, PurchaseSubtypeDefinition>) => void;
+}) {
+  const definitionEntries = Object.entries(props.definitions)
+    .filter(([subtypeKey, definition]) => getPurchaseSubtypeSection(subtypeKey, definition) === props.section)
+    .sort((left, right) => left[1].name.localeCompare(right[1].name));
+
+  return (
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <h4>{props.title}</h4>
+        <span className="pill">{definitionEntries.length}</span>
+      </div>
+
+      {definitionEntries.length === 0 ? <p className="editor-section__empty">No stipend types yet.</p> : null}
+
+      {definitionEntries.length > 0 ? (
+        <div className="selection-editor-list">
+          {definitionEntries.map(([subtypeKey, definition]) => {
+            const canRemove = !definition.essential;
+
+            return (
+              <div className="selection-editor" key={`subtype-definition-${subtypeKey}`}>
+                <div className="selection-editor__header">
+                  <strong>{formatPurchaseSubtypeLabel(subtypeKey, props.definitions, props.currencyDefinitions)}</strong>
+                  {canRemove ? (
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => {
+                        const nextDefinitions = { ...props.definitions };
+                        delete nextDefinitions[subtypeKey];
+                        props.onChange(nextDefinitions);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="field-grid field-grid--three">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={definition.name}
+                      onChange={(event) =>
+                        props.onChange({
+                          ...props.definitions,
+                          [subtypeKey]: {
+                            ...definition,
+                            name: event.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Currency</span>
+                    <select
+                      value={definition.currencyKey}
+                      onChange={(event) =>
+                        props.onChange({
+                          ...props.definitions,
+                          [subtypeKey]: {
+                            ...definition,
+                            currencyKey: event.target.value,
+                          },
+                        })
+                      }
+                    >
+                      {Object.keys(props.currencyDefinitions).map((currencyKey) => (
+                        <option key={`subtype-currency-${subtypeKey}-${currencyKey}`} value={currencyKey}>
+                          {formatCurrencyLabel(currencyKey, props.currencyDefinitions)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Default stipend</span>
+                    <input
+                      type="number"
+                      value={definition.stipend ?? 0}
+                      onChange={(event) =>
+                        props.onChange({
+                          ...props.definitions,
+                          [subtypeKey]: {
+                            ...definition,
+                            stipend: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="actions">
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={() => {
+            const nextKey = getNextCustomKey(Object.keys(props.definitions), 'stipend-subtype');
+            props.onChange({
+              ...props.definitions,
+              [nextKey]: {
+                name: props.section === 'items' ? 'New item stipend' : 'New subsystem stipend',
+                stipend: 0,
+                currencyKey: '0',
+                type: props.section === 'items' ? 1 : 2,
+                essential: false,
+              },
+            });
+          }}
+        >
+          Add Stipend Type
         </button>
       </div>
     </section>
@@ -1730,7 +2097,7 @@ function OriginEditorSection(props: {
                 entry!.originKey,
                 getOriginDisplayName(entry!.originKey, props.originCategories, entry!.record) || slot.label,
                 entry!.definition?.singleLine ?? slot.singleLine,
-                false,
+                slot.id === 'origin',
                 entry!.record,
               ),
             )}
@@ -1796,7 +2163,7 @@ function OriginEditorSection(props: {
             props.onChange({
               ...props.origins,
               [nextKey]: {
-                label: 'Custom beginning',
+                label: 'Origin',
                 summary: '',
                 description: '',
                 cost: 0,
@@ -1804,7 +2171,7 @@ function OriginEditorSection(props: {
             });
           }}
         >
-          Add Custom Beginning
+          Add Beginning
         </button>
       </div>
     </section>
@@ -1841,17 +2208,40 @@ export function ParticipationEditorCard(props: {
   const draftParticipation = participationAutosave.draft ?? props.participation;
   const rawCurrencyDefinitions = getCurrencyDefinitions(asRecord(draftParticipation.importSourceMetadata).currencies);
   const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, draftParticipation);
+  const stipendRows = flattenStipends(draftParticipation.stipends);
+  const provisionalCurrencyKeys = Array.from(
+    new Set([
+      PERSONAL_REALITY_WP_CURRENCY_KEY,
+      ...Object.keys(rawCurrencyDefinitions),
+      ...Object.keys(effectiveBudgetState.baseBudgets),
+      ...Object.keys(draftParticipation.budgets),
+      ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
+      ...Object.keys(effectiveBudgetState.chainDrawbackBudgetGrants),
+      ...stipendRows.map((row) => row.currencyKey),
+      ...draftParticipation.purchases.map((purchase) => getSelectionCurrencyKey(purchase)),
+      ...draftParticipation.currencyExchanges.flatMap((exchange) => {
+        const record = normalizeCurrencyExchangeForEdit(exchange, '0');
+        return [String(record.fromCurrency), String(record.toCurrency)];
+      }),
+    ]),
+  );
   const currencyDefinitions = ensureCurrencyDefinitions(
     rawCurrencyDefinitions,
+    provisionalCurrencyKeys,
+  );
+  const rawPurchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(draftParticipation.importSourceMetadata).purchaseSubtypes);
+  const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
+    rawPurchaseSubtypeDefinitions,
     Array.from(
       new Set([
-        ...Object.keys(effectiveBudgetState.baseBudgets),
-        ...Object.keys(draftParticipation.budgets),
-        ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
+        ...Object.keys(rawPurchaseSubtypeDefinitions),
+        ...stipendRows.map((row) => row.subtypeKey),
+        ...draftParticipation.purchases
+          .map((purchase) => getSelectionSubtypeKey(purchase))
+          .filter((value): value is string => Boolean(value)),
       ]),
     ),
   );
-  const purchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(draftParticipation.importSourceMetadata).purchaseSubtypes);
   const purchaseClassification = getPurchaseClassification(purchaseSubtypeDefinitions);
   const purchaseGroups = getPurchaseTokenGroups(draftParticipation.purchases, purchaseClassification);
   const originCategories = getOriginCategoryDefinitions(asRecord(draftParticipation.importSourceMetadata).originCategories);
@@ -1875,7 +2265,6 @@ export function ParticipationEditorCard(props: {
   const budgetRows = Array.from(
     new Set([...Object.keys(effectiveBudgetState.baseBudgets), ...Object.keys(draftParticipation.budgets)]),
   );
-  const stipendRows = flattenStipends(draftParticipation.stipends);
   const subsystemStipendRows = stipendRows.filter((row) =>
     matchesStipendSection(row, 'subsystems', purchaseSubtypeDefinitions, purchaseClassification),
   );
@@ -1909,6 +2298,26 @@ export function ParticipationEditorCard(props: {
         ? (updater as (value: typeof draftParticipation) => typeof draftParticipation)(resolvedCurrent)
         : updater;
     });
+  }
+
+  function updateCurrencyDefinitions(nextDefinitions: Record<string, CurrencyDefinition>) {
+    updateParticipation((current) => ({
+      ...current,
+      importSourceMetadata: {
+        ...current.importSourceMetadata,
+        currencies: nextDefinitions,
+      },
+    }));
+  }
+
+  function updatePurchaseSubtypeDefinitions(nextDefinitions: Record<string, PurchaseSubtypeDefinition>) {
+    updateParticipation((current) => ({
+      ...current,
+      importSourceMetadata: {
+        ...current.importSourceMetadata,
+        purchaseSubtypes: nextDefinitions,
+      },
+    }));
   }
 
   function replacePurchaseSection(section: PurchaseSectionKey, nextItems: unknown[]) {
@@ -2022,16 +2431,37 @@ export function ParticipationEditorCard(props: {
             className="button button--secondary"
             type="button"
             onClick={() =>
-              updateParticipation((current) => ({
-                ...current,
-                budgets: {
-                  ...current.budgets,
-                  [getNextCustomKey(
-                    Array.from(new Set([...Object.keys(current.budgets), ...budgetRows])),
-                    'custom-currency',
-                  )]: 0,
-                },
-              }))
+                  updateParticipation((current) => {
+                    const existingCurrencyKeys = Array.from(
+                      new Set([
+                        ...Object.keys(asRecord(asRecord(current.importSourceMetadata).currencies)),
+                        ...Object.keys(current.budgets),
+                        ...budgetRows,
+                      ]),
+                    );
+                const nextKey = getNextCustomKey(existingCurrencyKeys, 'custom-currency');
+                const nextCurrencyDefinitions = {
+                  ...getCurrencyDefinitions(asRecord(current.importSourceMetadata).currencies),
+                  [nextKey]: {
+                    name: 'New currency',
+                    abbrev: '',
+                    budget: null,
+                    essential: false,
+                  },
+                };
+
+                return {
+                  ...current,
+                  budgets: {
+                    ...current.budgets,
+                    [nextKey]: 0,
+                  },
+                  importSourceMetadata: {
+                    ...current.importSourceMetadata,
+                    currencies: nextCurrencyDefinitions,
+                  },
+                };
+              })
             }
           >
             Add Budget Line
@@ -2188,6 +2618,7 @@ export function ParticipationEditorCard(props: {
             onClick={() =>
               updateParticipation((current) => {
                 const currentRows = flattenStipends(current.stipends);
+                const currentSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(current.importSourceMetadata).purchaseSubtypes);
                 const unusedSubtype = Object.entries(purchaseSubtypeDefinitions).find(
                   ([subtypeKey, definition]) =>
                     matchesStipendSection(
@@ -2205,6 +2636,19 @@ export function ParticipationEditorCard(props: {
                   unusedSubtype?.[0] ??
                   getNextCustomKey(currentRows.map((row) => row.subtypeKey), 'stipend-subtype');
                 const nextCurrencyKey = unusedSubtype?.[1].currencyKey ?? '0';
+                const nextPurchaseSubtypeDefinitions =
+                  unusedSubtype?.[0]
+                    ? currentSubtypeDefinitions
+                    : {
+                        ...currentSubtypeDefinitions,
+                        [nextSubtypeKey]: {
+                          name: section === 'items' ? 'New item stipend' : 'New subsystem stipend',
+                          stipend: 0,
+                          currencyKey: nextCurrencyKey,
+                          type: section === 'items' ? 1 : 2,
+                          essential: false,
+                        },
+                      };
 
                 return {
                   ...current,
@@ -2214,8 +2658,12 @@ export function ParticipationEditorCard(props: {
                       currencyKey: nextCurrencyKey,
                       subtypeKey: nextSubtypeKey,
                       amount: unusedSubtype?.[1].stipend ?? 0,
-                    },
+                      },
                   ]),
+                  importSourceMetadata: {
+                    ...current.importSourceMetadata,
+                    purchaseSubtypes: nextPurchaseSubtypeDefinitions,
+                  },
                 };
               })
             }
@@ -2414,6 +2862,11 @@ export function ParticipationEditorCard(props: {
           ) : null}
 
           {renderBudgetLinesSection()}
+
+          <CurrencyDefinitionEditorSection
+            definitions={currencyDefinitions}
+            onChange={updateCurrencyDefinitions}
+          />
         </div>
       ) : null}
 
@@ -2462,6 +2915,14 @@ export function ParticipationEditorCard(props: {
             subsystemStipendRows,
             'subsystems',
           )}
+
+          <PurchaseSubtypeDefinitionEditorSection
+            title="Subsystem stipend types"
+            section="subsystems"
+            definitions={purchaseSubtypeDefinitions}
+            currencyDefinitions={currencyDefinitions}
+            onChange={updatePurchaseSubtypeDefinitions}
+          />
         </div>
       ) : null}
 
@@ -2495,6 +2956,14 @@ export function ParticipationEditorCard(props: {
             itemStipendRows,
             'items',
           )}
+
+          <PurchaseSubtypeDefinitionEditorSection
+            title="Item stipend types"
+            section="items"
+            definitions={purchaseSubtypeDefinitions}
+            currencyDefinitions={currencyDefinitions}
+            onChange={updatePurchaseSubtypeDefinitions}
+          />
         </div>
       ) : null}
 
@@ -2744,17 +3213,39 @@ export function ParticipationBudgetInspector(props: {
 }) {
   const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, props.participation);
   const rawCurrencyDefinitions = getCurrencyDefinitions(asRecord(props.participation.importSourceMetadata).currencies);
+  const stipendRows = flattenStipends(props.participation.stipends);
   const currencyDefinitions = ensureCurrencyDefinitions(
     rawCurrencyDefinitions,
     Array.from(
       new Set([
+        PERSONAL_REALITY_WP_CURRENCY_KEY,
+        ...Object.keys(rawCurrencyDefinitions),
         ...Object.keys(effectiveBudgetState.baseBudgets),
         ...Object.keys(props.participation.budgets),
+        ...Object.keys(effectiveBudgetState.chainDrawbackBudgetGrants),
         ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
+        ...stipendRows.map((row) => row.currencyKey),
+        ...props.participation.purchases.map((purchase) => getSelectionCurrencyKey(purchase)),
+        ...props.participation.currencyExchanges.flatMap((exchange) => {
+          const record = normalizeCurrencyExchangeForEdit(exchange, '0');
+          return [String(record.fromCurrency), String(record.toCurrency)];
+        }),
       ]),
     ),
   );
-  const purchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(props.participation.importSourceMetadata).purchaseSubtypes);
+  const rawPurchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(props.participation.importSourceMetadata).purchaseSubtypes);
+  const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
+    rawPurchaseSubtypeDefinitions,
+    Array.from(
+      new Set([
+        ...Object.keys(rawPurchaseSubtypeDefinitions),
+        ...stipendRows.map((row) => row.subtypeKey),
+        ...props.participation.purchases
+          .map((purchase) => getSelectionSubtypeKey(purchase))
+          .filter((value): value is string => Boolean(value)),
+      ]),
+    ),
+  );
   const budgetTokens = getBudgetTokens(
     effectiveBudgetState.effectiveBudgets,
     effectiveBudgetState.baseBudgets,

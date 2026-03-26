@@ -317,4 +317,40 @@ describe('workspace selectors', () => {
     expect(budgetState.participationDrawbackBudgetGrants).toEqual({ '0': 300 });
     expect(budgetState.effectiveBudgets['0']).toBe(1300);
   });
+
+  it('supports string-key custom currencies in participation drawback grants', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      participations: [
+        {
+          ...baseParticipation,
+          budgets: {
+            customBudget: 400,
+          },
+          drawbacks: [
+            {
+              name: 'Alt Currency Drawback',
+              value: 150,
+              currency: 'customBudget',
+            },
+          ],
+          retainedDrawbacks: [],
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(budgetState.participationDrawbackBudgetGrants).toEqual({ customBudget: 150 });
+    expect(budgetState.effectiveBudgets.customBudget).toBe(550);
+  });
 });

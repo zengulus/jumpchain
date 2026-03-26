@@ -50,6 +50,10 @@ interface WorkspaceQuickAction {
   tone?: 'accent' | 'default';
 }
 
+function formatCount(value: number, singular: string, plural = `${singular}s`) {
+  return `${value} ${value === 1 ? singular : plural}`;
+}
+
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
     return 'jumps';
@@ -531,32 +535,12 @@ export function ChainWorkspaceLayout() {
           </div>
           <div className="workspace-context-title">
             <strong>{state.bundle.chain.title}</strong>
-            <span>{currentJump ? `Current jump: ${currentJump.title}` : 'Current jump: None selected'}</span>
+            <span>{currentJump ? `Current jump: ${currentJump.orderIndex + 1}. ${currentJump.title}` : 'No current jump selected'}</span>
           </div>
-          {simpleMode ? (
-            <p className="workspace-sidebar-copy">
-              Start with <strong>{primaryQuickAction.title}</strong>. You can come back to the deeper navigation controls once the chain has a little structure.
-            </p>
-          ) : (
-            <div className="workspace-stat-strip" aria-label="Workspace totals">
-              <div className="workspace-stat-chip">
-                <strong>{workspace.jumpers.length}</strong>
-                <span>Jumpers</span>
-              </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.jumps.length}</strong>
-                <span>Jumps</span>
-              </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.effects.length}</strong>
-                <span>Effects</span>
-              </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.snapshots.length}</strong>
-                <span>Snapshots</span>
-              </div>
-            </div>
-          )}
+          <div className="workspace-context-meta" aria-label="Workspace totals">
+            <span>{formatCount(workspace.jumpers.length, 'jumper')}</span>
+            <span>{formatCount(workspace.jumps.length, 'jump')}</span>
+          </div>
         </section>
 
         <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">

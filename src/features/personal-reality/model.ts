@@ -70,6 +70,11 @@ export interface PersonalRealityPlanSummary {
   selectionSummaries: Record<string, PersonalRealitySelectionSummary>;
 }
 
+export interface PersonalRealityDerivedBudget {
+  jumpTrackedWp: number;
+  jumpTrackedCpSpent: number;
+}
+
 const coreModeIds = new Set(personalRealityCoreModes.map((entry) => entry.id));
 const extraModeIds = new Set<PersonalRealityExtraModeId>(['patient-jumper', 'swap-out', 'cross-roads']);
 
@@ -492,6 +497,10 @@ function getReasonableModeWarnings(summary: PersonalRealityPlanSummary, state: P
 export function buildPersonalRealityPlanSummary(
   state: PersonalRealityState,
   defaultCompletedJumpCount: number,
+  derivedBudget: PersonalRealityDerivedBudget = {
+    jumpTrackedWp: 0,
+    jumpTrackedCpSpent: 0,
+  },
 ): PersonalRealityPlanSummary {
   const completedJumpCount = getCompletedJumpCount(state, defaultCompletedJumpCount);
   const selectionSummaries: Record<string, PersonalRealitySelectionSummary> = {};
@@ -569,6 +578,7 @@ export function buildPersonalRealityPlanSummary(
   availableWp += state.budget.generalCpToWpPurchases * 2;
   availableWp += state.budget.udsWarehouseWp;
   availableWp += state.budget.manualWpAdjustment;
+  availableWp += derivedBudget.jumpTrackedWp;
   availableWp += limitationWpGain;
 
   const collectiveWp = state.extraModeIds.includes('cross-roads') ? state.budget.crossroadsTriggeredJumps * 5 : 0;
@@ -577,6 +587,7 @@ export function buildPersonalRealityPlanSummary(
   const remainingWp = availableWp - wpSpent;
 
   cpSpent += state.budget.generalCpToWpPurchases * 50;
+  cpSpent += derivedBudget.jumpTrackedCpSpent;
 
   const warnings: string[] = [];
 

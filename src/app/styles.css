@@ -2694,6 +2694,24 @@ body::before {
   gap: 0.12rem;
 }
 
+.workspace-context-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+.workspace-context-meta span::after {
+  content: "•";
+  margin-left: 0.5rem;
+  opacity: 0.45;
+}
+
+.workspace-context-meta span:last-child::after {
+  content: none;
+}
+
 .workspace-stat-strip {
   gap: 0.45rem;
 }

@@ -80,4 +80,17 @@ describe('personal reality supplement model', () => {
     expect(summary.selectionSummaries['warehouse-clock'].wpGain).toBe(100);
     expect(summary.selectionSummaries['warehouse-clock'].wpSpent).toBe(150);
   });
+
+  it('adds jump-tracked Personal Reality transfers into available WP and CP spend', () => {
+    const state = createDefaultPersonalRealityState();
+    state.coreModeId = 'unlimited';
+
+    const summary = buildPersonalRealityPlanSummary(state, 0, {
+      jumpTrackedWp: 120,
+      jumpTrackedCpSpent: 120,
+    });
+
+    expect(summary.availableWp).toBe(120);
+    expect(summary.cpSpent).toBe(120);
+  });
 });

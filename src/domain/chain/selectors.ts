@@ -97,6 +97,18 @@ function parseOptionalFiniteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function parseOptionalIdentifier(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return null;
+}
+
 function parseExplicitBudgetGrants(metadata: Record<string, unknown>) {
   const rawBudgetGrants = metadata.budgetGrants;
 
@@ -130,7 +142,7 @@ function getSelectionBudgetGrants(selection: unknown) {
   }
 
   return {
-    [String(parseOptionalFiniteNumber(record.currency) ?? 0)]: importedValue,
+    [parseOptionalIdentifier(record.currency) ?? '0']: importedValue,
   };
 }
 
