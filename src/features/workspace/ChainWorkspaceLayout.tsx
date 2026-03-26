@@ -475,24 +475,44 @@ export function ChainWorkspaceLayout() {
               </div>
             </div>
             <h2>{state.bundle.chain.title}</h2>
+            <p className="workspace-hero__summary">
+              {simpleMode
+                ? `${primaryQuickAction.title} is the safest next step if you are still getting this chain set up.`
+                : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
+            </p>
           </div>
           <div className="workspace-hero__stats">
-            <span className="metric">
-              <strong>{workspace.jumpers.length}</strong>
-              Jumpers
-            </span>
-            <span className="metric">
-              <strong>{workspace.jumps.length}</strong>
-              Jumps
-            </span>
-            <span className="metric">
-              <strong>{workspace.effects.length}</strong>
-              Effects
-            </span>
-            <span className="metric">
-              <strong>{workspace.snapshots.length}</strong>
-              Snapshots
-            </span>
+            {simpleMode ? (
+              <>
+                <span className="metric">
+                  <strong>{workspace.jumpers.length}</strong>
+                  Jumpers ready
+                </span>
+                <span className="metric">
+                  <strong>{workspace.jumps.length}</strong>
+                  Jumps in branch
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="metric">
+                  <strong>{workspace.jumpers.length}</strong>
+                  Jumpers
+                </span>
+                <span className="metric">
+                  <strong>{workspace.jumps.length}</strong>
+                  Jumps
+                </span>
+                <span className="metric">
+                  <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
+                  Current jump
+                </span>
+                <span className="metric">
+                  <strong>{workspace.snapshots.length}</strong>
+                  Snapshots
+                </span>
+              </>
+            )}
           </div>
         </div>
       </section>

@@ -72,7 +72,7 @@ export function UniversalSearchBar() {
             id="site-search"
             type="search"
             value={draftQuery}
-            placeholder="Search chains, jumpers, jumps, effects, notes, Personal Reality..."
+            placeholder="Search chains, jumpers, jumps, effects, notes..."
             onChange={(event) => {
               setDraftQuery(event.target.value);
               setIsOpen(true);

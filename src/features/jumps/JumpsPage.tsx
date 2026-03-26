@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
@@ -12,20 +13,29 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  SimpleModeAffirmation,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
+  useSimpleModeAffirmation,
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type JumpWorkspaceTab = 'basics' | 'party' | 'purchases' | 'advanced';
+type JumpGuidedStage = Extract<JumpWorkspaceTab, 'basics' | 'party' | 'purchases'>;
 
 const JUMP_WORKSPACE_TABS: Array<{ id: JumpWorkspaceTab; label: string }> = [
   { id: 'basics', label: 'Basics' },
   { id: 'party', label: 'Party' },
-  { id: 'purchases', label: 'Participation & Purchases' },
-  { id: 'advanced', label: 'Advanced' },
+  { id: 'purchases', label: 'Purchases' },
+  { id: 'advanced', label: 'Metadata' },
+];
+
+const JUMP_GUIDED_STAGES: Array<{ id: JumpGuidedStage; label: string }> = [
+  { id: 'basics', label: 'Basics' },
+  { id: 'party', label: 'Party' },
+  { id: 'purchases', label: 'Purchases' },
 ];
 
 function JumpWorkspaceTabs(props: {
@@ -50,12 +60,64 @@ function JumpWorkspaceTabs(props: {
   );
 }
 
+function JumpGuidedStepper(props: {
+  activeTab: JumpWorkspaceTab;
+  reviewState: Partial<Record<JumpGuidedStage, true>>;
+  onChange: (nextTab: JumpGuidedStage) => void;
+}) {
+  function getStatusLabel(stageId: JumpGuidedStage) {
+    if (props.reviewState[stageId]) {
+      return 'Reviewed';
+    }
+
+    if (props.activeTab === stageId) {
+      return 'Current';
+    }
+
+    return 'Next';
+  }
+
+  return (
+    <section className="jump-guided-flow stack stack--compact">
+      <div className="jump-guided-flow__header">
+        <h4>Required steps</h4>
+        <span className="pill">Guided</span>
+      </div>
+      <div className="guided-stepper" role="tablist" aria-label="Required jump steps">
+        {JUMP_GUIDED_STAGES.map((stage, index) => {
+          const isComplete = props.reviewState[stage.id] === true;
+          const isCurrent = props.activeTab === stage.id;
+
+          return (
+            <button
+              key={stage.id}
+              className={`guided-stepper__item${isCurrent ? ' is-current' : ''}${isComplete ? ' is-complete' : ''}`}
+              type="button"
+              role="tab"
+              aria-selected={isCurrent}
+              onClick={() => props.onChange(stage.id)}
+            >
+              <span className="guided-stepper__item-index">{index + 1}</span>
+              <span className="guided-stepper__item-copy">
+                <strong>{stage.label}</strong>
+                <span>{getStatusLabel(stage.id)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function JumpsPage() {
   const navigate = useNavigate();
   const { jumpId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [simpleReviewByJump, setSimpleReviewByJump] = useState<Record<string, Partial<Record<JumpGuidedStage, true>>>>({});
   const searchQuery = searchParams.get('search') ?? '';
   const focusedJumperId = searchParams.get('jumper');
   const participationPanelRequested = searchParams.get('panel') === 'participation';
@@ -88,11 +150,26 @@ export function JumpsPage() {
           (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationJumper.id,
         ) ?? null
       : null;
+  const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
+  const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
+
+  function getFirstIncompleteStage(reviewState: Partial<Record<JumpGuidedStage, true>>) {
+    return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
+  }
 
   useEffect(() => {
+    if (simpleMode) {
+      setActiveTab(participationPanelRequested ? 'purchases' : getFirstIncompleteStage(selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {}));
+      return;
+    }
+
     setActiveTab(participationPanelRequested ? 'purchases' : 'basics');
-  }, [selectedJump?.id, participationPanelRequested]);
+  }, [selectedJump?.id, participationPanelRequested, simpleMode, simpleReviewByJump]);
+
+  useEffect(() => {
+    clearAffirmation();
+  }, [clearAffirmation, selectedJump?.id]);
 
   function updateQuery(mutator: (nextParams: URLSearchParams) => void) {
     setSearchParams((currentParams) => {
@@ -102,7 +179,11 @@ export function JumpsPage() {
     });
   }
 
-  function handleTabChange(nextTab: JumpWorkspaceTab) {
+  function handleTabChange(nextTab: JumpWorkspaceTab, options?: { preserveAffirmation?: boolean }) {
+    if (simpleMode && !options?.preserveAffirmation) {
+      clearAffirmation();
+    }
+
     setActiveTab(nextTab);
     updateQuery((nextParams) => {
       if (nextTab === 'purchases') {
@@ -111,6 +192,35 @@ export function JumpsPage() {
         nextParams.delete('panel');
       }
     });
+  }
+
+  function markSimpleStageComplete(stage: JumpGuidedStage) {
+    if (!selectedJump || !simpleMode) {
+      return;
+    }
+
+    setSimpleReviewByJump((current) => ({
+      ...current,
+      [selectedJump.id]: {
+        ...(current[selectedJump.id] ?? {}),
+        [stage]: true,
+      },
+    }));
+
+    if (stage === 'basics') {
+      showAffirmation('The jump basics are set. Next is deciding who belongs in this jump.');
+      handleTabChange('party', { preserveAffirmation: true });
+      return;
+    }
+
+    if (stage === 'party') {
+      showAffirmation('The party is set for now. Next is the purchase pass.');
+      handleTabChange('purchases', { preserveAffirmation: true });
+      return;
+    }
+
+    showAffirmation('This jump has a workable purchase pass. You can refine it whenever you want.');
+    handleTabChange('purchases', { preserveAffirmation: true });
   }
 
   function setFocusedParticipant(nextJumperId: string | null) {
@@ -196,12 +306,14 @@ export function JumpsPage() {
 
       if (alreadyParticipating && focusedJumperId === jumperId) {
         setFocusedParticipant(nextParticipantIds[0] ?? null);
-      } else if (!alreadyParticipating) {
+      } else if (!alreadyParticipating && !simpleMode) {
         setActiveTab('purchases');
         updateQuery((nextParams) => {
           nextParams.set('jumper', jumperId);
           nextParams.set('panel', 'participation');
         });
+      } else if (!alreadyParticipating) {
+        setFocusedParticipant(jumperId);
       }
 
       setNotice({
@@ -228,10 +340,9 @@ export function JumpsPage() {
     );
 
     if (existing) {
-      setActiveTab('purchases');
+      handleTabChange('purchases');
       updateQuery((nextParams) => {
         nextParams.set('jumper', jumperId);
-        nextParams.set('panel', 'participation');
       });
       return;
     }
@@ -246,10 +357,9 @@ export function JumpsPage() {
         });
       }
 
-      setActiveTab('purchases');
+      handleTabChange('purchases');
       updateQuery((nextParams) => {
         nextParams.set('jumper', jumperId);
-        nextParams.set('panel', 'participation');
       });
       setNotice({
         tone: 'success',
@@ -399,6 +509,14 @@ export function JumpsPage() {
             </label>
           </div>
         </section>
+
+        {simpleMode ? (
+          <div className="actions">
+            <button className="button" type="button" onClick={() => markSimpleStageComplete('basics')}>
+              Continue to Party
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -413,43 +531,53 @@ export function JumpsPage() {
     }
 
     return (
-      <section className="editor-section">
-        <div className="editor-section__header">
-          <h4>Jumpers in this jump</h4>
-          <span className="pill">{draftJump.participantJumperIds.length}</span>
-        </div>
+      <div className="stack stack--compact">
+        <section className="editor-section">
+          <div className="editor-section__header">
+            <h4>Jumpers in this jump</h4>
+            <span className="pill">{draftJump.participantJumperIds.length}</span>
+          </div>
 
-        <div className="selection-editor-list">
-          {workspace.jumpers.map((jumper) => {
-            const isParticipating = draftJump.participantJumperIds.includes(jumper.id);
-            const isFocused = focusedJumperId === jumper.id;
+          <div className="selection-editor-list">
+            {workspace.jumpers.map((jumper) => {
+              const isParticipating = draftJump.participantJumperIds.includes(jumper.id);
+              const isFocused = focusedJumperId === jumper.id;
 
-            return (
-              <div className="selection-editor" key={jumper.id}>
-                <div className="selection-editor__header">
-                  <div className="stack stack--compact">
-                    <strong>{jumper.name}</strong>
-                    <div className="inline-meta">
-                      <span className="pill">{isParticipating ? 'Participating' : 'Not in jump'}</span>
-                      {isFocused ? <span className="pill">Current focus</span> : null}
+              return (
+                <div className="selection-editor" key={jumper.id}>
+                  <div className="selection-editor__header">
+                    <div className="stack stack--compact">
+                      <strong>{jumper.name}</strong>
+                      <div className="inline-meta">
+                        <span className="pill">{isParticipating ? 'Participating' : 'Not in jump'}</span>
+                        {isFocused ? <span className="pill">Current focus</span> : null}
+                      </div>
+                    </div>
+                    <div className="actions">
+                      {isParticipating ? (
+                        <button className="button button--secondary" type="button" onClick={() => setFocusedParticipant(jumper.id)}>
+                          Focus
+                        </button>
+                      ) : null}
+                      <button className="button" type="button" onClick={() => void toggleParticipant(jumper.id)}>
+                        {isParticipating ? 'Remove' : 'Add To Jump'}
+                      </button>
                     </div>
                   </div>
-                  <div className="actions">
-                    {isParticipating ? (
-                      <button className="button button--secondary" type="button" onClick={() => setFocusedParticipant(jumper.id)}>
-                        Edit
-                      </button>
-                    ) : null}
-                    <button className="button" type="button" onClick={() => void toggleParticipant(jumper.id)}>
-                      {isParticipating ? 'Remove' : 'Add To Jump'}
-                    </button>
-                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+              );
+            })}
+          </div>
+        </section>
+
+        {simpleMode ? (
+          <div className="actions">
+            <button className="button" type="button" onClick={() => markSimpleStageComplete('party')}>
+              Continue to Purchases
+            </button>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -532,6 +660,14 @@ export function JumpsPage() {
             </div>
           </article>
         ) : null}
+
+        {simpleMode ? (
+          <div className="actions">
+            <button className="button" type="button" onClick={() => markSimpleStageComplete('purchases')}>
+              Mark Purchases Reviewed
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -544,7 +680,11 @@ export function JumpsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Jumps"
-        description="Edit one jump at a time."
+        description={
+          simpleMode
+            ? 'Work through each jump in order: basics, party, then purchases.'
+            : 'Edit one jump at a time with fast access to basics, party, purchases, and metadata.'
+        }
         badge={`${workspace.jumps.length} total`}
         actions={
           <button className="button" type="button" onClick={() => void handleAddJump()}>
@@ -625,11 +765,11 @@ export function JumpsPage() {
             <article className="card stack jump-editor-shell">
               {draftJump ? (
                 <>
-                  <div className="section-heading">
-                    <div className="stack stack--compact">
-                      <h3>
-                        <SearchHighlight text={draftJump.title} query={searchQuery} />
-                      </h3>
+                <div className="section-heading">
+                  <div className="stack stack--compact">
+                    <h3>
+                      <SearchHighlight text={draftJump.title} query={searchQuery} />
+                    </h3>
                       <div className="inline-meta">
                         <span className="pill">{draftJump.status}</span>
                         <span className="pill">{draftJump.jumpType}</span>
@@ -647,14 +787,41 @@ export function JumpsPage() {
                     </div>
                   </div>
 
-                  <JumpWorkspaceTabs activeTab={activeTab} onChange={handleTabChange} />
+                  {simpleMode ? (
+                    <>
+                      <JumpGuidedStepper activeTab={activeTab} reviewState={selectedJumpReviewState} onChange={(nextTab) => handleTabChange(nextTab)} />
+                      <SimpleModeAffirmation message={simpleAffirmation} />
+                    </>
+                  ) : (
+                    <JumpWorkspaceTabs activeTab={activeTab} onChange={handleTabChange} />
+                  )}
 
                   {activeTab === 'basics' ? renderBasicsTab() : null}
                   {activeTab === 'party' ? renderPartyTab() : null}
                   {activeTab === 'purchases' ? renderPurchasesTab() : null}
-                  {activeTab === 'advanced' ? (
+                  {simpleMode ? (
                     <AdvancedJsonDetails
-                      summary="Advanced JSON"
+                      summary="Metadata"
+                      badge="import metadata"
+                      hint="Preserved jump import data stays tucked away here unless you need raw cleanup."
+                    >
+                      <JsonEditorField
+                        label="Import source metadata"
+                        value={draftJump.importSourceMetadata}
+                        onValidChange={(value) =>
+                          jumpAutosave.updateDraft({
+                            ...draftJump,
+                            importSourceMetadata:
+                              typeof value === 'object' && value !== null && !Array.isArray(value)
+                                ? (value as Record<string, unknown>)
+                                : {},
+                          })
+                        }
+                      />
+                    </AdvancedJsonDetails>
+                  ) : activeTab === 'advanced' ? (
+                    <AdvancedJsonDetails
+                      summary="Metadata"
                       badge="import metadata"
                       hint="Preserved jump import data stays tucked away here unless you need raw cleanup."
                     >
@@ -679,7 +846,7 @@ export function JumpsPage() {
               )}
             </article>
 
-            {activeTab === 'purchases' && activeParticipationJumper && activeParticipation ? (
+            {!simpleMode && activeTab === 'purchases' && activeParticipationJumper && activeParticipation ? (
               <aside className="card stack jump-budget-rail">
                 <div className="section-heading">
                   <h3>Budget</h3>

@@ -21,7 +21,16 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
-import { AssistiveHint, AutosaveStatusIndicator, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AssistiveHint,
+  AutosaveStatusIndicator,
+  SimpleModeAffirmation,
+  StatusNoticeBanner,
+  TooltipFrame,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+  useSimpleModeAffirmation,
+} from '../workspace/shared';
 import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -122,6 +131,7 @@ export function ChainOverviewPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { simpleMode, getSimpleModeWizardState, updateSimpleModeWizardState } = useUiPreferences();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const { message: simpleAffirmation, showAffirmation } = useSimpleModeAffirmation();
   const [simpleWizardStepId, setSimpleWizardStepId] = useState<SimpleSetupWizardStepId | null>(null);
   const effectiveState = getEffectiveCurrentJumpState(workspace);
   const simpleModeWizardKey = workspace.activeBranch ? `${chainId}:${workspace.activeBranch.id}` : chainId;
@@ -436,6 +446,7 @@ export function ChainOverviewPage() {
       ...current,
       jumperWizardCompleted: true,
     }));
+    showAffirmation('The jumper setup is grounded now. Next is building the jump framework around them.');
     setSimpleWizardStepId(null);
   }
 
@@ -444,6 +455,7 @@ export function ChainOverviewPage() {
       ...current,
       guidedJumpCount: Math.max(current.guidedJumpCount, workspace.jumps.length),
     }));
+    showAffirmation('The jump framework is in place. The rest of the walkthrough is lighter from here.');
     setSimpleWizardStepId(null);
   }
 
@@ -476,6 +488,11 @@ export function ChainOverviewPage() {
       iconicGuideCompleted: feature === 'iconic' ? true : current.iconicGuideCompleted,
       personalRealityGuideCompleted: feature === 'personalReality' ? true : current.personalRealityGuideCompleted,
     }));
+    showAffirmation(
+      feature === 'iconic'
+        ? 'Iconic is in a workable place. You can keep the rest of the chain moving now.'
+        : 'Personal Reality is parked in a workable state. The rest of the workspace should feel lighter again.',
+    );
     setSimpleWizardStepId(null);
   }
 
@@ -607,35 +624,10 @@ export function ChainOverviewPage() {
     simpleSetupWizardSteps.findIndex((step) => step.id === activeSimpleWizardStep.id),
   );
   const hasPreviousSimpleWizardStep = activeSimpleWizardStepIndex > 0;
-  const jumpPhaseStepIds = new Set<SimpleSetupWizardStepId>([
-    'create-jump',
-    'jump-title',
-    'jump-status',
-    'jump-type',
-    'jump-duration',
-  ]);
-  const supplementPhaseStepIds = new Set<SimpleSetupWizardStepId>([
-    'iconic-prompt',
-    'personal-reality-prompt',
-    'iconic-setup',
-    'personal-reality-setup',
-  ]);
-  const firstJumpPhaseStepId = simpleSetupWizardSteps.find((step) => jumpPhaseStepIds.has(step.id))?.id ?? null;
-  const firstSupplementPhaseStepId = simpleSetupWizardSteps.find((step) => supplementPhaseStepIds.has(step.id))?.id ?? null;
   const wizardNeedsAttention = activeSimpleWizardStep.id !== 'complete';
   const isFreshChainStart = workspace.jumpers.length === 0 && workspace.jumps.length === 0 && !simpleModeWizardState.jumperWizardCompleted;
   const showWizardWelcomePopover = simpleMode && simpleModeWizardState.wizardPromptState === 'pending' && isFreshChainStart;
   const showWizardWalkthroughPopover = simpleMode && simpleModeWizardState.wizardPromptState === 'accepted' && wizardNeedsAttention;
-  const activeSimpleWizardAffirmation =
-    activeSimpleWizardStep.id === 'complete'
-      ? 'You made it through the guided setup. From here the workspace should feel much lighter.'
-      : activeSimpleWizardStep.id === 'personal-reality-setup' && simpleModeWizardState.iconicGuideCompleted
-        ? 'Nice work. Iconic is already squared away, so this is the last dense optional system in the walkthrough.'
-        : activeSimpleWizardStep.id === firstSupplementPhaseStepId
-          ? 'Nice work. The jump basics are in place, so now this is mostly about deciding how much extra guidance and infrastructure you want.'
-          : activeSimpleWizardStep.id === firstJumpPhaseStepId && simpleModeWizardState.jumperWizardCompleted
-            ? 'Nice work. Your jumper has enough shape now, and the next stretch is mostly mechanical setup.'
-            : null;
 
   useEffect(() => {
     if (simpleSetupWizardSteps.some((step) => step.id === simpleWizardStepId)) {
@@ -1868,9 +1860,7 @@ export function ChainOverviewPage() {
               </div>
             </div>
           ) : null}
-              {activeSimpleWizardAffirmation ? (
-                <div className="status status--success simple-setup-popover__affirmation">{activeSimpleWizardAffirmation}</div>
-              ) : null}
+              <SimpleModeAffirmation message={simpleAffirmation} className="simple-setup-popover__affirmation" />
             </section>
           </div>
           ) : null}

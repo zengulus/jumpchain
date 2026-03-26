@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { accessModes } from '../../domain/common';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import {
@@ -75,6 +76,7 @@ function getContextOverrideEntries(currentRulesContext: JumpRulesContext, settin
 }
 
 export function CurrentJumpRulesPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(builtInRulesModulePresets[0]?.id ?? 'manual-blank');
@@ -245,7 +247,11 @@ export function CurrentJumpRulesPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Current Jump Rules"
-        description="Branch defaults and per-jump overrides live here. Chainwide drawbacks and chain-owned rule effects live in Chainwide Rules."
+        description={
+          simpleMode
+            ? 'Review the live rule state first, then set branch defaults or jump-specific overrides only where you need them.'
+            : 'Branch defaults and per-jump overrides live here. Chainwide drawbacks and chain-owned rule effects live in Chainwide Rules.'
+        }
         badge={currentJump.title}
         actions={
           <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
@@ -389,74 +395,153 @@ export function CurrentJumpRulesPage() {
         </article>
       </section>
 
-      <section className="grid grid--two">
-        <article className="card stack">
-          <div className="section-heading">
-            <h3>Module Customization</h3>
-            <span className="pill">rules workspace</span>
-          </div>
-          <p>
-            These switches control how much rule provenance and advanced editing the current-jump rules module exposes
-            for the active branch.
-          </p>
+      {simpleMode ? (
+        <details className="details-panel">
+          <summary className="details-panel__summary">
+            <span>Reference and tools</span>
+            <span className="pill">Optional</span>
+          </summary>
+          <div className="details-panel__body">
+            <section className="grid grid--two">
+              <article className="card stack">
+                <div className="section-heading">
+                  <h3>Module Customization</h3>
+                  <span className="pill">rules workspace</span>
+                </div>
+                <p>
+                  These switches control how much rule provenance and advanced editing the current-jump rules module exposes
+                  for the active branch.
+                </p>
 
-          {rulesModuleCustomizationKeys.map((key) => (
-            <label className="field field--checkbox" key={key}>
-              <input
-                type="checkbox"
-                checked={draftRulesSettings.moduleCustomization[key]}
-                onChange={(event) => updateModuleCustomization(key, event.target.checked)}
-              />
-              <span className="field-label-row">
-                <span>{rulesCustomizationLabels[key]}</span>
-                <AssistiveHint text={rulesCustomizationDescriptions[key]} triggerLabel={`Explain ${rulesCustomizationLabels[key]}`} />
-              </span>
-            </label>
-          ))}
-        </article>
-
-        <article className="card stack">
-          <div className="section-heading">
-            <h3>Built-in Presets</h3>
-            <span className="pill">{selectedPreset?.name ?? 'No preset'}</span>
-          </div>
-
-          <label className="field">
-            <span>Preset</span>
-            <select value={selectedPresetId} onChange={(event) => setSelectedPresetId(event.target.value)}>
-              {builtInRulesModulePresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <p>{selectedPreset?.description ?? 'Choose a preset to preview and apply branch-level rules defaults.'}</p>
-
-          {draftRulesSettings.moduleCustomization.showPresetDiff ? (
-            presetDiff.length > 0 ? (
-              <ul className="list">
-                {presetDiff.map((entry) => (
-                  <li key={entry.path}>
-                    <strong>{entry.label}</strong>: {entry.before} {'->'} {entry.after}
-                  </li>
+                {rulesModuleCustomizationKeys.map((key) => (
+                  <label className="field field--checkbox" key={key}>
+                    <input
+                      type="checkbox"
+                      checked={draftRulesSettings.moduleCustomization[key]}
+                      onChange={(event) => updateModuleCustomization(key, event.target.checked)}
+                    />
+                    <span className="field-label-row">
+                      <span>{rulesCustomizationLabels[key]}</span>
+                      <AssistiveHint text={rulesCustomizationDescriptions[key]} triggerLabel={`Explain ${rulesCustomizationLabels[key]}`} />
+                    </span>
+                  </label>
                 ))}
-              </ul>
-            ) : (
-              <p>This preset matches the current branch settings already.</p>
-            )
-          ) : (
-            <p>Preset diff preview is currently hidden by module customization.</p>
-          )}
+              </article>
 
-          <div className="actions">
-            <button className="button" type="button" onClick={handleApplyPreset} disabled={!selectedPreset || !draftRulesProfile}>
-              Apply Preset to Branch Defaults
-            </button>
+              <article className="card stack">
+                <div className="section-heading">
+                  <h3>Built-in Presets</h3>
+                  <span className="pill">{selectedPreset?.name ?? 'No preset'}</span>
+                </div>
+
+                <label className="field">
+                  <span>Preset</span>
+                  <select value={selectedPresetId} onChange={(event) => setSelectedPresetId(event.target.value)}>
+                    {builtInRulesModulePresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <p>{selectedPreset?.description ?? 'Choose a preset to preview and apply branch-level rules defaults.'}</p>
+
+                {draftRulesSettings.moduleCustomization.showPresetDiff ? (
+                  presetDiff.length > 0 ? (
+                    <ul className="list">
+                      {presetDiff.map((entry) => (
+                        <li key={entry.path}>
+                          <strong>{entry.label}</strong>: {entry.before} {'->'} {entry.after}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>This preset matches the current branch settings already.</p>
+                  )
+                ) : (
+                  <p>Preset diff preview is currently hidden by module customization.</p>
+                )}
+
+                <div className="actions">
+                  <button className="button" type="button" onClick={handleApplyPreset} disabled={!selectedPreset || !draftRulesProfile}>
+                    Apply Preset to Branch Defaults
+                  </button>
+                </div>
+              </article>
+            </section>
           </div>
-        </article>
-      </section>
+        </details>
+      ) : (
+        <section className="grid grid--two">
+          <article className="card stack">
+            <div className="section-heading">
+              <h3>Module Customization</h3>
+              <span className="pill">rules workspace</span>
+            </div>
+            <p>
+              These switches control how much rule provenance and advanced editing the current-jump rules module exposes
+              for the active branch.
+            </p>
+
+            {rulesModuleCustomizationKeys.map((key) => (
+              <label className="field field--checkbox" key={key}>
+                <input
+                  type="checkbox"
+                  checked={draftRulesSettings.moduleCustomization[key]}
+                  onChange={(event) => updateModuleCustomization(key, event.target.checked)}
+                />
+                <span className="field-label-row">
+                  <span>{rulesCustomizationLabels[key]}</span>
+                  <AssistiveHint text={rulesCustomizationDescriptions[key]} triggerLabel={`Explain ${rulesCustomizationLabels[key]}`} />
+                </span>
+              </label>
+            ))}
+          </article>
+
+          <article className="card stack">
+            <div className="section-heading">
+              <h3>Built-in Presets</h3>
+              <span className="pill">{selectedPreset?.name ?? 'No preset'}</span>
+            </div>
+
+            <label className="field">
+              <span>Preset</span>
+              <select value={selectedPresetId} onChange={(event) => setSelectedPresetId(event.target.value)}>
+                {builtInRulesModulePresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <p>{selectedPreset?.description ?? 'Choose a preset to preview and apply branch-level rules defaults.'}</p>
+
+            {draftRulesSettings.moduleCustomization.showPresetDiff ? (
+              presetDiff.length > 0 ? (
+                <ul className="list">
+                  {presetDiff.map((entry) => (
+                    <li key={entry.path}>
+                      <strong>{entry.label}</strong>: {entry.before} {'->'} {entry.after}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>This preset matches the current branch settings already.</p>
+              )
+            ) : (
+              <p>Preset diff preview is currently hidden by module customization.</p>
+            )}
+
+            <div className="actions">
+              <button className="button" type="button" onClick={handleApplyPreset} disabled={!selectedPreset || !draftRulesProfile}>
+                Apply Preset to Branch Defaults
+              </button>
+            </div>
+          </article>
+        </section>
+      )}
 
       <section className="grid grid--two">
         <article className="card stack">
@@ -574,33 +659,67 @@ export function CurrentJumpRulesPage() {
           )}
         </article>
 
-        <article className="card stack">
-          <div className="section-heading">
-            <h3>Fallback Summary</h3>
-            <span className="pill">{currentRulesSourceLabel}</span>
-          </div>
-          <p>
-            These are the branch-visible defaults the current jump will inherit until you create or edit a dedicated
-            jump context.
-          </p>
-          <div className="inline-meta">
-            <span className="metric">
-              <strong>{draftRulesSettings.defaults.gauntlet ? 'enabled' : 'disabled'}</strong>
-              Gauntlet
-            </span>
-            {rulesAccessKeys.map((key) => (
-              <span className="metric" key={key}>
-                <strong>{draftRulesSettings.defaults[key]}</strong>
-                {rulesDefaultLabels[key]}
+        {simpleMode ? (
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Fallback summary</span>
+              <span className="pill">{currentRulesSourceLabel}</span>
+            </summary>
+            <div className="details-panel__body">
+              <article className="card stack">
+                <p>
+                  These are the branch-visible defaults the current jump will inherit until you create or edit a dedicated
+                  jump context.
+                </p>
+                <div className="inline-meta">
+                  <span className="metric">
+                    <strong>{draftRulesSettings.defaults.gauntlet ? 'enabled' : 'disabled'}</strong>
+                    Gauntlet
+                  </span>
+                  {rulesAccessKeys.map((key) => (
+                    <span className="metric" key={key}>
+                      <strong>{draftRulesSettings.defaults[key]}</strong>
+                      {rulesDefaultLabels[key]}
+                    </span>
+                  ))}
+                </div>
+                {draftRulesSettings.manualOverridePaths.length > 0 ? (
+                  <p>{draftRulesSettings.manualOverridePaths.length} fields have been manually adjusted after preset application.</p>
+                ) : (
+                  <p>No manual branch overrides are recorded yet.</p>
+                )}
+              </article>
+            </div>
+          </details>
+        ) : (
+          <article className="card stack">
+            <div className="section-heading">
+              <h3>Fallback Summary</h3>
+              <span className="pill">{currentRulesSourceLabel}</span>
+            </div>
+            <p>
+              These are the branch-visible defaults the current jump will inherit until you create or edit a dedicated
+              jump context.
+            </p>
+            <div className="inline-meta">
+              <span className="metric">
+                <strong>{draftRulesSettings.defaults.gauntlet ? 'enabled' : 'disabled'}</strong>
+                Gauntlet
               </span>
-            ))}
-          </div>
-          {draftRulesSettings.manualOverridePaths.length > 0 ? (
-            <p>{draftRulesSettings.manualOverridePaths.length} fields have been manually adjusted after preset application.</p>
-          ) : (
-            <p>No manual branch overrides are recorded yet.</p>
-          )}
-        </article>
+              {rulesAccessKeys.map((key) => (
+                <span className="metric" key={key}>
+                  <strong>{draftRulesSettings.defaults[key]}</strong>
+                  {rulesDefaultLabels[key]}
+                </span>
+              ))}
+            </div>
+            {draftRulesSettings.manualOverridePaths.length > 0 ? (
+              <p>{draftRulesSettings.manualOverridePaths.length} fields have been manually adjusted after preset application.</p>
+            ) : (
+              <p>No manual branch overrides are recorded yet.</p>
+            )}
+          </article>
+        )}
       </section>
     </div>
   );

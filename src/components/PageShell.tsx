@@ -130,7 +130,11 @@ function PageShellContent() {
                 </button>
                 <div className="page-shell__brand-copy">
                   <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
-                  <p className="page-shell__subtitle">Desktop-first continuity tracker for branching, imports, and local saves.</p>
+                  <p className="page-shell__subtitle">
+                    {simpleMode
+                      ? 'A calmer, guided workspace for keeping a complicated chain understandable.'
+                      : 'Roomy local-first continuity tracking for branches, imports, snapshots, and supplement planning.'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -142,8 +146,8 @@ function PageShellContent() {
                 aria-pressed={simpleMode}
                 onClick={() => setSimpleMode(!simpleMode)}
               >
-                <span>Simple Mode</span>
-                <strong>{simpleMode ? 'On' : 'Off'}</strong>
+                <span>View mode</span>
+                <strong>{simpleMode ? 'Simple' : 'Normal'}</strong>
               </button>
             </div>
           </header>
@@ -162,7 +166,7 @@ function PageShellContent() {
                 <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
                   <div className="section-heading">
                     <h3>App</h3>
-                    <span className="pill">{simpleMode ? 'Simple' : 'Full'}</span>
+                    <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
                   </div>
                   <AppNavigationLinks onNavigate={closeNav} />
                 </section>
@@ -171,7 +175,9 @@ function PageShellContent() {
           ) : null}
 
           <div className="page-shell__desktop-note" role="note">
-            This build works best on desktop. Dense worksheet modules will condense on narrower windows.
+            {simpleMode
+              ? 'Simple mode is calmest on desktop or a wider window.'
+              : 'Normal mode keeps more data visible at once on desktop or a wider window.'}
           </div>
           <main className="page-shell__main">
             <Outlet />

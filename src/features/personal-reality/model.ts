@@ -102,6 +102,10 @@ function readNullableInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null;
 }
 
+function formatPlanNumber(value: number) {
+  return new Intl.NumberFormat().format(value);
+}
+
 function readSelection(value: unknown): PersonalRealitySelectionState {
   const record = asRecord(value);
 
@@ -593,6 +597,10 @@ export function buildPersonalRealityPlanSummary(
 
   if (!state.coreModeId) {
     warnings.push('Select a core mode before relying on the WP total.');
+  }
+
+  if (remainingWp < 0) {
+    warnings.push(`Current selections are over budget by ${formatPlanNumber(Math.abs(remainingWp))} WP.`);
   }
 
   if (state.coreModeId === 'upfront' && state.discountedGroupIds.length > 3) {

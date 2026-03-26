@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { accessModes, effectCategories, effectStates, scopeTypes, ownerEntityTypes, type AccessMode, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
@@ -108,6 +109,7 @@ function getDefaultScopeType(ownerEntityType: OwnerEntityType) {
 }
 
 export function EffectsPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [scopeFilter, setScopeFilter] = useState<FilterValue<ScopeType>>('all');
@@ -252,7 +254,11 @@ export function EffectsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Active Effects"
-        description="Filterable branch-visible effects with chain, jump, and jumper ownership plus rule override metadata."
+        description={
+          simpleMode
+            ? 'Track one effect at a time, starting with what it is and where it applies.'
+            : 'Filterable branch-visible effects with chain, jump, and jumper ownership plus rule override metadata.'
+        }
         badge={`${workspace.effects.length} total`}
         actions={
           <>
@@ -319,61 +325,129 @@ export function EffectsPage() {
                 }
               />
             </label>
-            <div className="field-grid field-grid--two">
-              <label className="field">
-                <span>Scope</span>
-                <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
-                  <option value="all">all</option>
-                  {scopeTypes.map((scope) => (
-                    <option key={scope} value={scope}>
-                      {scope}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Category</span>
-                <select
-                  value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
-                >
-                  <option value="all">all</option>
-                  {effectCategories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>State</span>
-                <select
-                  value={stateFilter}
-                  onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
-                >
-                  <option value="all">all</option>
-                  {effectStates.map((state) => (
-                    <option key={state} value={state}>
-                      {state}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Owner type</span>
-                <select
-                  value={ownerTypeFilter}
-                  onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
-                >
-                  <option value="all">all</option>
-                  {ownerEntityTypes.map((ownerType) => (
-                    <option key={ownerType} value={ownerType}>
-                      {ownerType}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            {simpleMode ? (
+              <>
+                <label className="field">
+                  <span>Category</span>
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
+                  >
+                    <option value="all">all</option>
+                    {effectCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <details className="details-panel">
+                  <summary className="details-panel__summary">
+                    <span>More filters</span>
+                    <span className="pill">Optional</span>
+                  </summary>
+                  <div className="details-panel__body">
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Scope</span>
+                        <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
+                          <option value="all">all</option>
+                          {scopeTypes.map((scope) => (
+                            <option key={scope} value={scope}>
+                              {scope}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>State</span>
+                        <select
+                          value={stateFilter}
+                          onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
+                        >
+                          <option value="all">all</option>
+                          {effectStates.map((state) => (
+                            <option key={state} value={state}>
+                              {state}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Owner type</span>
+                        <select
+                          value={ownerTypeFilter}
+                          onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
+                        >
+                          <option value="all">all</option>
+                          {ownerEntityTypes.map((ownerType) => (
+                            <option key={ownerType} value={ownerType}>
+                              {ownerType}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <div className="field-grid field-grid--two">
+                <label className="field">
+                  <span>Scope</span>
+                  <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
+                    <option value="all">all</option>
+                    {scopeTypes.map((scope) => (
+                      <option key={scope} value={scope}>
+                        {scope}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Category</span>
+                  <select
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
+                  >
+                    <option value="all">all</option>
+                    {effectCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>State</span>
+                  <select
+                    value={stateFilter}
+                    onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
+                  >
+                    <option value="all">all</option>
+                    {effectStates.map((state) => (
+                      <option key={state} value={state}>
+                        {state}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Owner type</span>
+                  <select
+                    value={ownerTypeFilter}
+                    onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
+                  >
+                    <option value="all">all</option>
+                    {ownerEntityTypes.map((ownerType) => (
+                      <option key={ownerType} value={ownerType}>
+                        {ownerType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
 
             <div className="selection-list">
               {filteredEffects.map((effect) => (
@@ -413,7 +487,7 @@ export function EffectsPage() {
                 </div>
 
                 <section className="stack stack--compact">
-                  <h4>Simple</h4>
+                  <h4>Core</h4>
                   <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Title</span>
@@ -463,6 +537,26 @@ export function EffectsPage() {
                         ))}
                       </select>
                     </label>
+                  </div>
+
+                  <label className="field">
+                    <span>Description</span>
+                    <textarea
+                      rows={5}
+                      value={draftEffect.description}
+                      onChange={(event) =>
+                        updateSelectedEffect({
+                          ...draftEffect,
+                          description: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </section>
+
+                <section className="stack stack--compact">
+                  <h4>Where it applies</h4>
+                  <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Scope</span>
                       <select
@@ -547,25 +641,11 @@ export function EffectsPage() {
                       Choose a different owner type to repair it.
                     </p>
                   ) : null}
-
-                  <label className="field">
-                    <span>Description</span>
-                    <textarea
-                      rows={5}
-                      value={draftEffect.description}
-                      onChange={(event) =>
-                        updateSelectedEffect({
-                          ...draftEffect,
-                          description: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
                 </section>
 
                 {draftEffect.category === 'rule' ? (
                   <section className="stack stack--compact">
-                    <h4>Rule Overrides</h4>
+                    <h4>Rule overrides</h4>
                     <div className="field-grid field-grid--three">
                       {(['warehouseAccess', 'powerAccess', 'itemAccess', 'altFormAccess', 'supplementAccess'] as const).map(
                         (key) => (
@@ -601,40 +681,82 @@ export function EffectsPage() {
                   </section>
                 ) : null}
 
-                <section className="stack stack--compact">
-                  <h4>Advanced</h4>
-                  <label className="field">
-                    <span>Source effect id</span>
-                    <input
-                      value={draftEffect.sourceEffectId ?? ''}
-                      onChange={(event) =>
-                        updateSelectedEffect({
-                          ...draftEffect,
-                          sourceEffectId: event.target.value === '' ? null : event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <AdvancedJsonDetails
-                    summary="Advanced JSON"
-                    badge="import metadata"
-                    hint="Raw effect metadata is still editable, but it does not need to sit in the main editor."
-                  >
-                    <JsonEditorField
-                      label="Import source metadata"
-                      value={draftEffect.importSourceMetadata}
-                      onValidChange={(value) =>
-                        updateSelectedEffect({
-                          ...draftEffect,
-                          importSourceMetadata:
-                            typeof value === 'object' && value !== null && !Array.isArray(value)
-                              ? (value as Record<string, unknown>)
-                              : {},
-                        })
-                      }
-                    />
-                  </AdvancedJsonDetails>
-                </section>
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Metadata</span>
+                      <span className="pill">Reference</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <label className="field">
+                        <span>Source effect id</span>
+                        <input
+                          value={draftEffect.sourceEffectId ?? ''}
+                          onChange={(event) =>
+                            updateSelectedEffect({
+                              ...draftEffect,
+                              sourceEffectId: event.target.value === '' ? null : event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <AdvancedJsonDetails
+                        summary="Advanced JSON"
+                        badge="import metadata"
+                        hint="Raw effect metadata is still editable, but it does not need to sit in the main editor."
+                      >
+                        <JsonEditorField
+                          label="Import source metadata"
+                          value={draftEffect.importSourceMetadata}
+                          onValidChange={(value) =>
+                            updateSelectedEffect({
+                              ...draftEffect,
+                              importSourceMetadata:
+                                typeof value === 'object' && value !== null && !Array.isArray(value)
+                                  ? (value as Record<string, unknown>)
+                                  : {},
+                            })
+                          }
+                        />
+                      </AdvancedJsonDetails>
+                    </div>
+                  </details>
+                ) : (
+                  <section className="stack stack--compact">
+                    <h4>Metadata</h4>
+                    <label className="field">
+                      <span>Source effect id</span>
+                      <input
+                        value={draftEffect.sourceEffectId ?? ''}
+                        onChange={(event) =>
+                          updateSelectedEffect({
+                            ...draftEffect,
+                            sourceEffectId: event.target.value === '' ? null : event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <AdvancedJsonDetails
+                      summary="Advanced JSON"
+                      badge="import metadata"
+                      hint="Raw effect metadata is still editable, but it does not need to sit in the main editor."
+                    >
+                      <JsonEditorField
+                        label="Import source metadata"
+                        value={draftEffect.importSourceMetadata}
+                        onValidChange={(value) =>
+                          updateSelectedEffect({
+                            ...draftEffect,
+                            importSourceMetadata:
+                              typeof value === 'object' && value !== null && !Array.isArray(value)
+                                ? (value as Record<string, unknown>)
+                                : {},
+                          })
+                        }
+                      />
+                    </AdvancedJsonDetails>
+                  </section>
+                )}
               </>
             ) : (
               <p>No effects match the current filters.</p>

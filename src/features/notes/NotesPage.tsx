@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { noteTypes, scopeTypes, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Note } from '../../domain/notes/types';
 import { db } from '../../db/database';
@@ -86,6 +87,7 @@ function getDefaultScopedNoteFields(ownerEntityType: OwnerEntityType | null, own
 }
 
 export function NotesPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [noteFilter, setNoteFilter] = useState<NoteFilter>('all');
@@ -185,7 +187,11 @@ export function NotesPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Notes"
-        description="Chain, jump, jumper, companion, participation, and snapshot notes from one place, with live filters and autosave."
+        description={
+          simpleMode
+            ? 'Capture the note itself first, then attach it to the right part of the chain.'
+            : 'Chain, jump, jumper, companion, participation, and snapshot notes from one place, with live filters and autosave.'
+        }
         badge={`${workspace.notes.length} total`}
         actions={
           <>
@@ -301,144 +307,257 @@ export function NotesPage() {
                   </button>
                 </div>
 
-                <div className="field-grid field-grid--two">
+                <section className="stack stack--compact">
+                  <h4>Core</h4>
+                  <div className="field-grid field-grid--two">
+                    <label className="field">
+                      <span>Title</span>
+                      <input
+                        value={draftNote?.title ?? ''}
+                        onChange={(event) =>
+                          noteAutosave.updateDraft({
+                            ...(draftNote ?? selectedNote),
+                            title: event.target.value,
+                          } as Note)
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Note type</span>
+                      <select
+                        value={draftNote?.noteType ?? 'chain'}
+                        onChange={(event) =>
+                          noteAutosave.updateDraft({
+                            ...(draftNote ?? selectedNote),
+                            noteType: event.target.value as Note['noteType'],
+                          } as Note)
+                        }
+                      >
+                        {noteTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
                   <label className="field">
-                    <span>Title</span>
-                    <input
-                      value={draftNote?.title ?? ''}
+                    <span>Content</span>
+                    <textarea
+                      rows={10}
+                      value={draftNote?.content ?? ''}
                       onChange={(event) =>
                         noteAutosave.updateDraft({
                           ...(draftNote ?? selectedNote),
-                          title: event.target.value,
+                          content: event.target.value,
                         } as Note)
                       }
                     />
                   </label>
-                  <label className="field">
-                    <span>Note type</span>
-                    <select
-                      value={draftNote?.noteType ?? 'chain'}
-                      onChange={(event) =>
-                        noteAutosave.updateDraft({
-                          ...(draftNote ?? selectedNote),
-                          noteType: event.target.value as Note['noteType'],
-                        } as Note)
-                      }
-                    >
-                      {noteTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Scope</span>
-                    <select
-                      value={draftNote?.scopeType ?? 'chain'}
-                      onChange={(event) =>
-                        noteAutosave.updateDraft({
-                          ...(draftNote ?? selectedNote),
-                          scopeType: event.target.value as ScopeType,
-                        } as Note)
-                      }
-                    >
-                      {scopeTypes.map((scope) => (
-                        <option key={scope} value={scope}>
-                          {scope}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Owner type</span>
-                    <select
-                      value={draftNote?.ownerEntityType ?? 'chain'}
-                      onChange={(event) => {
-                        const ownerEntityType = event.target.value as OwnerEntityType;
-                        const nextOwnerOptions =
-                          ownerEntityType in ownerOptions
-                            ? ownerOptions[ownerEntityType as keyof typeof ownerOptions]
-                            : [{ value: draftNote?.ownerEntityId ?? workspace.chain.id, label: draftNote?.ownerEntityId ?? workspace.chain.id }];
+                </section>
 
-                        noteAutosave.updateDraft({
-                          ...(draftNote ?? selectedNote),
-                          ownerEntityType,
-                          ownerEntityId: nextOwnerOptions[0]?.value ?? draftNote?.ownerEntityId ?? workspace.chain.id,
-                        } as Note);
-                      }}
-                    >
-                      <option value="chain">chain</option>
-                      <option value="jump">jump</option>
-                      <option value="jumper">jumper</option>
-                      <option value="companion">companion</option>
-                      <option value="participation">participation</option>
-                      <option value="snapshot">snapshot</option>
-                    </select>
-                  </label>
-                </div>
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Attachment and tags</span>
+                      <span className="pill">Optional</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Scope</span>
+                          <select
+                            value={draftNote?.scopeType ?? 'chain'}
+                            onChange={(event) =>
+                              noteAutosave.updateDraft({
+                                ...(draftNote ?? selectedNote),
+                                scopeType: event.target.value as ScopeType,
+                              } as Note)
+                            }
+                          >
+                            {scopeTypes.map((scope) => (
+                              <option key={scope} value={scope}>
+                                {scope}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Owner type</span>
+                          <select
+                            value={draftNote?.ownerEntityType ?? 'chain'}
+                            onChange={(event) => {
+                              const ownerEntityType = event.target.value as OwnerEntityType;
+                              const nextOwnerOptions =
+                                ownerEntityType in ownerOptions
+                                  ? ownerOptions[ownerEntityType as keyof typeof ownerOptions]
+                                  : [{ value: draftNote?.ownerEntityId ?? workspace.chain.id, label: draftNote?.ownerEntityId ?? workspace.chain.id }];
 
-                <label className="field">
-                  <span>Owner target</span>
-                  {selectedOwnerOptions.length > 0 ? (
-                    <select
-                      value={draftNote?.ownerEntityId ?? ''}
-                      onChange={(event) =>
-                        noteAutosave.updateDraft({
-                          ...(draftNote ?? selectedNote),
-                          ownerEntityId: event.target.value,
-                        } as Note)
-                      }
-                    >
-                      {selectedOwnerOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      value={draftNote?.ownerEntityId ?? ''}
-                      onChange={(event) =>
-                        noteAutosave.updateDraft({
-                          ...(draftNote ?? selectedNote),
-                          ownerEntityId: event.target.value,
-                        } as Note)
-                      }
-                    />
-                  )}
-                </label>
+                              noteAutosave.updateDraft({
+                                ...(draftNote ?? selectedNote),
+                                ownerEntityType,
+                                ownerEntityId: nextOwnerOptions[0]?.value ?? draftNote?.ownerEntityId ?? workspace.chain.id,
+                              } as Note);
+                            }}
+                          >
+                            <option value="chain">chain</option>
+                            <option value="jump">jump</option>
+                            <option value="jumper">jumper</option>
+                            <option value="companion">companion</option>
+                            <option value="participation">participation</option>
+                            <option value="snapshot">snapshot</option>
+                          </select>
+                        </label>
+                      </div>
 
-                <label className="field">
-                  <span>Content</span>
-                  <textarea
-                    rows={10}
-                    value={draftNote?.content ?? ''}
-                    onChange={(event) =>
-                      noteAutosave.updateDraft({
-                        ...(draftNote ?? selectedNote),
-                        content: event.target.value,
-                      } as Note)
-                    }
-                  />
-                </label>
+                      <label className="field">
+                        <span>Owner target</span>
+                        {selectedOwnerOptions.length > 0 ? (
+                          <select
+                            value={draftNote?.ownerEntityId ?? ''}
+                            onChange={(event) =>
+                              noteAutosave.updateDraft({
+                                ...(draftNote ?? selectedNote),
+                                ownerEntityId: event.target.value,
+                              } as Note)
+                            }
+                          >
+                            {selectedOwnerOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            value={draftNote?.ownerEntityId ?? ''}
+                            onChange={(event) =>
+                              noteAutosave.updateDraft({
+                                ...(draftNote ?? selectedNote),
+                                ownerEntityId: event.target.value,
+                              } as Note)
+                            }
+                          />
+                        )}
+                      </label>
 
-                <label className="field">
-                  <span>Tags</span>
-                  <input
-                    value={draftNote?.tags.join(', ') ?? ''}
-                    onChange={(event) =>
-                      noteAutosave.updateDraft({
-                        ...(draftNote ?? selectedNote),
-                        tags: event.target.value
-                          .split(',')
-                          .map((entry) => entry.trim())
-                          .filter(Boolean),
-                      } as Note)
-                    }
-                    placeholder="journal, rules, branching"
-                  />
-                </label>
+                      <label className="field">
+                        <span>Tags</span>
+                        <input
+                          value={draftNote?.tags.join(', ') ?? ''}
+                          onChange={(event) =>
+                            noteAutosave.updateDraft({
+                              ...(draftNote ?? selectedNote),
+                              tags: event.target.value
+                                .split(',')
+                                .map((entry) => entry.trim())
+                                .filter(Boolean),
+                            } as Note)
+                          }
+                          placeholder="journal, rules, branching"
+                        />
+                      </label>
+                    </div>
+                  </details>
+                ) : (
+                  <>
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Scope</span>
+                        <select
+                          value={draftNote?.scopeType ?? 'chain'}
+                          onChange={(event) =>
+                            noteAutosave.updateDraft({
+                              ...(draftNote ?? selectedNote),
+                              scopeType: event.target.value as ScopeType,
+                            } as Note)
+                          }
+                        >
+                          {scopeTypes.map((scope) => (
+                            <option key={scope} value={scope}>
+                              {scope}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Owner type</span>
+                        <select
+                          value={draftNote?.ownerEntityType ?? 'chain'}
+                          onChange={(event) => {
+                            const ownerEntityType = event.target.value as OwnerEntityType;
+                            const nextOwnerOptions =
+                              ownerEntityType in ownerOptions
+                                ? ownerOptions[ownerEntityType as keyof typeof ownerOptions]
+                                : [{ value: draftNote?.ownerEntityId ?? workspace.chain.id, label: draftNote?.ownerEntityId ?? workspace.chain.id }];
+
+                            noteAutosave.updateDraft({
+                              ...(draftNote ?? selectedNote),
+                              ownerEntityType,
+                              ownerEntityId: nextOwnerOptions[0]?.value ?? draftNote?.ownerEntityId ?? workspace.chain.id,
+                            } as Note);
+                          }}
+                        >
+                          <option value="chain">chain</option>
+                          <option value="jump">jump</option>
+                          <option value="jumper">jumper</option>
+                          <option value="companion">companion</option>
+                          <option value="participation">participation</option>
+                          <option value="snapshot">snapshot</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="field">
+                      <span>Owner target</span>
+                      {selectedOwnerOptions.length > 0 ? (
+                        <select
+                          value={draftNote?.ownerEntityId ?? ''}
+                          onChange={(event) =>
+                            noteAutosave.updateDraft({
+                              ...(draftNote ?? selectedNote),
+                              ownerEntityId: event.target.value,
+                            } as Note)
+                          }
+                        >
+                          {selectedOwnerOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={draftNote?.ownerEntityId ?? ''}
+                          onChange={(event) =>
+                            noteAutosave.updateDraft({
+                              ...(draftNote ?? selectedNote),
+                              ownerEntityId: event.target.value,
+                            } as Note)
+                          }
+                        />
+                      )}
+                    </label>
+
+                    <label className="field">
+                      <span>Tags</span>
+                      <input
+                        value={draftNote?.tags.join(', ') ?? ''}
+                        onChange={(event) =>
+                          noteAutosave.updateDraft({
+                            ...(draftNote ?? selectedNote),
+                            tags: event.target.value
+                              .split(',')
+                              .map((entry) => entry.trim())
+                              .filter(Boolean),
+                          } as Note)
+                        }
+                        placeholder="journal, rules, branching"
+                      />
+                    </label>
+                  </>
+                )}
               </>
             ) : (
               <p>No notes match the current filters.</p>

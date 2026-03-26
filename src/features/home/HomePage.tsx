@@ -22,7 +22,11 @@ export function HomePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [busyChainId, setBusyChainId] = useState<string | null>(null);
+  const draftTitleInputRef = useRef<HTMLInputElement | null>(null);
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
+  const totalJumpers = chains.reduce((total, chain) => total + chain.jumperCount, 0);
+  const totalJumps = chains.reduce((total, chain) => total + chain.jumpCount, 0);
+  const importedChainCount = chains.filter((chain) => chain.importReportCount > 0).length;
 
   async function refreshChains() {
     const nextChains = await listChainOverviews();
@@ -124,21 +128,39 @@ export function HomePage() {
             <h2>Jumpchain Tracker</h2>
             <p>
               {simpleMode
-                ? 'Start by creating a blank chain or importing a save. Once a chain exists, open its workspace and follow the guided setup steps.'
-                : 'Local-first continuity tracking for branches, imports, snapshots, and page-by-page supplement planning.'}
+                ? 'Start with one safe action: create a blank chain or import a save you already trust. The workspace can guide the rest.'
+                : 'Local-first continuity tracking with wide module workspaces, snapshots, imports, and page-by-page supplement planning.'}
             </p>
             <div className="actions">
-              <button
-                className="button button--secondary"
-                type="button"
-                onClick={() => nativeImportInputRef.current?.click()}
-                disabled={isBusy}
-              >
-                Import Native Save
-              </button>
-              <Link className="button button--secondary" to="/import">
-                Open Import Review
-              </Link>
+              {simpleMode ? (
+                <>
+                  <button className="button" type="button" onClick={() => draftTitleInputRef.current?.focus()} disabled={isBusy}>
+                    Start Blank Chain
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => nativeImportInputRef.current?.click()}
+                    disabled={isBusy}
+                  >
+                    Import Native Save
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => nativeImportInputRef.current?.click()}
+                    disabled={isBusy}
+                  >
+                    Import Native Save
+                  </button>
+                  <Link className="button button--secondary" to="/import">
+                    Open Import Review
+                  </Link>
+                </>
+              )}
             </div>
           </div>
           <div className="hero__stats summary-grid">
@@ -160,16 +182,16 @@ export function HomePage() {
                   Stored chains
                 </div>
                 <div className="metric">
-                  <strong>IndexedDB</strong>
-                  Authoritative store
+                  <strong>{importedChainCount}</strong>
+                  Imported chains
                 </div>
                 <div className="metric">
-                  <strong>Native saves</strong>
-                  Portable round-trip
+                  <strong>{totalJumpers}</strong>
+                  Total jumpers
                 </div>
                 <div className="metric">
-                  <strong>ChainMaker v2</strong>
-                  Import foundation
+                  <strong>{totalJumps}</strong>
+                  Total jumps
                 </div>
               </>
             )}
@@ -186,6 +208,7 @@ export function HomePage() {
           <label className="field">
             <span>Chain title</span>
             <input
+              ref={draftTitleInputRef}
               value={draftTitle}
               onChange={(event) => setDraftTitle(event.target.value)}
               placeholder="Untitled Chain"

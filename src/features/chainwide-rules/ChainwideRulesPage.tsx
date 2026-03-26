@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getActiveChainDrawbackBudgetContributions, getChainDrawbackBudgetGrants } from '../../domain/chain/selectors';
 import { effectCategories, effectStates } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
@@ -59,6 +60,7 @@ function isChainwideEffect(effect: Effect, chainId: string) {
 }
 
 export function ChainwideRulesPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [selectedEffectId, setSelectedEffectId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<ChainwideCategoryFilter>('all');
@@ -164,7 +166,11 @@ export function ChainwideRulesPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Chainwide Rules"
-        description="Chain-level rule flags, chainwide drawbacks, and branch-visible chain-owned rule effects live here."
+        description={
+          simpleMode
+            ? 'Set the chain-level flags first, then add the chain rules or drawbacks that should follow the whole branch.'
+            : 'Chain-level rule flags, chainwide drawbacks, and branch-visible chain-owned rule effects live here.'
+        }
         badge={`${chainwideEffects.length} entries`}
         actions={
           <>
@@ -216,26 +222,39 @@ export function ChainwideRulesPage() {
             <span className="pill">{workspace.chain.title}</span>
           </div>
 
-          <div className="inline-meta">
-            <span className="metric">
-              <strong>{chainwideDrawbackCount}</strong>
-              Chain drawbacks
-            </span>
-            <span className="metric">
-              <strong>{chainwideRuleCount}</strong>
-              Chain rules
-            </span>
-            <span className="metric">
-              <strong>{chainwideEffects.length}</strong>
-              Total entries
-            </span>
-            <span className="metric">
-              <strong>{activeChoicePointGrant > 0 ? `+${formatNumericValue(activeChoicePointGrant)}` : formatNumericValue(activeChoicePointGrant)}</strong>
-              Jump CP grant
-            </span>
-          </div>
+          {simpleMode ? (
+            <>
+              <p>
+                {chainwideDrawbackCount} chain drawbacks, {chainwideRuleCount} chain rules, and{' '}
+                {activeChoicePointGrant > 0 ? `+${formatNumericValue(activeChoicePointGrant)}` : formatNumericValue(activeChoicePointGrant)} jump CP from
+                active chainwide entries.
+              </p>
+              <p>Chain-owned rule effects feed jump rules automatically. Chain drawbacks can also feed jump budgets.</p>
+            </>
+          ) : (
+            <>
+              <div className="inline-meta">
+                <span className="metric">
+                  <strong>{chainwideDrawbackCount}</strong>
+                  Chain drawbacks
+                </span>
+                <span className="metric">
+                  <strong>{chainwideRuleCount}</strong>
+                  Chain rules
+                </span>
+                <span className="metric">
+                  <strong>{chainwideEffects.length}</strong>
+                  Total entries
+                </span>
+                <span className="metric">
+                  <strong>{activeChoicePointGrant > 0 ? `+${formatNumericValue(activeChoicePointGrant)}` : formatNumericValue(activeChoicePointGrant)}</strong>
+                  Jump CP grant
+                </span>
+              </div>
 
-          <p>Active chain-owned rule effects contribute to jump rules automatically. Active chain drawbacks can also feed jump budgets.</p>
+              <p>Active chain-owned rule effects contribute to jump rules automatically. Active chain drawbacks can also feed jump budgets.</p>
+            </>
+          )}
         </article>
       </section>
 
@@ -262,20 +281,45 @@ export function ChainwideRulesPage() {
               <span className="pill">{filteredEffects.length} shown</span>
             </div>
 
-            <label className="field">
-              <span>Category</span>
-              <select
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value as ChainwideCategoryFilter)}
-              >
-                <option value="all">all</option>
-                {effectCategories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>Category filter</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body">
+                  <label className="field">
+                    <span>Category</span>
+                    <select
+                      value={categoryFilter}
+                      onChange={(event) => setCategoryFilter(event.target.value as ChainwideCategoryFilter)}
+                    >
+                      <option value="all">all</option>
+                      {effectCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </details>
+            ) : (
+              <label className="field">
+                <span>Category</span>
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => setCategoryFilter(event.target.value as ChainwideCategoryFilter)}
+                >
+                  <option value="all">all</option>
+                  {effectCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="selection-list">
               {filteredEffects.map((effect) => (
@@ -305,7 +349,7 @@ export function ChainwideRulesPage() {
                 </div>
 
                 <section className="stack stack--compact">
-                  <h4>Simple</h4>
+                  <h4>Core</h4>
                   <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Title</span>
@@ -425,39 +469,80 @@ export function ChainwideRulesPage() {
                   </section>
                 ) : null}
 
-                <section className="stack stack--compact">
-                  <h4>Advanced</h4>
-                  <div className="field-grid field-grid--two">
-                    <label className="field">
-                      <span>Scope</span>
-                      <input value={draftEffect.scopeType} readOnly />
-                    </label>
-                    <label className="field">
-                      <span>Owner type</span>
-                      <input value={draftEffect.ownerEntityType} readOnly />
-                    </label>
-                  </div>
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Metadata</span>
+                      <span className="pill">Reference</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Scope</span>
+                          <input value={draftEffect.scopeType} readOnly />
+                        </label>
+                        <label className="field">
+                          <span>Owner type</span>
+                          <input value={draftEffect.ownerEntityType} readOnly />
+                        </label>
+                      </div>
 
-                  <AdvancedJsonDetails
-                    summary="Advanced JSON"
-                    badge="import metadata"
-                    hint="Keep raw effect metadata out of the main editing flow unless you need to inspect it directly."
-                  >
-                    <JsonEditorField
-                      label="Import Source Metadata"
-                      value={draftEffect.importSourceMetadata}
-                      onValidChange={(value) =>
-                        updateSelectedEffect({
-                          ...draftEffect,
-                          importSourceMetadata:
-                            typeof value === 'object' && value !== null && !Array.isArray(value)
-                              ? (value as Record<string, unknown>)
-                              : {},
-                        })
-                      }
-                    />
-                  </AdvancedJsonDetails>
-                </section>
+                      <AdvancedJsonDetails
+                        summary="Advanced JSON"
+                        badge="import metadata"
+                        hint="Keep raw effect metadata out of the main editing flow unless you need to inspect it directly."
+                      >
+                        <JsonEditorField
+                          label="Import Source Metadata"
+                          value={draftEffect.importSourceMetadata}
+                          onValidChange={(value) =>
+                            updateSelectedEffect({
+                              ...draftEffect,
+                              importSourceMetadata:
+                                typeof value === 'object' && value !== null && !Array.isArray(value)
+                                  ? (value as Record<string, unknown>)
+                                  : {},
+                            })
+                          }
+                        />
+                      </AdvancedJsonDetails>
+                    </div>
+                  </details>
+                ) : (
+                  <section className="stack stack--compact">
+                    <h4>Metadata</h4>
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Scope</span>
+                        <input value={draftEffect.scopeType} readOnly />
+                      </label>
+                      <label className="field">
+                        <span>Owner type</span>
+                        <input value={draftEffect.ownerEntityType} readOnly />
+                      </label>
+                    </div>
+
+                    <AdvancedJsonDetails
+                      summary="Advanced JSON"
+                      badge="import metadata"
+                      hint="Keep raw effect metadata out of the main editing flow unless you need to inspect it directly."
+                    >
+                      <JsonEditorField
+                        label="Import Source Metadata"
+                        value={draftEffect.importSourceMetadata}
+                        onValidChange={(value) =>
+                          updateSelectedEffect({
+                            ...draftEffect,
+                            importSourceMetadata:
+                              typeof value === 'object' && value !== null && !Array.isArray(value)
+                                ? (value as Record<string, unknown>)
+                                : {},
+                          })
+                        }
+                      />
+                    </AdvancedJsonDetails>
+                  </section>
+                )}
               </>
             ) : (
               <p>No chainwide entries match the current filter.</p>

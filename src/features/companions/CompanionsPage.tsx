@@ -330,7 +330,7 @@ export function CompanionsPage() {
                 {simpleMode ? <p>Start with the relationship basics here. Optional holds origin and raw import details.</p> : null}
 
                 <section className="stack stack--compact">
-                  <h4>Simple</h4>
+                  <h4>Core relationship</h4>
                   <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Name</span>
@@ -491,7 +491,7 @@ export function CompanionsPage() {
                     </section>
 
                     <section className="stack stack--compact">
-                      <h4>Advanced</h4>
+                      <h4>Metadata</h4>
                       <div className="field-grid field-grid--two">
                         <label className="field">
                           <span>Companion id</span>

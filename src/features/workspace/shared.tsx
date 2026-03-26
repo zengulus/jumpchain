@@ -1,4 +1,4 @@
-import { cloneElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, useCallback, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { createJsonText } from './records';
 import type { AutosaveStatus } from './useAutosaveRecord';
@@ -44,6 +44,62 @@ export function StatusNoticeBanner({ notice }: { notice: StatusNotice | null }) 
   }
 
   return <div className={`status status--${notice.tone}`}>{notice.message}</div>;
+}
+
+export function SimpleModeAffirmation(props: { message: string | null; className?: string }) {
+  if (!props.message) {
+    return null;
+  }
+
+  return (
+    <div className={['simple-mode-affirmation', props.className].filter(Boolean).join(' ')} role="status" aria-live="polite">
+      {props.message}
+    </div>
+  );
+}
+
+export function useSimpleModeAffirmation() {
+  const { simpleMode } = useUiPreferences();
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!simpleMode) {
+      setMessage(null);
+    }
+  }, [simpleMode]);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
+  const showAffirmation = useCallback(
+    (nextMessage: string) => {
+      if (!simpleMode) {
+        return;
+      }
+
+      setMessage(nextMessage);
+    },
+    [simpleMode],
+  );
+
+  const clearAffirmation = useCallback(() => {
+    setMessage(null);
+  }, []);
+
+  return {
+    message: simpleMode ? message : null,
+    showAffirmation,
+    clearAffirmation,
+  };
 }
 
 export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) {

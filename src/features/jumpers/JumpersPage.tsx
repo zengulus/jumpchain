@@ -81,7 +81,7 @@ export function JumpersPage() {
         description={
           simpleMode
             ? 'Pick a jumper, fill in the basics, and open Optional only when you want the deeper profile.'
-            : 'Simple identity editing up front, source metadata and deep structure in advanced sections.'
+            : 'Keep identity front and center, with profile details and source metadata grouped just behind it.'
         }
         badge={`${workspace.jumpers.length} total`}
         actions={
@@ -182,7 +182,7 @@ export function JumpersPage() {
                 {simpleMode ? <p>Start with identity and notes. Optional holds personality, background, and import cleanup.</p> : null}
 
                 <section className="stack stack--compact">
-                  <h4>Simple</h4>
+                  <h4>Identity</h4>
                   <label className="field">
                     <span>Name</span>
                     <input
@@ -449,7 +449,7 @@ export function JumpersPage() {
                   </details>
                 ) : (
                   <section className="stack stack--compact">
-                    <h4>Advanced</h4>
+                    <h4>Profile and metadata</h4>
                     <div className="field-grid field-grid--two">
                       <label className="field">
                         <span>Personality</span>

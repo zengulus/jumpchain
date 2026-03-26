@@ -93,4 +93,20 @@ describe('personal reality supplement model', () => {
     expect(summary.availableWp).toBe(120);
     expect(summary.cpSpent).toBe(120);
   });
+
+  it('warns when current selections exceed the available WP budget', () => {
+    const state = createDefaultPersonalRealityState();
+    state.coreModeId = 'upfront';
+    state.selections['personal-realty'] = {
+      units: 1,
+      cpUnits: 0,
+      variantId: '',
+      limitationStatus: 'active',
+    };
+
+    const summary = buildPersonalRealityPlanSummary(state, 0);
+
+    expect(summary.remainingWp).toBeLessThan(0);
+    expect(summary.warnings).toContain('Current selections are over budget by 1,500 WP.');
+  });
 });

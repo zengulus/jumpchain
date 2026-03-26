@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { IconicBodymodMode } from '../../domain/common';
@@ -11,9 +11,11 @@ import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records
 import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
+  SimpleModeAffirmation,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
+  useSimpleModeAffirmation,
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -38,6 +40,11 @@ export function BodymodPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save Iconic changes.'),
   });
   const draftProfile = profileAutosave.draft ?? profile;
+  const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
+
+  useEffect(() => {
+    clearAffirmation();
+  }, [clearAffirmation, selectedJumperId]);
 
   async function handleCreateProfile() {
     if (!workspace.activeBranch || !selectedJumper) {
@@ -53,6 +60,9 @@ export function BodymodPage() {
         tone: 'success',
         message: 'Created an Iconic profile for this jumper.',
       });
+      if (simpleMode) {
+        showAffirmation('The Iconic profile is started. Now you can lock in the pieces that keep this jumper recognizable.');
+      }
     } catch (error) {
       setNotice({
         tone: 'error',
@@ -73,7 +83,11 @@ export function BodymodPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Iconic"
-        description="Structured Iconic bodymod replacer profiles with tier-based packages, concept notes, and preserved imported forms."
+        description={
+          simpleMode
+            ? 'Set the jumper-tied Iconic profile without losing sight of the core concept.'
+            : 'Structured Iconic bodymod replacer profiles with tier-based packages, concept notes, and preserved imported forms.'
+        }
         badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}
         actions={
           selectedJumper ? (
@@ -86,6 +100,7 @@ export function BodymodPage() {
 
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={profileAutosave.status} />
+      <SimpleModeAffirmation message={simpleAffirmation} />
 
       {simpleMode ? (
         <details className="details-panel" open>
