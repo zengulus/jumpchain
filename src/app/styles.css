@@ -3005,7 +3005,8 @@ body::before {
 
 .jump-shell-budget {
   display: grid;
-  grid-template-columns: minmax(220px, auto) repeat(4, minmax(110px, 1fr));
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  align-items: stretch;
   gap: 0.6rem;
   padding: 0.72rem 0.82rem;
   border: 1px solid rgba(159, 196, 220, 0.14);
@@ -3042,17 +3043,20 @@ body::before {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.6rem;
   min-width: 0;
+  align-items: stretch;
 }
 
 .jump-shell-budget__metric {
   display: grid;
   gap: 0.12rem;
   align-content: center;
+  justify-items: start;
   min-width: 0;
   padding: 0.58rem 0.72rem;
   border: 1px solid rgba(159, 196, 220, 0.1);
   border-radius: 0.78rem;
   background: rgba(4, 12, 18, 0.62);
+  text-align: left;
 }
 
 .jump-shell-budget__metric strong {
