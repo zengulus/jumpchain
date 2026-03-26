@@ -1,17 +1,12 @@
-import { useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
-import { createBlankParticipation, saveChainRecord } from '../workspace/records';
+import { saveChainRecord } from '../workspace/records';
 import {
   AssistiveHint,
   AutosaveStatusIndicator,
-  EmptyWorkspaceCard,
   JsonEditorField,
-  StatusNoticeBanner,
-  type StatusNotice,
-  WorkspaceModuleHeader,
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -1068,116 +1063,16 @@ export function ParticipationBudgetInspector(props: {
 }
 
 export function ParticipationPage() {
-  const { jumpId } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { chainId, workspace } = useChainWorkspace();
-  const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const jump = workspace.jumps.find((entry) => entry.id === jumpId) ?? null;
-  const focusedJumperId = searchParams.get('jumper');
-  const visibleJumpers =
-    focusedJumperId && workspace.jumpers.some((jumper) => jumper.id === focusedJumperId)
-      ? workspace.jumpers.filter((jumper) => jumper.id === focusedJumperId)
-      : workspace.jumpers;
+  const { chainId, jumpId } = useParams();
+  const [searchParams] = useSearchParams();
 
-  async function ensureParticipation(jumperId: string) {
-    if (!workspace.activeBranch || !jump) {
-      return;
-    }
-
-    const existing = workspace.participations.find(
-      (participation) => participation.jumpId === jump.id && participation.jumperId === jumperId,
-    );
-
-    if (existing) {
-      return;
-    }
-
-    try {
-      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, jump.id, jumperId));
-
-      if (!jump.participantJumperIds.includes(jumperId)) {
-        await saveChainRecord(db.jumps, {
-          ...jump,
-          participantJumperIds: [...jump.participantJumperIds, jumperId],
-        });
-      }
-
-      setNotice({
-        tone: 'success',
-        message: 'Created a participation and purchases record for this jumper.',
-      });
-    } catch (error) {
-      setNotice({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to create a participation and purchases record.',
-      });
-    }
+  if (!chainId || !jumpId) {
+    return <Navigate to="/" replace />;
   }
 
-  if (!jump) {
-    return (
-      <EmptyWorkspaceCard
-        title="Jump not found"
-        body="Open a jump from the Jumps module first, then edit participation and purchases from there."
-      />
-    );
-  }
+  const nextSearchParams = new URLSearchParams(searchParams);
+  nextSearchParams.set('panel', 'participation');
+  const nextSearch = nextSearchParams.toString();
 
-  return (
-    <div className="stack">
-      <WorkspaceModuleHeader
-        title="Participation and Purchases"
-        description="Per-jumper, per-jump editing for purchases, drawbacks, budgets, currencies, narratives, and preserved imported blocks."
-        badge={jump.title}
-        actions={
-          focusedJumperId && workspace.jumpers.length > 1 ? (
-            <button className="button button--secondary" type="button" onClick={() => setSearchParams({})}>
-              Show All Jumpers
-            </button>
-          ) : undefined
-        }
-      />
-
-      <StatusNoticeBanner notice={notice} />
-
-      {workspace.jumpers.length === 0 ? (
-        <EmptyWorkspaceCard
-          title="No jumpers available"
-          body="Add a jumper before editing participation and purchases for this jump."
-        />
-      ) : (
-        visibleJumpers.map((jumper) => {
-          const participation = workspace.participations.find(
-            (entry) => entry.jumpId === jump.id && entry.jumperId === jumper.id,
-          );
-
-          return (
-            <div key={jumper.id}>
-              {!participation ? (
-                <article className="card editor-sheet stack">
-                  <div className="section-heading">
-                    <h3>{jumper.name}</h3>
-                    <span className="pill">not participating yet</span>
-                  </div>
-
-                  <div className="actions">
-                    <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
-                      Add To This Jump
-                    </button>
-                  </div>
-                </article>
-              ) : (
-                <ParticipationEditorCard
-                  jump={jump}
-                  jumper={jumper}
-                  participation={participation}
-                  workspace={workspace}
-                />
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
+  return <Navigate to={`/chains/${chainId}/jumps/${jumpId}${nextSearch.length > 0 ? `?${nextSearch}` : ''}`} replace />;
 }

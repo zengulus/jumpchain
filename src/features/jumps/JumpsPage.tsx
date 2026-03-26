@@ -71,13 +71,6 @@ export function JumpsPage() {
     });
   }
 
-  function getDedicatedParticipationPath(nextJumpId: string) {
-    return withSearchParams(`/chains/${chainId}/participation/${nextJumpId}`, {
-      search: searchQuery,
-      jumper: focusedJumperId,
-    });
-  }
-
   async function handleAddJump() {
     if (!workspace.activeBranch) {
       return;
@@ -252,11 +245,6 @@ export function JumpsPage() {
             );
           })
         )}
-        <div className="actions">
-          <Link className="button button--secondary" to={getDedicatedParticipationPath(draftJump.id)}>
-            Open Full-Screen View
-          </Link>
-        </div>
       </section>
     );
   }
