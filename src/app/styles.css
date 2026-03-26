@@ -2881,13 +2881,13 @@ body::before {
 }
 
 .page-shell[data-ui-mode='simple'] .page-shell__header {
-  grid-template-columns: minmax(240px, 0.95fr) minmax(280px, 1fr) auto;
-  gap: 1rem;
+  grid-template-columns: auto minmax(180px, 0.42fr) minmax(520px, 1.9fr) auto;
+  gap: 0.9rem;
 }
 
 .page-shell[data-ui-mode='advanced'] .page-shell__header {
-  grid-template-columns: minmax(280px, 0.95fr) minmax(420px, 1.45fr) auto;
-  gap: 1.75rem;
+  grid-template-columns: auto minmax(220px, 0.5fr) minmax(640px, 2.15fr) auto;
+  gap: 1rem;
 }
 
 .page-shell[data-ui-mode='simple'] .home-dashboard-grid,
