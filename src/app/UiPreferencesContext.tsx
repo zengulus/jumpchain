@@ -3,8 +3,10 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 export const UI_PREFERENCES_STORAGE_KEY = 'jumpchain.uiPreferences';
 
 export type SimpleModeSupplementDecision = 'undecided' | 'yes' | 'not-now' | 'skip-future';
+export type SimpleModeWizardPromptState = 'pending' | 'accepted' | 'dismissed';
 
 export interface SimpleModeWizardState {
+  wizardPromptState: SimpleModeWizardPromptState;
   jumperWizardCompleted: boolean;
   guidedJumpCount: number;
   lastSupplementPromptJumpCount: number;
@@ -42,6 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function createDefaultSimpleModeWizardState(): SimpleModeWizardState {
   return {
+    wizardPromptState: 'pending',
     jumperWizardCompleted: false,
     guidedJumpCount: 0,
     lastSupplementPromptJumpCount: 0,
@@ -50,6 +53,10 @@ function createDefaultSimpleModeWizardState(): SimpleModeWizardState {
     iconicGuideCompleted: false,
     personalRealityGuideCompleted: false,
   };
+}
+
+function readSimpleModeWizardPromptState(value: unknown): SimpleModeWizardPromptState {
+  return value === 'accepted' || value === 'dismissed' ? value : 'pending';
 }
 
 function readSimpleModeDecision(value: unknown): SimpleModeSupplementDecision {
@@ -62,6 +69,7 @@ function readSimpleModeWizardState(value: unknown): SimpleModeWizardState {
   }
 
   return {
+    wizardPromptState: readSimpleModeWizardPromptState(value.wizardPromptState),
     jumperWizardCompleted: value.jumperWizardCompleted === true,
     guidedJumpCount:
       typeof value.guidedJumpCount === 'number' && Number.isFinite(value.guidedJumpCount)

@@ -1424,6 +1424,33 @@ button {
   font-size: 1rem;
 }
 
+.simple-setup-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5.75rem 1rem 1.5rem;
+  background: rgba(3, 8, 12, 0.64);
+  backdrop-filter: blur(8px);
+}
+
+.simple-setup-popover {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 7rem);
+  overflow: auto;
+  border-color: rgba(105, 210, 180, 0.18);
+  background:
+    linear-gradient(180deg, rgba(10, 26, 36, 0.98), rgba(7, 17, 25, 0.96)),
+    var(--color-bg-panel);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.38);
+}
+
+.simple-setup-popover__affirmation {
+  margin-top: 0.15rem;
+}
+
 .workspace-two-column {
   display: grid;
   gap: 1rem;
@@ -1498,6 +1525,14 @@ button {
 
 .page-shell[data-ui-mode='simple'] .workspace-two-column > aside.card {
   position: static;
+}
+
+.page-shell[data-ui-mode='simple'] .simple-setup-popover-backdrop {
+  padding-top: 4.9rem;
+}
+
+.page-shell[data-ui-mode='simple'] .simple-setup-popover {
+  max-height: calc(100vh - 5.9rem);
 }
 
 .page-shell[data-ui-mode='simple'] .selection-list {

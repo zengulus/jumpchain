@@ -418,6 +418,13 @@ export function ChainOverviewPage() {
     setSimpleWizardStepId(null);
   }
 
+  function setWizardPromptState(nextState: 'pending' | 'accepted' | 'dismissed') {
+    updateSimpleModeWizardState(simpleModeWizardKey, (current) => ({
+      ...current,
+      wizardPromptState: nextState,
+    }));
+  }
+
   const simpleSetupWizardSteps: SimpleSetupWizardStep[] = [];
 
   if (!simpleModeWizardState.jumperWizardCompleted) {
@@ -539,6 +546,35 @@ export function ChainOverviewPage() {
     simpleSetupWizardSteps.findIndex((step) => step.id === activeSimpleWizardStep.id),
   );
   const hasPreviousSimpleWizardStep = activeSimpleWizardStepIndex > 0;
+  const jumpPhaseStepIds = new Set<SimpleSetupWizardStepId>([
+    'create-jump',
+    'jump-title',
+    'jump-status',
+    'jump-type',
+    'jump-duration',
+  ]);
+  const supplementPhaseStepIds = new Set<SimpleSetupWizardStepId>([
+    'iconic-prompt',
+    'personal-reality-prompt',
+    'iconic-guide',
+    'personal-reality-guide',
+  ]);
+  const firstJumpPhaseStepId = simpleSetupWizardSteps.find((step) => jumpPhaseStepIds.has(step.id))?.id ?? null;
+  const firstSupplementPhaseStepId = simpleSetupWizardSteps.find((step) => supplementPhaseStepIds.has(step.id))?.id ?? null;
+  const wizardNeedsAttention = activeSimpleWizardStep.id !== 'complete';
+  const isFreshChainStart = workspace.jumpers.length === 0 && workspace.jumps.length === 0 && !simpleModeWizardState.jumperWizardCompleted;
+  const showWizardWelcomePopover = simpleMode && simpleModeWizardState.wizardPromptState === 'pending' && isFreshChainStart;
+  const showWizardWalkthroughPopover = simpleMode && simpleModeWizardState.wizardPromptState === 'accepted' && wizardNeedsAttention;
+  const activeSimpleWizardAffirmation =
+    activeSimpleWizardStep.id === 'complete'
+      ? 'You made it through the guided setup. From here the workspace should feel much lighter.'
+      : activeSimpleWizardStep.id === 'personal-reality-guide' && simpleModeWizardState.iconicGuideCompleted
+        ? 'Nice work. Iconic is already squared away, so this is the last dense optional system in the walkthrough.'
+        : activeSimpleWizardStep.id === firstSupplementPhaseStepId
+          ? 'Nice work. The jump basics are in place, so now this is mostly about deciding how much extra guidance and infrastructure you want.'
+          : activeSimpleWizardStep.id === firstJumpPhaseStepId && simpleModeWizardState.jumperWizardCompleted
+            ? 'Nice work. Your jumper has enough shape now, and the next stretch is mostly mechanical setup.'
+            : null;
 
   useEffect(() => {
     if (simpleSetupWizardSteps.some((step) => step.id === simpleWizardStepId)) {
@@ -867,6 +903,46 @@ export function ChainOverviewPage() {
 
       <StatusNoticeBanner notice={notice} />
 
+      {simpleMode ? (
+        <section className="card stack">
+          <div className="section-heading">
+            <h3>Guided Setup</h3>
+            <span className="pill">
+              {showWizardWalkthroughPopover
+                ? 'Wizard open'
+                : wizardNeedsAttention
+                  ? simpleModeWizardState.wizardPromptState === 'dismissed'
+                    ? 'Paused'
+                    : 'Ready'
+                  : 'Caught up'}
+            </span>
+          </div>
+          <p>
+            {simpleModeWizardState.wizardPromptState === 'dismissed'
+              ? 'The guided setup popover is hidden right now, but your progress is still there if you want it back.'
+              : wizardNeedsAttention
+                ? 'The setup wizard can walk you through the next fields and systems in a popover without leaving Overview.'
+                : 'The guided setup is caught up. It will be ready again when a new jump needs walkthrough help.'}
+          </p>
+          <div className="actions">
+            {wizardNeedsAttention ? (
+              <button
+                className="button"
+                type="button"
+                onClick={() => setWizardPromptState(isFreshChainStart ? 'pending' : 'accepted')}
+              >
+                {simpleModeWizardState.wizardPromptState === 'dismissed' ? 'Resume Wizard' : 'Open Wizard'}
+              </button>
+            ) : null}
+            {simpleModeWizardState.wizardPromptState !== 'dismissed' ? (
+              <button className="button button--secondary" type="button" onClick={() => setWizardPromptState('dismissed')}>
+                Hide Wizard
+              </button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid grid--two">
         <article className="card stack">
           <div className="section-heading">
@@ -1025,25 +1101,70 @@ export function ChainOverviewPage() {
       </section>
 
       {simpleMode ? (
-        <section className="card stack">
-          <div className="section-heading">
-            <h3>Simple Setup Wizard</h3>
-            <span className="pill">
-              Step {activeSimpleWizardStepIndex + 1} of {simpleSetupWizardSteps.length}
-            </span>
-          </div>
+        <>
+          {showWizardWelcomePopover ? (
+            <div className="simple-setup-popover-backdrop" role="presentation">
+              <section
+                className="card stack simple-setup-popover"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="simple-setup-welcome-title"
+              >
+                <div className="section-heading">
+                  <h3 id="simple-setup-welcome-title">Guided Setup</h3>
+                  <span className="pill pill--soft">Welcome</span>
+                </div>
+                <div className="guidance-strip guidance-strip--accent">
+                  <strong>Congratulations on starting your first chain!</strong>
+                  <p>Do you want to use the wizard to set things up easily?</p>
+                </div>
+                <p>
+                  It will walk you through your jumper, your jump, and the optional Iconic and Personal Reality systems one
+                  step at a time.
+                </p>
+                <div className="actions">
+                  <button className="button" type="button" onClick={() => setWizardPromptState('accepted')}>
+                    Yes, Guide Me
+                  </button>
+                  <button className="button button--secondary" type="button" onClick={() => setWizardPromptState('dismissed')}>
+                    No Thanks
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
 
-          <div className="guidance-strip guidance-strip--accent">
-            <strong>{activeSimpleWizardStep.title}</strong>
-            <p>{activeSimpleWizardStep.description}</p>
-          </div>
+          {showWizardWalkthroughPopover ? (
+            <div className="simple-setup-popover-backdrop" role="presentation">
+              <section
+                className="card stack simple-setup-popover"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="simple-setup-wizard-title"
+              >
+                <div className="section-heading">
+                  <h3 id="simple-setup-wizard-title">Simple Setup Wizard</h3>
+                  <div className="actions">
+                    <span className="pill">
+                      Step {activeSimpleWizardStepIndex + 1} of {simpleSetupWizardSteps.length}
+                    </span>
+                    <button className="button button--secondary" type="button" onClick={() => setWizardPromptState('dismissed')}>
+                      Pause Wizard
+                    </button>
+                  </div>
+                </div>
 
-          <AutosaveStatusIndicator status={simpleWizardAutosaveStatus} />
+                <div className="guidance-strip guidance-strip--accent">
+                  <strong>{activeSimpleWizardStep.title}</strong>
+                  <p>{activeSimpleWizardStep.description}</p>
+                </div>
 
-          <div className="inline-meta">
-            <span className="pill pill--soft">{draftJumper?.name ?? 'No jumper yet'}</span>
-            <span className="pill pill--soft">{draftWizardJump?.title ?? 'No jump yet'}</span>
-          </div>
+                <AutosaveStatusIndicator status={simpleWizardAutosaveStatus} />
+
+                <div className="inline-meta">
+                  <span className="pill pill--soft">{draftJumper?.name ?? 'No jumper yet'}</span>
+                  <span className="pill pill--soft">{draftWizardJump?.title ?? 'No jump yet'}</span>
+                </div>
 
           {activeSimpleWizardStep.id === 'create-jumper' ? (
             <div className="selection-editor">
@@ -1509,7 +1630,13 @@ export function ChainOverviewPage() {
               </div>
             </div>
           ) : null}
-        </section>
+              {activeSimpleWizardAffirmation ? (
+                <div className="status status--success simple-setup-popover__affirmation">{activeSimpleWizardAffirmation}</div>
+              ) : null}
+            </section>
+          </div>
+          ) : null}
+        </>
       ) : (
         <section className="card stack">
           <div className="section-heading">
