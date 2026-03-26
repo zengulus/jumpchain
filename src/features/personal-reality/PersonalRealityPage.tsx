@@ -19,8 +19,9 @@ import {
   type PersonalRealitySelectionState,
   type PersonalRealityState,
 } from './model';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from '../search/SearchHighlight';
-import { EmptyWorkspaceCard, AutosaveStatusIndicator, WorkspaceModuleHeader } from '../workspace/shared';
+import { AssistiveHint, EmptyWorkspaceCard, AutosaveStatusIndicator, TooltipFrame, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { saveChainEntity } from '../workspace/records';
@@ -387,7 +388,10 @@ function BudgetEditor(props: {
 
             <div className="field-grid field-grid--two">
               <label className="field">
-                <span>Core mode</span>
+                <span className="field-label-row">
+                  <span>Core mode</span>
+                  <AssistiveHint text={coreModeSummaryText(props.state.coreModeId)} triggerLabel="Explain Personal Reality core modes" />
+                </span>
                 <select
                   value={props.state.coreModeId}
                   onChange={(event) =>
@@ -405,11 +409,16 @@ function BudgetEditor(props: {
                     </option>
                   ))}
                 </select>
-                <small className="field-hint">{coreModeSummaryText(props.state.coreModeId)}</small>
               </label>
 
               <label className="field">
-                <span>Completed jumps override</span>
+                <span className="field-label-row">
+                  <span>Completed jumps override</span>
+                  <AssistiveHint
+                    text={`Chain currently shows ${formatNumber(props.completedJumpCountFromChain)} completed jumps.`}
+                    triggerLabel="Explain completed jumps override"
+                  />
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -425,9 +434,6 @@ function BudgetEditor(props: {
                     }))
                   }
                 />
-                <small className="field-hint">
-                  Chain currently shows <strong>{formatNumber(props.completedJumpCountFromChain)}</strong> completed jumps.
-                </small>
               </label>
             </div>
 
@@ -501,7 +507,13 @@ function BudgetEditor(props: {
 
               {props.state.extraModeIds.includes('swap-out') ? (
                 <label className="field">
-                  <span>Swap-Out experienced jumps</span>
+                  <span className="field-label-row">
+                    <span>Swap-Out experienced jumps</span>
+                    <AssistiveHint
+                      text="The documented 700 WP Incremental case unlocks at 25+ jumps."
+                      triggerLabel="Explain Swap-Out experienced jumps"
+                    />
+                  </span>
                   <input
                     type="number"
                     min={0}
@@ -516,13 +528,18 @@ function BudgetEditor(props: {
                       }))
                     }
                   />
-                  <small className="field-hint">The documented 700 WP Incremental case unlocks at 25+ jumps.</small>
                 </label>
               ) : null}
 
               {props.state.extraModeIds.includes('cross-roads') ? (
                 <label className="field">
-                  <span>Crossroads triggered jumps</span>
+                  <span className="field-label-row">
+                    <span>Crossroads triggered jumps</span>
+                    <AssistiveHint
+                      text="This tracks shared collective WP, not your own spendable pool."
+                      triggerLabel="Explain Crossroads triggered jumps"
+                    />
+                  </span>
                   <input
                     type="number"
                     min={0}
@@ -537,13 +554,18 @@ function BudgetEditor(props: {
                       }))
                     }
                   />
-                  <small className="field-hint">This tracks shared collective WP, not your own spendable pool.</small>
                 </label>
               ) : null}
 
               {props.state.coreModeId === 'unlimited' ? (
                 <label className="field">
-                  <span>Unlimited mode transferred WP</span>
+                  <span className="field-label-row">
+                    <span>Unlimited mode transferred WP</span>
+                    <AssistiveHint
+                      text="Track the actual 1:1 CP-to-WP transfers you made in Unlimited mode."
+                      triggerLabel="Explain Unlimited mode transferred WP"
+                    />
+                  </span>
                   <input
                     type="number"
                     min={0}
@@ -558,12 +580,17 @@ function BudgetEditor(props: {
                       }))
                     }
                   />
-                  <small className="field-hint">Track the actual 1:1 CP-to-WP transfers you made in Unlimited mode.</small>
                 </label>
               ) : null}
 
               <label className="field">
-                <span>Generic CP to WP purchases</span>
+                <span className="field-label-row">
+                  <span>Generic CP to WP purchases</span>
+                  <AssistiveHint
+                    text="Uses the supplement’s generic 50 CP to 2 WP exchange from page 1."
+                    triggerLabel="Explain generic CP to WP purchases"
+                  />
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -578,7 +605,6 @@ function BudgetEditor(props: {
                     }))
                   }
                 />
-                <small className="field-hint">Uses the supplement’s generic 50 CP to 2 WP exchange from page 1.</small>
               </label>
 
               <label className="field">
@@ -649,8 +675,13 @@ function SelectionControl(props: {
   if (option.defaultSelected && option.wpCost === 0) {
     return (
       <div className="field">
-        <span>Included</span>
-        <small className="field-hint">This freebie is part of the supplement’s built-in baseline.</small>
+        <span className="field-label-row">
+          <span>Included</span>
+          <AssistiveHint
+            text="This freebie is part of the supplement’s built-in baseline."
+            triggerLabel={`Explain ${option.title}`}
+          />
+        </span>
       </div>
     );
   }
@@ -716,7 +747,13 @@ function SelectionControl(props: {
 
         {option.id === 'all-your-peeps' && selection.variantId === 'unlimited-plan' ? (
           <label className="field">
-            <span>Extra same-person retries</span>
+            <span className="field-label-row">
+              <span>Extra same-person retries</span>
+              <AssistiveHint
+                text="These extra retries still cost 50 WP each after taking the unlimited plan."
+                triggerLabel="Explain extra same-person retries"
+              />
+            </span>
             <input
               type="number"
               min={0}
@@ -728,7 +765,6 @@ function SelectionControl(props: {
                 }))
               }
             />
-            <small className="field-hint">These extra retries still cost 50 WP each after taking the unlimited plan.</small>
           </label>
         ) : null}
       </div>
@@ -932,9 +968,10 @@ function WorksheetRow(props: {
         </div>
 
         {option.kind === 'variant' && selection.variantId.length > 0 ? (
-          <small className="field-hint">
-            {option.variants?.find((variant) => variant.id === selection.variantId)?.summary ?? ''}
-          </small>
+          <AssistiveHint
+            text={option.variants?.find((variant) => variant.id === selection.variantId)?.summary ?? ''}
+            triggerLabel={`Explain ${option.title} selection`}
+          />
         ) : null}
       </div>
     </article>
@@ -944,6 +981,7 @@ function WorksheetRow(props: {
 export function PersonalRealityPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { simpleMode } = useUiPreferences();
   const pageNumber = getPageNumber(searchParams);
   const currentPage = personalRealityPages.find((entry) => entry.number === pageNumber) ?? personalRealityPages[0];
   const currentSection = getSectionForPage(currentPage.number);
@@ -1102,43 +1140,60 @@ export function PersonalRealityPage() {
       <section className="personal-reality-workspace">
         <aside className="personal-reality-panel personal-reality-rail">
           <div className="personal-reality-panel__header">
-            <div>
-              <h3>Page Rail</h3>
-              <p>Move through the supplement the way it is written.</p>
-            </div>
+            <TooltipFrame tooltip={!simpleMode ? 'Move through the supplement the way it is written.' : undefined} placement="right">
+              <div>
+                <h3>Page Rail</h3>
+                {simpleMode ? <p>Move through the supplement the way it is written.</p> : null}
+              </div>
+            </TooltipFrame>
             <span className="pill">1-56</span>
           </div>
 
           <div className="personal-reality-rail__body">
             {personalRealitySections.map((section) => (
               <section className="personal-reality-rail__section" key={section.id}>
-                <header>
-                  <strong>{section.title}</strong>
-                  <span>
-                    {section.pageStart}-{section.pageEnd}
-                  </span>
-                </header>
-                <p>{section.summary}</p>
+                <TooltipFrame tooltip={!simpleMode ? section.summary : undefined} placement="right">
+                  <header>
+                    <strong>{section.title}</strong>
+                    <span>
+                      {section.pageStart}-{section.pageEnd}
+                    </span>
+                  </header>
+                </TooltipFrame>
+                {simpleMode ? <p>{section.summary}</p> : null}
                 <div className="personal-reality-rail__pages">
                   {personalRealityPages
                     .filter((page) => page.sectionId === section.id)
                     .map((page) => (
-                      <button
-                        className={`personal-reality-rail__page${page.number === currentPage.number ? ' is-active' : ''}`}
+                      <TooltipFrame
                         key={page.number}
-                        type="button"
-                        onClick={() => goToPage(page.number)}
+                        tooltip={
+                          !simpleMode
+                            ? `${page.summary} ${getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked`
+                            : undefined
+                        }
+                        placement="right"
                       >
-                        <span className="personal-reality-rail__page-label">
-                          {page.number}. <SearchHighlight text={page.title} query={highlightQuery} />
-                        </span>
-                        <span className="personal-reality-rail__page-summary">
-                          <SearchHighlight text={page.summary} query={highlightQuery} />
-                        </span>
-                        <span className="personal-reality-rail__page-count">
-                          {getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked
-                        </span>
-                      </button>
+                        <button
+                          className={`personal-reality-rail__page${page.number === currentPage.number ? ' is-active' : ''}`}
+                          type="button"
+                          onClick={() => goToPage(page.number)}
+                        >
+                          <span className="personal-reality-rail__page-label">
+                            {page.number}. <SearchHighlight text={page.title} query={highlightQuery} />
+                          </span>
+                          {simpleMode ? (
+                            <>
+                              <span className="personal-reality-rail__page-summary">
+                                <SearchHighlight text={page.summary} query={highlightQuery} />
+                              </span>
+                              <span className="personal-reality-rail__page-count">
+                                {getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked
+                              </span>
+                            </>
+                          ) : null}
+                        </button>
+                      </TooltipFrame>
                     ))}
                 </div>
               </section>

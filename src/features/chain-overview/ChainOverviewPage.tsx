@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { db } from '../../db/database';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import { switchActiveBranch, switchActiveJump } from '../../db/persistence';
@@ -10,7 +11,7 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
-import { StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import { AssistiveHint, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type OverviewStepTone = 'ready' | 'attention' | 'blocked';
@@ -71,6 +72,7 @@ function getStepPillClassName(tone: OverviewStepTone) {
 export function ChainOverviewPage() {
   const { chainId, bundle, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { simpleMode } = useUiPreferences();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const effectiveState = getEffectiveCurrentJumpState(workspace);
   const latestSnapshot = workspace.snapshots.slice().sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
@@ -584,13 +586,28 @@ export function ChainOverviewPage() {
           </div>
           <TooltipFrame
             tooltip={
-              nextSetupStep
-                ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
-                : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+              !simpleMode
+                ? nextSetupStep
+                  ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
+                  : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+                : undefined
             }
           >
-            <div className="guidance-strip guidance-strip--accent">
-              <strong>{nextSetupStep ? `Next: ${nextSetupStep.title}` : 'Core setup is ready.'}</strong>
+            <div className="stack stack--compact">
+              <div className="guidance-strip guidance-strip--accent">
+                <strong>{nextSetupStep ? `Next: ${nextSetupStep.title}` : 'Core setup is ready.'}</strong>
+              </div>
+              {simpleMode ? (
+                <AssistiveHint
+                  as="p"
+                  text={
+                    nextSetupStep
+                      ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
+                      : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+                  }
+                  triggerLabel="Explain next setup step"
+                />
+              ) : null}
             </div>
           </TooltipFrame>
           <p>
@@ -608,68 +625,76 @@ export function ChainOverviewPage() {
             <h3>Active Context</h3>
             <span className="pill">{workspace.activeBranch?.title ?? 'No branch'}</span>
           </div>
-          <TooltipFrame tooltip="Switching branches updates the entire workspace focus, including timeline, notes, and snapshots.">
-            <label className="field">
+          <label className="field">
+            <span className="field-label-row">
               <span>Active branch</span>
-              <select
-                value={workspace.activeBranch?.id ?? ''}
-                onChange={(event) => void handleBranchChange(event.target.value)}
-              >
-                {workspace.branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </TooltipFrame>
-          <TooltipFrame
-            tooltip={
-              selectedJumper
-                ? `Iconic and participation setup will follow ${selectedJumper.name}.`
-                : 'Create the first jumper to unlock jumper-specific setup work.'
-            }
-          >
-            <label className="field">
+              <AssistiveHint
+                text="Switching branches updates the entire workspace focus, including timeline, notes, and snapshots."
+                triggerLabel="Explain active branch"
+              />
+            </span>
+            <select
+              value={workspace.activeBranch?.id ?? ''}
+              onChange={(event) => void handleBranchChange(event.target.value)}
+            >
+              {workspace.branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label-row">
               <span>Focused jumper</span>
-              <select value={selectedJumperId} onChange={(event) => handleFocusedJumperChange(event.target.value)} disabled={!hasJumpers}>
-                {hasJumpers ? (
-                  workspace.jumpers.map((jumper) => (
-                    <option key={jumper.id} value={jumper.id}>
-                      {jumper.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">Create a jumper first</option>
-                )}
-              </select>
-            </label>
-          </TooltipFrame>
-          <TooltipFrame
-            tooltip={
-              currentJump
-                ? `${currentJump.title} is the active jump for rules, participation, and overview summaries.`
-                : hasJumps
-                  ? 'Pick which jump is currently in play so the rest of the workspace can follow it.'
-                  : 'Create the first jump to unlock current-jump workflows.'
-            }
-          >
-            <label className="field">
-              <span>Current jump</span>
-              <select
-                value={workspace.currentJump?.id ?? ''}
-                onChange={(event) => void handleJumpChange(event.target.value || null)}
-                disabled={!hasJumps}
-              >
-                <option value="">{hasJumps ? 'No current jump' : 'Create a jump first'}</option>
-                {workspace.jumps.map((jump) => (
-                  <option key={jump.id} value={jump.id}>
-                    {jump.orderIndex + 1}. {jump.title}
+              <AssistiveHint
+                text={
+                  selectedJumper
+                    ? `Iconic and participation setup will follow ${selectedJumper.name}.`
+                    : 'Create the first jumper to unlock jumper-specific setup work.'
+                }
+                triggerLabel="Explain focused jumper"
+              />
+            </span>
+            <select value={selectedJumperId} onChange={(event) => handleFocusedJumperChange(event.target.value)} disabled={!hasJumpers}>
+              {hasJumpers ? (
+                workspace.jumpers.map((jumper) => (
+                  <option key={jumper.id} value={jumper.id}>
+                    {jumper.name}
                   </option>
-                ))}
-              </select>
-            </label>
-          </TooltipFrame>
+                ))
+              ) : (
+                <option value="">Create a jumper first</option>
+              )}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label-row">
+              <span>Current jump</span>
+              <AssistiveHint
+                text={
+                  currentJump
+                    ? `${currentJump.title} is the active jump for rules, participation, and overview summaries.`
+                    : hasJumps
+                      ? 'Pick which jump is currently in play so the rest of the workspace can follow it.'
+                      : 'Create the first jump to unlock current-jump workflows.'
+                }
+                triggerLabel="Explain current jump"
+              />
+            </span>
+            <select
+              value={workspace.currentJump?.id ?? ''}
+              onChange={(event) => void handleJumpChange(event.target.value || null)}
+              disabled={!hasJumps}
+            >
+              <option value="">{hasJumps ? 'No current jump' : 'Create a jump first'}</option>
+              {workspace.jumps.map((jump) => (
+                <option key={jump.id} value={jump.id}>
+                  {jump.orderIndex + 1}. {jump.title}
+                </option>
+              ))}
+            </select>
+          </label>
         </article>
       </section>
 
@@ -680,13 +705,16 @@ export function ChainOverviewPage() {
         </div>
         <div className="summary-grid">
           {setupSteps.map((step) => (
-            <TooltipFrame key={step.id} tooltip={joinHelpText(step.description, step.context)}>
+            <TooltipFrame key={step.id} tooltip={!simpleMode ? joinHelpText(step.description, step.context) : undefined}>
               <article className="summary-panel stack stack--compact">
                 <div className="section-heading">
                   <h4>{step.title}</h4>
                   <span className={getStepPillClassName(step.tone)}>{getStepStatusLabel(step.tone)}</span>
                 </div>
-                <p>{step.description}</p>
+                {simpleMode ? <p>{step.description}</p> : null}
+                {simpleMode && step.context ? (
+                  <AssistiveHint as="p" text={step.context} triggerLabel={`Explain ${step.title}`} />
+                ) : null}
                 <div className="actions">
                   {step.primaryAction.kind === 'link' ? (
                     <Link
@@ -718,10 +746,10 @@ export function ChainOverviewPage() {
         </div>
         <div className="summary-grid">
           {workSurfaceCards.map((card) => (
-            <TooltipFrame key={card.id} tooltip={card.hint}>
+            <TooltipFrame key={card.id} tooltip={!simpleMode ? card.hint : undefined}>
               <Link className="selection-list__item" to={card.to}>
                 <strong>{card.title}</strong>
-                <span>{card.description}</span>
+                {simpleMode ? <span>{card.description}</span> : null}
               </Link>
             </TooltipFrame>
           ))}
@@ -768,12 +796,19 @@ export function ChainOverviewPage() {
               <p>No current jump is selected yet.</p>
               <TooltipFrame
                 inline
-                tooltip="Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries."
+                tooltip={!simpleMode ? 'Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries.' : undefined}
               >
                 <Link className="button button--secondary" to={`/chains/${chainId}/jumps`}>
                   Open Jumps
                 </Link>
               </TooltipFrame>
+              {simpleMode ? (
+                <AssistiveHint
+                  as="p"
+                  text="Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries."
+                  triggerLabel="Explain current jump rules"
+                />
+              ) : null}
             </>
           )}
         </article>
@@ -796,11 +831,21 @@ export function ChainOverviewPage() {
               <p>No snapshots exist for the active branch yet.</p>
             </>
           )}
-          <TooltipFrame inline tooltip="Take a snapshot before major imports, branch experiments, or big editing sessions.">
+          <TooltipFrame
+            inline
+            tooltip={!simpleMode ? 'Take a snapshot before major imports, branch experiments, or big editing sessions.' : undefined}
+          >
             <Link className="button button--secondary" to={`/chains/${chainId}/backups`}>
               Open Recovery Tools
             </Link>
           </TooltipFrame>
+          {simpleMode ? (
+            <AssistiveHint
+              as="p"
+              text="Take a snapshot before major imports, branch experiments, or big editing sessions."
+              triggerLabel="Explain recovery tools"
+            />
+          ) : null}
         </article>
       </section>
     </div>

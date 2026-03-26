@@ -1,4 +1,5 @@
 import { cloneElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { createJsonText } from './records';
 import type { AutosaveStatus } from './useAutosaveRecord';
 
@@ -82,9 +83,10 @@ export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) 
 }
 
 export function TooltipFrame(props: {
-  tooltip?: string | null;
+  tooltip?: ReactNode;
   children: ReactElement<{ 'aria-describedby'?: string }>;
   inline?: boolean;
+  placement?: 'top' | 'right' | 'bottom' | 'left';
 }) {
   if (!props.tooltip) {
     return props.children;
@@ -99,12 +101,42 @@ export function TooltipFrame(props: {
   });
 
   return (
-    <Wrapper className={`tooltip-frame${props.inline ? ' tooltip-frame--inline' : ''}`}>
+    <Wrapper
+      className={`tooltip-frame${props.inline ? ' tooltip-frame--inline' : ''} tooltip-frame--placement-${props.placement ?? 'top'}`}
+    >
       {child}
       <span className="tooltip-frame__bubble" id={tooltipId} role="tooltip">
         {props.tooltip}
       </span>
     </Wrapper>
+  );
+}
+
+export function AssistiveHint(props: {
+  text?: string | null;
+  placement?: 'top' | 'right' | 'bottom' | 'left';
+  as?: 'small' | 'p' | 'span' | 'div';
+  className?: string;
+  triggerLabel?: string;
+}) {
+  const { simpleMode } = useUiPreferences();
+
+  if (!props.text) {
+    return null;
+  }
+
+  if (simpleMode) {
+    const Tag = props.as ?? 'small';
+
+    return <Tag className={['field-hint', props.className].filter(Boolean).join(' ')}>{props.text}</Tag>;
+  }
+
+  return (
+    <TooltipFrame inline tooltip={props.text} placement={props.placement ?? 'top'}>
+      <button className="assistive-hint__trigger" type="button" aria-label={props.triggerLabel ?? 'Show help'}>
+        Help
+      </button>
+    </TooltipFrame>
   );
 }
 
@@ -121,7 +153,11 @@ export function AdvancedJsonDetails(props: {
         <span className="pill">{props.badge ?? 'raw data'}</span>
       </summary>
       <div className="details-panel__body stack stack--compact">
-        {props.hint ? <p className="field-hint">{props.hint}</p> : null}
+        <AssistiveHint
+          as="p"
+          text={props.hint}
+          triggerLabel={`Explain ${props.summary ?? 'Advanced JSON'}`}
+        />
         {props.children}
       </div>
     </details>
@@ -157,14 +193,16 @@ export function JsonEditorField(props: {
 
   return (
     <label className="field">
-      <span>{props.label}</span>
+      <span className="field-label-row">
+        <span>{props.label}</span>
+        <AssistiveHint text={props.hint} triggerLabel={`Explain ${props.label}`} />
+      </span>
       <textarea
         className="json-editor"
         rows={props.rows ?? 8}
         value={draft}
         onChange={(event) => void handleChange(event.target.value)}
       />
-      {props.hint ? <small className="field-hint">{props.hint}</small> : null}
       {error ? <small className="field-hint field-hint--error">{error}</small> : null}
     </label>
   );

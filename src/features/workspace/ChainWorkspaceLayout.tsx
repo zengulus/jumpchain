@@ -1,9 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import { getChainBundle, switchActiveJump } from '../../db/persistence';
+import { AssistiveHint, TooltipFrame } from './shared';
 
 export interface ChainWorkspaceOutletContext {
   chainId: string;
@@ -103,6 +105,7 @@ export function ChainWorkspaceLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { simpleMode } = useUiPreferences();
   const activeModuleKey = getActiveModuleKey(location.pathname);
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
       if (!chainId) {
@@ -503,7 +506,14 @@ export function ChainWorkspaceLayout() {
             </div>
 
             <label className="field">
-              <span>Go to module</span>
+              <span className="field-label-row">
+                <span>Go to module</span>
+                <AssistiveHint
+                  placement="right"
+                  text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
+                  triggerLabel="Explain module routing"
+                />
+              </span>
               <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
                 {moduleGroups.map((group) => (
                   <optgroup key={group.id} label={group.title}>
@@ -515,14 +525,22 @@ export function ChainWorkspaceLayout() {
                   </optgroup>
                 ))}
               </select>
-              <small className="field-hint">
-                Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them.
-              </small>
             </label>
 
             <div className="workspace-switch-grid">
               <label className="field">
-                <span>Jumper focus</span>
+                <span className="field-label-row">
+                  <span>Jumper focus</span>
+                  <AssistiveHint
+                    placement="right"
+                    text={
+                      selectedJumper
+                        ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                        : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
+                    }
+                    triggerLabel="Explain jumper focus"
+                  />
+                </span>
                 <select
                   value={selectedJumperId}
                   onChange={(event) => handleQuickJumperChange(event.target.value)}
@@ -538,15 +556,21 @@ export function ChainWorkspaceLayout() {
                     ))
                   )}
                 </select>
-                <small className="field-hint">
-                  {selectedJumper
-                    ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                    : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'}
-                </small>
               </label>
 
               <label className="field">
-                <span>Jump</span>
+                <span className="field-label-row">
+                  <span>Jump</span>
+                  <AssistiveHint
+                    placement="right"
+                    text={
+                      currentJump
+                        ? `Current jump context is ${currentJump.title}.`
+                        : 'Create the first jump to unlock participation and current-jump rules.'
+                    }
+                    triggerLabel="Explain jump focus"
+                  />
+                </span>
                 <select
                   value={currentJump?.id ?? ''}
                   onChange={(event) => void handleQuickJumpChange(event.target.value)}
@@ -562,11 +586,6 @@ export function ChainWorkspaceLayout() {
                     ))
                   )}
                 </select>
-                <small className="field-hint">
-                  {currentJump
-                    ? `Current jump context is ${currentJump.title}.`
-                    : 'Create the first jump to unlock participation and current-jump rules.'}
-                </small>
               </label>
             </div>
 
@@ -577,15 +596,20 @@ export function ChainWorkspaceLayout() {
 
             <div className="workspace-action-grid">
               {quickActions.map((action) => (
-                <button
+                <TooltipFrame
                   key={action.id}
-                  className={`workspace-action-card${action.tone === 'accent' ? ' is-accent' : ''}`}
-                  type="button"
-                  onClick={() => navigate(action.to)}
+                  tooltip={!simpleMode ? action.description : undefined}
+                  placement="right"
                 >
-                  <strong>{action.title}</strong>
-                  <span>{action.description}</span>
-                </button>
+                  <button
+                    className={`workspace-action-card${action.tone === 'accent' ? ' is-accent' : ''}`}
+                    type="button"
+                    onClick={() => navigate(action.to)}
+                  >
+                    <strong>{action.title}</strong>
+                    {simpleMode ? <span>{action.description}</span> : null}
+                  </button>
+                </TooltipFrame>
               ))}
             </div>
           </section>

@@ -7,6 +7,7 @@ import { db } from '../../db/database';
 import { createBlankEffect, deleteChainRecord, saveChainEntity, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AssistiveHint,
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
@@ -414,7 +415,13 @@ export function ChainwideRulesPage() {
                         />
                       </label>
                     </div>
-                    <small className="field-hint">Applied to each jump participation budget while this drawback is active.</small>
+                    <div className="field-label-row">
+                      <strong>Budget behavior</strong>
+                      <AssistiveHint
+                        text="Applied to each jump participation budget while this drawback is active."
+                        triggerLabel="Explain budget behavior"
+                      />
+                    </div>
                   </section>
                 ) : null}
 

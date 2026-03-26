@@ -4,7 +4,15 @@ import { iconicBodymodModes, type BodymodMode, type IconicBodymodMode } from '..
 import { iconicSelectionKinds, type BodymodProfile, type IconicSelection } from '../../domain/bodymod/types';
 import { db } from '../../db/database';
 import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records';
-import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AssistiveHint,
+  AutosaveStatusIndicator,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -531,9 +539,11 @@ export function BodymodPage() {
                       <span className="pill">legacy data and preserved imports</span>
                     </summary>
                     <div className="details-panel__body stack stack--compact">
-                      <p className="field-hint">
-                        The structured Iconic editor above is the main surface. Use these JSON blocks for imported altforms, legacy data, and edge-case cleanup.
-                      </p>
+                      <AssistiveHint
+                        as="p"
+                        text="The structured Iconic editor above is the main surface. Use these JSON blocks for imported altforms, legacy data, and edge-case cleanup."
+                        triggerLabel="Explain advanced JSON editors"
+                      />
                       <div className="field-grid field-grid--two">
                         <JsonEditorField
                           label="Iconic selections"

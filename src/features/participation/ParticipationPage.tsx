@@ -4,7 +4,15 @@ import { getEffectiveParticipationBudgetState } from '../../domain/chain/selecto
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
 import { createBlankParticipation, saveChainRecord } from '../workspace/records';
-import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AssistiveHint,
+  AutosaveStatusIndicator,
+  EmptyWorkspaceCard,
+  JsonEditorField,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -812,10 +820,11 @@ function ParticipationEditorCard(props: {
           <span className="pill">manual cleanup and preserved source blocks</span>
         </summary>
         <div className="details-panel__body stack stack--compact">
-          <p className="field-hint">
-            The grouped sections above are the primary view. Use these JSON editors for cleanup,
-            migration work, and edge-case preservation when the structured surface is not enough.
-          </p>
+          <AssistiveHint
+            as="p"
+            text="The grouped sections above are the primary view. Use these JSON editors for cleanup, migration work, and edge-case preservation when the structured surface is not enough."
+            triggerLabel="Explain advanced JSON editors"
+          />
           <div className="field-grid field-grid--two">
             <JsonEditorField
               label="Purchases"

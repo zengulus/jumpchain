@@ -24,6 +24,7 @@ import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/type
 import { createBlankHouseRuleProfile, createBlankJumpRulesContext, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
+  AssistiveHint,
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
@@ -406,8 +407,10 @@ export function CurrentJumpRulesPage() {
                 checked={draftRulesSettings.moduleCustomization[key]}
                 onChange={(event) => updateModuleCustomization(key, event.target.checked)}
               />
-              <span>{rulesCustomizationLabels[key]}</span>
-              <small className="field-hint">{rulesCustomizationDescriptions[key]}</small>
+              <span className="field-label-row">
+                <span>{rulesCustomizationLabels[key]}</span>
+                <AssistiveHint text={rulesCustomizationDescriptions[key]} triggerLabel={`Explain ${rulesCustomizationLabels[key]}`} />
+              </span>
             </label>
           ))}
         </article>
