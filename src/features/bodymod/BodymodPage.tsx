@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { iconicBodymodModes, type BodymodMode, type IconicBodymodMode } from '../../domain/common';
 import { iconicSelectionKinds, type BodymodProfile, type IconicSelection } from '../../domain/bodymod/types';
 import { db } from '../../db/database';
+import { SetupGuidePanels, iconicSetupGuide } from '../supplement-guides/SetupGuidePanels';
 import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records';
 import {
   AssistiveHint,
@@ -178,6 +180,7 @@ function getProfileStatusLabel(profile: BodymodProfile | null) {
 }
 
 export function BodymodPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
@@ -276,6 +279,19 @@ export function BodymodPage() {
 
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={profileAutosave.status} />
+
+      {simpleMode ? (
+        <details className="details-panel" open>
+          <summary className="details-panel__summary">
+            <span>{iconicSetupGuide.title}</span>
+            <span className="pill">Same guide as wizard</span>
+          </summary>
+          <div className="details-panel__body stack stack--compact">
+            <p>{iconicSetupGuide.summary}</p>
+            <SetupGuidePanels guide={iconicSetupGuide} />
+          </div>
+        </details>
+      ) : null}
 
       <section className="workspace-two-column">
         <aside className="card stack">

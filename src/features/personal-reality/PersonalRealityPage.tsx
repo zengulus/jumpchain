@@ -21,6 +21,7 @@ import {
 } from './model';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from '../search/SearchHighlight';
+import { SetupGuidePanels, personalRealitySetupGuide } from '../supplement-guides/SetupGuidePanels';
 import { AssistiveHint, EmptyWorkspaceCard, AutosaveStatusIndicator, TooltipFrame, WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
@@ -1082,6 +1083,19 @@ export function PersonalRealityPage() {
           </>
         }
       />
+
+      {simpleMode ? (
+        <details className="details-panel" open>
+          <summary className="details-panel__summary">
+            <span>{personalRealitySetupGuide.title}</span>
+            <span className="pill">Same guide as wizard</span>
+          </summary>
+          <div className="details-panel__body stack stack--compact">
+            <p>{personalRealitySetupGuide.summary}</p>
+            <SetupGuidePanels guide={personalRealitySetupGuide} />
+          </div>
+        </details>
+      ) : null}
 
       <section className="personal-reality-panel personal-reality-toolbar">
         <div className="personal-reality-panel__header">

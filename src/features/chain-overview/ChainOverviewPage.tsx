@@ -12,6 +12,7 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
+import { SetupGuidePanels, iconicSetupGuide, personalRealitySetupGuide } from '../supplement-guides/SetupGuidePanels';
 import { AssistiveHint, AutosaveStatusIndicator, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -1558,54 +1559,50 @@ export function ChainOverviewPage() {
 
           {activeSimpleWizardStep.id === 'iconic-guide' ? (
             <div className="selection-editor">
-              <ol className="list">
-                <li>Open Iconic for {selectedJumper?.name ?? 'the focused jumper'}.</li>
-                <li>Create a profile if this jumper does not have one yet, then pick the Iconic tier that matches the concept.</li>
-                <li>Fill in the concept summary and the preserved package slots so the character stays recognisable.</li>
-              </ol>
+              <p>
+                This part stays in the wizard. You can read through the Iconic flow here first, then open the workspace later if
+                and when you want to apply it.
+              </p>
+              <SetupGuidePanels guide={iconicSetupGuide} />
               <div className="actions">
                 {hasPreviousSimpleWizardStep ? (
                   <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
                     Back
                   </button>
                 ) : null}
-                <Link className="button" to={getBodymodPath()} onClick={() => markSupplementGuideComplete('iconic')}>
-                  Open Iconic
-                </Link>
-                <button className="button button--secondary" type="button" onClick={() => markSupplementGuideComplete('iconic')}>
-                  I Know The Flow
+                <button className="button" type="button" onClick={() => markSupplementGuideComplete('iconic')}>
+                  Continue Wizard
                 </button>
+                <Link className="button button--secondary" to={getBodymodPath()}>
+                  Open Iconic Workspace
+                </Link>
               </div>
             </div>
           ) : null}
 
           {activeSimpleWizardStep.id === 'personal-reality-guide' ? (
             <div className="selection-editor">
-              <ol className="list">
-                <li>Open Personal Reality and start in the budget and mode ledger on pages 2 and 3.</li>
-                <li>Pick one core mode first, then only add extra modes that actually apply to this chain.</li>
-                <li>Move page by page through the supplement and track purchases as infrastructure, logistics, and rule modules.</li>
-              </ol>
+              <p>
+                This part stays in the wizard too. The goal is to make the supplement understandable before you ever have to look
+                at the full worksheet.
+              </p>
+              <SetupGuidePanels guide={personalRealitySetupGuide} />
               <div className="actions">
                 {hasPreviousSimpleWizardStep ? (
                   <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
                     Back
                   </button>
                 ) : null}
-                <Link
-                  className="button"
-                  to={`/chains/${chainId}/personal-reality`}
-                  onClick={() => markSupplementGuideComplete('personalReality')}
-                >
-                  Open Personal Reality
-                </Link>
                 <button
-                  className="button button--secondary"
+                  className="button"
                   type="button"
                   onClick={() => markSupplementGuideComplete('personalReality')}
                 >
-                  I Know The Flow
+                  Continue Wizard
                 </button>
+                <Link className="button button--secondary" to={`/chains/${chainId}/personal-reality`}>
+                  Open Personal Reality Workspace
+                </Link>
               </div>
             </div>
           ) : null}
