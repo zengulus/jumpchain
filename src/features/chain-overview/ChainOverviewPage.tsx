@@ -5,10 +5,19 @@ import { db } from '../../db/database';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import { switchActiveBranch, switchActiveJump } from '../../db/persistence';
+import { IconicEditor } from '../bodymod/IconicEditor';
+import { personalRealityCoreModes, personalRealityExtraModes, type PersonalRealityExtraModeId } from '../personal-reality/catalog';
+import {
+  createDefaultPersonalRealityState,
+  readPersonalRealityState,
+  writePersonalRealityState,
+  type PersonalRealityState,
+} from '../personal-reality/model';
 import {
   createBlankBodymodProfile,
   createBlankJump,
   createBlankJumper,
+  saveChainEntity,
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
@@ -48,8 +57,8 @@ type SimpleSetupWizardStepId =
   | 'jump-duration'
   | 'iconic-prompt'
   | 'personal-reality-prompt'
-  | 'iconic-guide'
-  | 'personal-reality-guide'
+  | 'iconic-setup'
+  | 'personal-reality-setup'
   | 'complete';
 
 interface SimpleSetupWizardStep {
@@ -122,6 +131,7 @@ export function ChainOverviewPage() {
   const hasJumpers = workspace.jumpers.length > 0;
   const hasJumps = workspace.jumps.length > 0;
   const currentJump = workspace.currentJump;
+  const completedJumpCountFromChain = workspace.jumps.filter((jump) => jump.status === 'completed').length;
   const selectedJumper =
     workspace.jumpers.find((jumper) => jumper.id === searchParams.get('jumper')) ??
     workspace.jumpers[0] ??
@@ -149,6 +159,18 @@ export function ChainOverviewPage() {
     },
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode jumper changes.'),
   });
+  const iconicAutosave = useAutosaveRecord(selectedIconicProfile, {
+    onSave: async (nextValue) => {
+      await saveChainRecord(db.bodymodProfiles, nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode Iconic changes.'),
+  });
+  const chainAutosave = useAutosaveRecord(workspace.chain, {
+    onSave: async (nextValue) => {
+      await saveChainEntity(nextValue);
+    },
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode Personal Reality changes.'),
+  });
   const jumpAutosave = useAutosaveRecord(wizardJump, {
     onSave: async (nextValue) => {
       await saveChainRecord(db.jumps, nextValue);
@@ -156,8 +178,16 @@ export function ChainOverviewPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode jump changes.'),
   });
   const draftJumper = jumperAutosave.draft ?? selectedJumper;
+  const draftIconicProfile = iconicAutosave.draft ?? selectedIconicProfile;
+  const draftChain = chainAutosave.draft ?? workspace.chain;
+  const personalRealityState = draftChain ? readPersonalRealityState(draftChain) : createDefaultPersonalRealityState();
   const draftWizardJump = jumpAutosave.draft ?? wizardJump;
-  const simpleWizardAutosaveStatus = mergeAutosaveStatuses([jumperAutosave.status, jumpAutosave.status]);
+  const simpleWizardAutosaveStatus = mergeAutosaveStatuses([
+    jumperAutosave.status,
+    jumpAutosave.status,
+    iconicAutosave.status,
+    chainAutosave.status,
+  ]);
 
   function buildSearch(nextJumperId = selectedJumperId) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -336,6 +366,25 @@ export function ChainOverviewPage() {
     }
   }
 
+  function updatePersonalRealityState(updater: (currentState: PersonalRealityState) => PersonalRealityState) {
+    chainAutosave.updateDraft((currentChain) => {
+      if (!currentChain) {
+        return currentChain;
+      }
+
+      return writePersonalRealityState(currentChain, updater(readPersonalRealityState(currentChain)));
+    });
+  }
+
+  function togglePersonalRealityExtraMode(extraModeId: PersonalRealityExtraModeId, checked: boolean) {
+    updatePersonalRealityState((currentState) => ({
+      ...currentState,
+      extraModeIds: checked
+        ? Array.from(new Set([...currentState.extraModeIds, extraModeId]))
+        : currentState.extraModeIds.filter((entry) => entry !== extraModeId),
+    }));
+  }
+
   useEffect(() => {
     if (
       simpleModeWizardState.iconicDecision !== 'not-now' ||
@@ -510,17 +559,17 @@ export function ChainOverviewPage() {
 
   if (hasJumps && simpleModeWizardState.iconicDecision === 'yes' && !simpleModeWizardState.iconicGuideCompleted) {
     simpleSetupWizardSteps.push({
-      id: 'iconic-guide',
-      title: 'How to use Iconic',
-      description: 'This is the quick path through the Iconic page once you decide to use it.',
+      id: 'iconic-setup',
+      title: 'Set up Iconic',
+      description: 'Iconic is compact enough that simple mode can walk you through the whole setup right here.',
     });
   }
 
   if (hasJumps && simpleModeWizardState.personalRealityDecision === 'yes' && !simpleModeWizardState.personalRealityGuideCompleted) {
     simpleSetupWizardSteps.push({
-      id: 'personal-reality-guide',
-      title: 'How to use Personal Reality',
-      description: 'This is the quick path through the Personal Reality builder once you decide to use it.',
+      id: 'personal-reality-setup',
+      title: 'Set up Personal Reality',
+      description: 'You can make the first real Personal Reality setup decisions right here in the wizard.',
     });
   }
 
@@ -557,8 +606,8 @@ export function ChainOverviewPage() {
   const supplementPhaseStepIds = new Set<SimpleSetupWizardStepId>([
     'iconic-prompt',
     'personal-reality-prompt',
-    'iconic-guide',
-    'personal-reality-guide',
+    'iconic-setup',
+    'personal-reality-setup',
   ]);
   const firstJumpPhaseStepId = simpleSetupWizardSteps.find((step) => jumpPhaseStepIds.has(step.id))?.id ?? null;
   const firstSupplementPhaseStepId = simpleSetupWizardSteps.find((step) => supplementPhaseStepIds.has(step.id))?.id ?? null;
@@ -569,7 +618,7 @@ export function ChainOverviewPage() {
   const activeSimpleWizardAffirmation =
     activeSimpleWizardStep.id === 'complete'
       ? 'You made it through the guided setup. From here the workspace should feel much lighter.'
-      : activeSimpleWizardStep.id === 'personal-reality-guide' && simpleModeWizardState.iconicGuideCompleted
+      : activeSimpleWizardStep.id === 'personal-reality-setup' && simpleModeWizardState.iconicGuideCompleted
         ? 'Nice work. Iconic is already squared away, so this is the last dense optional system in the walkthrough.'
         : activeSimpleWizardStep.id === firstSupplementPhaseStepId
           ? 'Nice work. The jump basics are in place, so now this is mostly about deciding how much extra guidance and infrastructure you want.'
@@ -1557,13 +1606,30 @@ export function ChainOverviewPage() {
             </div>
           ) : null}
 
-          {activeSimpleWizardStep.id === 'iconic-guide' ? (
+          {activeSimpleWizardStep.id === 'iconic-setup' ? (
             <div className="selection-editor">
               <p>
-                This part stays in the wizard. You can read through the Iconic flow here first, then open the workspace later if
-                and when you want to apply it.
+                This stays in the wizard on purpose. Iconic is small enough that simple mode can set it up here without kicking
+                you out to a separate workspace.
               </p>
               <SetupGuidePanels guide={iconicSetupGuide} />
+              {!selectedJumper ? (
+                <div className="status status--warning">Focus a jumper first so the Iconic setup has someone to belong to.</div>
+              ) : !draftIconicProfile ? (
+                <div className="stack stack--compact">
+                  <div className="guidance-strip">
+                    <strong>{selectedJumper.name} does not have an Iconic profile yet.</strong>
+                    <p>Create it here and the wizard will immediately let you choose the tier and concept.</p>
+                  </div>
+                  <div className="actions">
+                    <button className="button" type="button" onClick={() => void handleCreateIconic()}>
+                      Create Iconic Profile
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <IconicEditor profile={draftIconicProfile} onChange={(nextProfile) => iconicAutosave.updateDraft(nextProfile)} />
+              )}
               <div className="actions">
                 {hasPreviousSimpleWizardStep ? (
                   <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>
@@ -1580,13 +1646,179 @@ export function ChainOverviewPage() {
             </div>
           ) : null}
 
-          {activeSimpleWizardStep.id === 'personal-reality-guide' ? (
+          {activeSimpleWizardStep.id === 'personal-reality-setup' ? (
             <div className="selection-editor">
               <p>
-                This part stays in the wizard too. The goal is to make the supplement understandable before you ever have to look
-                at the full worksheet.
+                This part stays in the wizard too. You can make the first Personal Reality decisions here, then use the full
+                worksheet later for the page-by-page build.
               </p>
               <SetupGuidePanels guide={personalRealitySetupGuide} />
+
+              <label className="field">
+                <span>Core mode</span>
+                <select
+                  value={personalRealityState.coreModeId}
+                  onChange={(event) =>
+                    updatePersonalRealityState((currentState) => ({
+                      ...currentState,
+                      coreModeId: event.target.value as PersonalRealityState['coreModeId'],
+                      discountedGroupIds: event.target.value === 'upfront' ? currentState.discountedGroupIds.slice(0, 3) : [],
+                    }))
+                  }
+                >
+                  <option value="">Select a core mode</option>
+                  {personalRealityCoreModes.map((coreMode) => (
+                    <option key={coreMode.id} value={coreMode.id}>
+                      {coreMode.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {personalRealityState.coreModeId ? (
+                <div className="guidance-strip">
+                  <strong>{personalRealityCoreModes.find((coreMode) => coreMode.id === personalRealityState.coreModeId)?.title}</strong>
+                  <p>{personalRealityCoreModes.find((coreMode) => coreMode.id === personalRealityState.coreModeId)?.summary}</p>
+                </div>
+              ) : null}
+
+              <div className="field-grid field-grid--two">
+                <label className="field">
+                  <span>Completed jumps override</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={personalRealityState.budget.completedJumpCountOverride ?? ''}
+                    placeholder={String(completedJumpCountFromChain)}
+                    onChange={(event) =>
+                      updatePersonalRealityState((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          completedJumpCountOverride: event.target.value === '' ? null : Math.max(0, Number(event.target.value)),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Unlimited transferred WP</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={personalRealityState.budget.unlimitedTransferredWp}
+                    onChange={(event) =>
+                      updatePersonalRealityState((currentState) => ({
+                        ...currentState,
+                        budget: {
+                          ...currentState.budget,
+                          unlimitedTransferredWp: Math.max(0, Number(event.target.value) || 0),
+                        },
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="field">
+                <span>Extra modes</span>
+                <div className="checkbox-list">
+                  {personalRealityExtraModes.map((extraMode) => {
+                    const checked = personalRealityState.extraModeIds.includes(extraMode.id);
+
+                    return (
+                      <label className="checkbox-row" key={extraMode.id}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => togglePersonalRealityExtraMode(extraMode.id, event.target.checked)}
+                        />
+                        <span>
+                          <strong>{extraMode.title}</strong> | {extraMode.summary}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="field-grid field-grid--three">
+                {personalRealityState.extraModeIds.includes('patient-jumper') ? (
+                  <label className="field">
+                    <span>Delayed jumps</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={personalRealityState.budget.patientJumperDelayedJumps}
+                      onChange={(event) =>
+                        updatePersonalRealityState((currentState) => ({
+                          ...currentState,
+                          budget: {
+                            ...currentState.budget,
+                            patientJumperDelayedJumps: Math.max(0, Number(event.target.value) || 0),
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                ) : null}
+
+                {personalRealityState.extraModeIds.includes('swap-out') ? (
+                  <label className="field">
+                    <span>Experienced jumps</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={personalRealityState.budget.swapOutExperiencedJumps}
+                      onChange={(event) =>
+                        updatePersonalRealityState((currentState) => ({
+                          ...currentState,
+                          budget: {
+                            ...currentState.budget,
+                            swapOutExperiencedJumps: Math.max(0, Number(event.target.value) || 0),
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                ) : null}
+
+                {personalRealityState.extraModeIds.includes('cross-roads') ? (
+                  <label className="field">
+                    <span>Triggered jumps</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={personalRealityState.budget.crossroadsTriggeredJumps}
+                      onChange={(event) =>
+                        updatePersonalRealityState((currentState) => ({
+                          ...currentState,
+                          budget: {
+                            ...currentState.budget,
+                            crossroadsTriggeredJumps: Math.max(0, Number(event.target.value) || 0),
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                ) : null}
+              </div>
+
+              <label className="field">
+                <span>Personal Reality notes</span>
+                <textarea
+                  rows={4}
+                  value={personalRealityState.notes}
+                  onChange={(event) =>
+                    updatePersonalRealityState((currentState) => ({
+                      ...currentState,
+                      notes: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
               <div className="actions">
                 {hasPreviousSimpleWizardStep ? (
                   <button className="button button--secondary" type="button" onClick={goToPreviousSimpleWizardStep}>

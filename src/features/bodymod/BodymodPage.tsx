@@ -1,183 +1,22 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
-import { iconicBodymodModes, type BodymodMode, type IconicBodymodMode } from '../../domain/common';
-import { iconicSelectionKinds, type BodymodProfile, type IconicSelection } from '../../domain/bodymod/types';
+import type { IconicBodymodMode } from '../../domain/common';
+import type { IconicSelection } from '../../domain/bodymod/types';
 import { db } from '../../db/database';
 import { SetupGuidePanels, iconicSetupGuide } from '../supplement-guides/SetupGuidePanels';
+import { IconicEditor } from './IconicEditor';
+import { getProfileStatusLabel } from './iconicSetup';
 import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records';
 import {
-  AssistiveHint,
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
-  JsonEditorField,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-
-interface IconicSlotTemplate {
-  label: string;
-  defaultKind: IconicSelection['kind'];
-  hint: string;
-}
-
-interface IconicTierConfig {
-  title: string;
-  description: string;
-  startingLevel: string;
-  progression: string;
-  slots: IconicSlotTemplate[];
-}
-
-const ICONIC_TIER_CONFIGS: Record<IconicBodymodMode, IconicTierConfig> = {
-  'central-gimmick': {
-    title: 'Central Gimmick',
-    description: 'One defining impossible thing stays substantially itself across the chain.',
-    startingLevel: 'Starts at full intended power and usually stays there, even under heavy restriction.',
-    progression: 'Stability tier. The point is preserving the conceit, not staged growth.',
-    slots: [
-      {
-        label: 'Defining purchase',
-        defaultKind: 'power',
-        hint: 'The one purchase that the character stops feeling like themselves without.',
-      },
-    ],
-  },
-  suite: {
-    title: 'The Suite',
-    description: 'A compact signature package: three core abilities and one key item.',
-    startingLevel: 'Starts at the setting Core benchmark and stays recognisable in gauntlets.',
-    progression: 'Can naturally grow up to Peak through training, upgrades, practice, and the chain itself.',
-    slots: [
-      {
-        label: 'Core ability 1',
-        defaultKind: 'perk',
-        hint: 'A foundational perk or power that should always stay online.',
-      },
-      {
-        label: 'Core ability 2',
-        defaultKind: 'power',
-        hint: 'Another part of the recognisable package.',
-      },
-      {
-        label: 'Core ability 3',
-        defaultKind: 'perk',
-        hint: 'The last signature ability slot for this tier.',
-      },
-      {
-        label: 'Signature item',
-        defaultKind: 'item',
-        hint: 'The external piece of gear or artefact that belongs in the package.',
-      },
-    ],
-  },
-  baseline: {
-    title: 'The Baseline',
-    description: 'A broader foundation of perks and items that starts modestly and grows with the chain.',
-    startingLevel: 'Starts at the setting Floor benchmark and stays available even when stripped down.',
-    progression: 'Grows through actual in-chain development, usually up to Peak.',
-    slots: [
-      {
-        label: 'Foundation perk 1',
-        defaultKind: 'perk',
-        hint: 'A core trait that should always be part of the character.',
-      },
-      {
-        label: 'Foundation perk 2',
-        defaultKind: 'perk',
-        hint: 'Another stable piece of the character foundation.',
-      },
-      {
-        label: 'Foundation perk 3',
-        defaultKind: 'perk',
-        hint: 'A third baseline capability or trait.',
-      },
-      {
-        label: 'Foundation perk 4',
-        defaultKind: 'perk',
-        hint: 'Use this for a broad stabilising trait rather than a singular gimmick.',
-      },
-      {
-        label: 'Foundation perk 5',
-        defaultKind: 'perk',
-        hint: 'The last perk slot in the broader baseline.',
-      },
-      {
-        label: 'Key item 1',
-        defaultKind: 'item',
-        hint: 'An important tool, possession, or artefact that supports the concept.',
-      },
-      {
-        label: 'Key item 2',
-        defaultKind: 'item',
-        hint: 'Another item that belongs in the character foundation.',
-      },
-      {
-        label: 'Key item 3',
-        defaultKind: 'item',
-        hint: 'The last item slot for the stable foundation tier.',
-      },
-    ],
-  },
-};
-
-function isIconicTier(mode: BodymodMode): mode is IconicBodymodMode {
-  return iconicBodymodModes.includes(mode as IconicBodymodMode);
-}
-
-function normalizeIconicTier(mode: BodymodMode): IconicBodymodMode {
-  if (isIconicTier(mode)) {
-    return mode;
-  }
-
-  if (mode === 'supplemented') {
-    return 'suite';
-  }
-
-  return 'baseline';
-}
-
-function createBlankIconicSelection(defaultKind: IconicSelection['kind']): IconicSelection {
-  return {
-    kind: defaultKind,
-    title: '',
-    source: '',
-    summary: '',
-  };
-}
-
-function getSelectionsForTier(tier: IconicBodymodMode, selections: IconicSelection[]) {
-  return ICONIC_TIER_CONFIGS[tier].slots.map((slot, index) => {
-    const selection = selections[index];
-
-    return {
-      kind: selection?.kind ?? slot.defaultKind,
-      title: selection?.title ?? '',
-      source: selection?.source ?? '',
-      summary: selection?.summary ?? '',
-    } satisfies IconicSelection;
-  });
-}
-
-function countFilledSelections(selections: IconicSelection[]) {
-  return selections.filter(
-    (selection) =>
-      selection.title.trim().length > 0 ||
-      selection.source.trim().length > 0 ||
-      selection.summary.trim().length > 0,
-  ).length;
-}
-
-function getProfileStatusLabel(profile: BodymodProfile | null) {
-  if (!profile) {
-    return 'no iconic profile yet';
-  }
-
-  return ICONIC_TIER_CONFIGS[normalizeIconicTier(profile.mode)].title;
-}
 
 export function BodymodPage() {
   const { simpleMode } = useUiPreferences();
@@ -199,10 +38,6 @@ export function BodymodPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save Iconic changes.'),
   });
   const draftProfile = profileAutosave.draft ?? profile;
-  const activeTier = draftProfile ? normalizeIconicTier(draftProfile.mode) : 'baseline';
-  const tierConfig = ICONIC_TIER_CONFIGS[activeTier];
-  const tierSelections = draftProfile ? getSelectionsForTier(activeTier, draftProfile.iconicSelections) : [];
-  const hasLegacyMode = draftProfile ? !isIconicTier(draftProfile.mode) : false;
 
   async function handleCreateProfile() {
     if (!workspace.activeBranch || !selectedJumper) {
@@ -224,34 +59,6 @@ export function BodymodPage() {
         message: error instanceof Error ? error.message : 'Unable to create Iconic profile.',
       });
     }
-  }
-
-  function updateTier(nextTier: IconicBodymodMode) {
-    if (!draftProfile) {
-      return;
-    }
-
-    profileAutosave.updateDraft({
-      ...draftProfile,
-      mode: nextTier,
-      iconicSelections: getSelectionsForTier(nextTier, draftProfile.iconicSelections),
-    });
-  }
-
-  function updateSelection(index: number, updater: (selection: IconicSelection) => IconicSelection) {
-    if (!draftProfile) {
-      return;
-    }
-
-    const nextSelections = getSelectionsForTier(activeTier, draftProfile.iconicSelections).map((selection, selectionIndex) =>
-      selectionIndex === index ? updater(selection) : selection,
-    );
-
-    profileAutosave.updateDraft({
-      ...draftProfile,
-      mode: activeTier,
-      iconicSelections: nextSelections,
-    });
   }
 
   if (!workspace.activeBranch) {
@@ -335,7 +142,7 @@ export function BodymodPage() {
                   </button>
                 ) : (
                   <div className="inline-meta">
-                    <span className="pill">{tierConfig.title}</span>
+                    <span className="pill">{getProfileStatusLabel(draftProfile)}</span>
                     <span className="pill pill--soft">Tied to {selectedJumper.name}</span>
                   </div>
                 )}
@@ -344,270 +151,11 @@ export function BodymodPage() {
               {!draftProfile ? (
                 <p>No Iconic profile exists for this jumper yet.</p>
               ) : (
-                <>
-                  <div className="guidance-strip guidance-strip--accent">
-                    <strong>Preserve the concept, not the austerity.</strong>
-                    <p>Iconic is here to keep a character recognisable through gauntlets, stripped-resource drawbacks, and setting changes.</p>
-                  </div>
-
-                  {hasLegacyMode ? (
-                    <div className="status status--warning">
-                      Legacy bodymod mode "{draftProfile.mode}" was normalized to {tierConfig.title}. Pick an Iconic tier to make it explicit.
-                    </div>
-                  ) : null}
-
-                  <section className="stack">
-                    <div className="section-heading">
-                      <h4>Tier</h4>
-                      <span className="pill">{countFilledSelections(tierSelections)} / {tierConfig.slots.length} filled</span>
-                    </div>
-
-                    <div className="summary-grid">
-                      {iconicBodymodModes.map((tier) => {
-                        const config = ICONIC_TIER_CONFIGS[tier];
-
-                        return (
-                          <button
-                            key={tier}
-                            className={`selection-list__item${activeTier === tier ? ' is-active' : ''}`}
-                            type="button"
-                            onClick={() => updateTier(tier)}
-                          >
-                            <strong>{config.title}</strong>
-                            <span>{config.description}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="summary-panel stack stack--compact">
-                      <h4>{tierConfig.title}</h4>
-                      <p>{tierConfig.startingLevel}</p>
-                      <p>{tierConfig.progression}</p>
-                    </div>
-                  </section>
-
-                  <section className="stack">
-                    <div className="section-heading">
-                      <h4>Concept</h4>
-                    </div>
-
-                    <label className="field">
-                      <span>Concept summary</span>
-                      <input
-                        value={draftProfile.summary}
-                        onChange={(event) =>
-                          profileAutosave.updateDraft({
-                            ...draftProfile,
-                            summary: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-
-                    <div className="field-grid field-grid--two">
-                      <label className="field">
-                        <span>Benchmark notes</span>
-                        <textarea
-                          rows={5}
-                          value={draftProfile.benchmarkNotes}
-                          onChange={(event) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              benchmarkNotes: event.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                      <label className="field">
-                        <span>Interpretation notes</span>
-                        <textarea
-                          rows={5}
-                          value={draftProfile.interpretationNotes}
-                          onChange={(event) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              interpretationNotes: event.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="stack">
-                    <div className="section-heading">
-                      <h4>{tierConfig.title} package</h4>
-                      <span className="pill">{tierConfig.slots.length} slots</span>
-                    </div>
-
-                    <div className="selection-editor-list">
-                      {tierConfig.slots.map((slot, index) => {
-                        const selection = tierSelections[index] ?? createBlankIconicSelection(slot.defaultKind);
-
-                        return (
-                          <div className="selection-editor" key={`${activeTier}-${slot.label}`}>
-                            <div className="selection-editor__header">
-                              <div className="stack stack--compact">
-                                <strong>{slot.label}</strong>
-                                <p className="editor-section__copy">{slot.hint}</p>
-                              </div>
-                              <span className="pill">{selection.kind}</span>
-                            </div>
-
-                            <div className="field-grid field-grid--three">
-                              <label className="field">
-                                <span>Kind</span>
-                                <select
-                                  value={selection.kind}
-                                  onChange={(event) =>
-                                    updateSelection(index, (current) => ({
-                                      ...current,
-                                      kind: event.target.value as IconicSelection['kind'],
-                                    }))
-                                  }
-                                >
-                                  {iconicSelectionKinds.map((kind) => (
-                                    <option key={kind} value={kind}>
-                                      {kind}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <label className="field">
-                                <span>Purchase title</span>
-                                <input
-                                  value={selection.title}
-                                  onChange={(event) =>
-                                    updateSelection(index, (current) => ({
-                                      ...current,
-                                      title: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </label>
-
-                              <label className="field">
-                                <span>Source</span>
-                                <input
-                                  value={selection.source}
-                                  onChange={(event) =>
-                                    updateSelection(index, (current) => ({
-                                      ...current,
-                                      source: event.target.value,
-                                    }))
-                                  }
-                                />
-                              </label>
-                            </div>
-
-                            <label className="field">
-                              <span>What this preserves</span>
-                              <textarea
-                                rows={4}
-                                value={selection.summary}
-                                onChange={(event) =>
-                                  updateSelection(index, (current) => ({
-                                    ...current,
-                                    summary: event.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  {draftProfile.forms.length > 0 ? (
-                    <section className="stack">
-                      <div className="section-heading">
-                        <h4>Preserved forms</h4>
-                        <span className="pill">{draftProfile.forms.length}</span>
-                      </div>
-
-                      <div className="selection-editor-list">
-                        {draftProfile.forms.map((form, index) => (
-                          <div className="selection-editor" key={form.sourceAltformId ?? `${form.name}-${index}`}>
-                            <div className="selection-editor__header">
-                              <div className="stack stack--compact">
-                                <strong>{form.name || `Form ${index + 1}`}</strong>
-                                <p className="editor-section__copy">
-                                  {[form.species, form.sex].filter((entry) => entry.trim().length > 0).join(' - ') || 'Imported altform'}
-                                </p>
-                              </div>
-                              <span className="pill">imported</span>
-                            </div>
-                            <p className="editor-section__copy">
-                              {form.capabilities || form.physicalDescription || 'No imported form notes were preserved for this altform.'}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  <details className="details-panel">
-                    <summary className="details-panel__summary">
-                      <span>Advanced JSON editors</span>
-                      <span className="pill">legacy data and preserved imports</span>
-                    </summary>
-                    <div className="details-panel__body stack stack--compact">
-                      <AssistiveHint
-                        as="p"
-                        text="The structured Iconic editor above is the main surface. Use these JSON blocks for imported altforms, legacy data, and edge-case cleanup."
-                        triggerLabel="Explain advanced JSON editors"
-                      />
-                      <div className="field-grid field-grid--two">
-                        <JsonEditorField
-                          label="Iconic selections"
-                          value={draftProfile.iconicSelections}
-                          onValidChange={(value) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              iconicSelections: Array.isArray(value) ? (value as IconicSelection[]) : [],
-                            })
-                          }
-                        />
-                        <JsonEditorField
-                          label="Forms"
-                          value={draftProfile.forms}
-                          onValidChange={(value) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              forms: Array.isArray(value) ? (value as typeof draftProfile.forms) : [],
-                            })
-                          }
-                        />
-                        <JsonEditorField
-                          label="Features"
-                          value={draftProfile.features}
-                          onValidChange={(value) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              features: Array.isArray(value) ? (value as typeof draftProfile.features) : [],
-                            })
-                          }
-                        />
-                        <JsonEditorField
-                          label="Import source metadata"
-                          value={draftProfile.importSourceMetadata}
-                          onValidChange={(value) =>
-                            profileAutosave.updateDraft({
-                              ...draftProfile,
-                              importSourceMetadata:
-                                typeof value === 'object' && value !== null && !Array.isArray(value)
-                                  ? (value as Record<string, unknown>)
-                                  : {},
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  </details>
-                </>
+                <IconicEditor
+                  profile={draftProfile}
+                  onChange={(nextProfile) => profileAutosave.updateDraft(nextProfile)}
+                  showAdvancedJson
+                />
               )}
             </>
           ) : null}
