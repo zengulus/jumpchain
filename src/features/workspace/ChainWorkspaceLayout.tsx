@@ -1,5 +1,5 @@
+import { createContext, useContext, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { usePageShellNav } from '../../components/PageShell';
@@ -48,6 +48,24 @@ interface WorkspaceQuickAction {
   description: string;
   to: string;
   tone?: 'accent' | 'default';
+}
+
+const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
+
+export function useWorkspaceHeaderAttachment(attachment: ReactNode | null) {
+  const setHeaderAttachment = useContext(WorkspaceHeaderAttachmentContext);
+
+  if (!setHeaderAttachment) {
+    throw new Error('useWorkspaceHeaderAttachment must be used inside ChainWorkspaceLayout.');
+  }
+
+  useEffect(() => {
+    setHeaderAttachment(attachment);
+
+    return () => {
+      setHeaderAttachment((currentAttachment) => (currentAttachment === attachment ? null : currentAttachment));
+    };
+  }, [attachment, setHeaderAttachment]);
 }
 
 function formatCount(value: number, singular: string, plural = `${singular}s`) {
@@ -113,6 +131,7 @@ export function ChainWorkspaceLayout() {
   const [searchParams] = useSearchParams();
   const { simpleMode } = useUiPreferences();
   const { navOpen: sidebarOpen, closeNav, registerWorkspaceDrawer } = usePageShellNav();
+  const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
   const activeModuleKey = getActiveModuleKey(location.pathname);
 
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
@@ -463,225 +482,226 @@ export function ChainWorkspaceLayout() {
     },
   ];
   return (
-    <div className="workspace-shell stack">
-      <section className="workspace-hero">
-        <div className="workspace-hero__top">
-          <div className="stack stack--compact workspace-hero__leading">
-            <div className="workspace-hero__toolbar">
-              <div className="inline-meta">
-                <span className="pill">Active workspace</span>
-                <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
-                <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
-              </div>
-            </div>
-            <h2>{state.bundle.chain.title}</h2>
-            <p className="workspace-hero__summary">
-              {simpleMode
-                ? `${primaryQuickAction.title} is the safest next step if you are still getting this chain set up.`
-                : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
-            </p>
-          </div>
-          <div className="workspace-hero__stats">
-            {simpleMode ? (
-              <>
-                <span className="metric">
-                  <strong>{workspace.jumpers.length}</strong>
-                  Jumpers ready
-                </span>
-                <span className="metric">
-                  <strong>{workspace.jumps.length}</strong>
-                  Jumps in branch
-                </span>
-              </>
-            ) : (
-              <>
-                <span className="metric">
-                  <strong>{workspace.jumpers.length}</strong>
-                  Jumpers
-                </span>
-                <span className="metric">
-                  <strong>{workspace.jumps.length}</strong>
-                  Jumps
-                </span>
-                <span className="metric">
-                  <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
-                  Current jump
-                </span>
-                <span className="metric">
-                  <strong>{workspace.snapshots.length}</strong>
-                  Snapshots
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {sidebarOpen ? (
-        <button
-          className="workspace-sidebar-backdrop"
-          type="button"
-          aria-label="Close navigation"
-          onClick={closeNav}
-        />
-      ) : null}
-
-      <aside className={`workspace-sidebar${sidebarOpen ? ' is-open' : ''}`} id="workspace-sidebar">
-        <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-          <div className="section-heading">
-            <h3>App</h3>
-            <span className="pill">Everywhere</span>
-          </div>
-          <nav className="workspace-menu-list" aria-label="App pages">
-            <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/" end onClick={closeNav}>
-              <strong>Home</strong>
-              <span>Chains, creation, imports, and exports.</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/search" onClick={closeNav}>
-              <strong>Search</strong>
-              <span>Find records across chains and modules.</span>
-            </NavLink>
-            <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
-              <strong>Import Review</strong>
-              <span>Review and convert external jump data.</span>
-            </NavLink>
-          </nav>
-        </section>
-
-        <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-          <div className="section-heading">
-            <h3>Context</h3>
-            <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
-          </div>
-          <div className="workspace-context-title">
-            <strong>{state.bundle.chain.title}</strong>
-            <span>{currentJump ? `Current jump: ${currentJump.orderIndex + 1}. ${currentJump.title}` : 'No current jump selected'}</span>
-          </div>
-          <div className="workspace-context-meta" aria-label="Workspace totals">
-            <span>{formatCount(workspace.jumpers.length, 'jumper')}</span>
-            <span>{formatCount(workspace.jumps.length, 'jump')}</span>
-          </div>
-        </section>
-
-        <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-          <div className="section-heading">
-            <h3>Navigator</h3>
-            <span className="pill">{simpleMode ? 'Guided' : 'Menus'}</span>
-          </div>
-
-          {simpleMode ? (
-            <div className="section-surface stack stack--compact">
-              <strong>Start here</strong>
-              <p className="workspace-sidebar-copy">
-                The quickest safe next step is <strong>{primaryQuickAction.title}</strong>. Once you have the basics in place, open the navigation controls below.
-              </p>
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  closeNav();
-                  navigate(primaryQuickAction.to);
-                }}
-              >
-                {primaryQuickAction.title}
-              </button>
-            </div>
-          ) : null}
-
-          {simpleMode ? (
-            <details className="details-panel">
-              <summary className="details-panel__summary">
-                <span>More navigation</span>
-                <span className="pill">Optional</span>
-              </summary>
-              <div className="details-panel__body stack stack--compact">
-                <label className="field">
-                  <span className="field-label-row">
-                    <span>Go to module</span>
-                    <AssistiveHint
-                      placement="right"
-                      text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
-                      triggerLabel="Explain module routing"
-                    />
-                  </span>
-                  <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
-                    {moduleGroups.map((group) => (
-                      <optgroup key={group.id} label={group.title}>
-                        {group.items.map((item) => (
-                          <option key={item.key} value={item.key} disabled={!item.to}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="workspace-switch-grid">
-                  <label className="field">
-                    <span className="field-label-row">
-                      <span>Jumper focus</span>
-                      <AssistiveHint
-                        placement="right"
-                        text={
-                          selectedJumper
-                            ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                            : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
-                        }
-                        triggerLabel="Explain jumper focus"
-                      />
-                    </span>
-                    <select
-                      value={selectedJumperId}
-                      onChange={(event) => handleQuickJumperChange(event.target.value)}
-                      disabled={workspace.jumpers.length === 0}
-                    >
-                      {workspace.jumpers.length === 0 ? (
-                        <option value="">Create a jumper first</option>
-                      ) : (
-                        workspace.jumpers.map((jumper) => (
-                          <option key={jumper.id} value={jumper.id}>
-                            {jumper.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-
-                  <label className="field">
-                    <span className="field-label-row">
-                      <span>Jump</span>
-                      <AssistiveHint
-                        placement="right"
-                        text={
-                          currentJump
-                            ? `Current jump context is ${currentJump.title}.`
-                            : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
-                        }
-                        triggerLabel="Explain jump focus"
-                      />
-                    </span>
-                    <select
-                      value={currentJump?.id ?? ''}
-                      onChange={(event) => void handleQuickJumpChange(event.target.value)}
-                      disabled={workspace.jumps.length === 0}
-                    >
-                      {workspace.jumps.length === 0 ? (
-                        <option value="">Create a jump first</option>
-                      ) : (
-                        workspace.jumps.map((jump) => (
-                          <option key={jump.id} value={jump.id}>
-                            {jump.orderIndex + 1}. {jump.title}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
+    <WorkspaceHeaderAttachmentContext.Provider value={setHeaderAttachment}>
+      <div className="workspace-shell stack">
+        <section className="workspace-hero">
+          <div className="workspace-hero__top">
+            <div className="stack stack--compact workspace-hero__leading">
+              <div className="workspace-hero__toolbar">
+                <div className="inline-meta">
+                  <span className="pill">Active workspace</span>
+                  <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
+                  <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
                 </div>
               </div>
-            </details>
-          ) : (
-            <>
+              <h2>{state.bundle.chain.title}</h2>
+              <p className="workspace-hero__summary">
+                {simpleMode
+                  ? `${primaryQuickAction.title} is the safest next step if you are still getting this chain set up.`
+                  : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
+              </p>
+            </div>
+            <div className="workspace-hero__stats">
+              {simpleMode ? (
+                <>
+                  <span className="metric">
+                    <strong>{workspace.jumpers.length}</strong>
+                    Jumpers ready
+                  </span>
+                  <span className="metric">
+                    <strong>{workspace.jumps.length}</strong>
+                    Jumps in branch
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="metric">
+                    <strong>{workspace.jumpers.length}</strong>
+                    Jumpers
+                  </span>
+                  <span className="metric">
+                    <strong>{workspace.jumps.length}</strong>
+                    Jumps
+                  </span>
+                  <span className="metric">
+                    <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
+                    Current jump
+                  </span>
+                  <span className="metric">
+                    <strong>{workspace.snapshots.length}</strong>
+                    Snapshots
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {sidebarOpen ? (
+          <button
+            className="workspace-sidebar-backdrop"
+            type="button"
+            aria-label="Close navigation"
+            onClick={closeNav}
+          />
+        ) : null}
+
+        <aside className={`workspace-sidebar${sidebarOpen ? ' is-open' : ''}`} id="workspace-sidebar">
+          <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+            <div className="section-heading">
+              <h3>App</h3>
+              <span className="pill">Everywhere</span>
+            </div>
+            <nav className="workspace-menu-list" aria-label="App pages">
+              <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/" end onClick={closeNav}>
+                <strong>Home</strong>
+                <span>Chains, creation, imports, and exports.</span>
+              </NavLink>
+              <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/search" onClick={closeNav}>
+                <strong>Search</strong>
+                <span>Find records across chains and modules.</span>
+              </NavLink>
+              <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
+                <strong>Import Review</strong>
+                <span>Review and convert external jump data.</span>
+              </NavLink>
+            </nav>
+          </section>
+
+          <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+            <div className="section-heading">
+              <h3>Context</h3>
+              <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
+            </div>
+            <div className="workspace-context-title">
+              <strong>{state.bundle.chain.title}</strong>
+              <span>{currentJump ? `Current jump: ${currentJump.orderIndex + 1}. ${currentJump.title}` : 'No current jump selected'}</span>
+            </div>
+            <div className="workspace-context-meta" aria-label="Workspace totals">
+              <span>{formatCount(workspace.jumpers.length, 'jumper')}</span>
+              <span>{formatCount(workspace.jumps.length, 'jump')}</span>
+            </div>
+          </section>
+
+          <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+            <div className="section-heading">
+              <h3>Navigator</h3>
+              <span className="pill">{simpleMode ? 'Guided' : 'Menus'}</span>
+            </div>
+
+            {simpleMode ? (
+              <div className="section-surface stack stack--compact">
+                <strong>Start here</strong>
+                <p className="workspace-sidebar-copy">
+                  The quickest safe next step is <strong>{primaryQuickAction.title}</strong>. Once you have the basics in place, open the navigation controls below.
+                </p>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    closeNav();
+                    navigate(primaryQuickAction.to);
+                  }}
+                >
+                  {primaryQuickAction.title}
+                </button>
+              </div>
+            ) : null}
+
+            {simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>More navigation</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body stack stack--compact">
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Go to module</span>
+                      <AssistiveHint
+                        placement="right"
+                        text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
+                        triggerLabel="Explain module routing"
+                      />
+                    </span>
+                    <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
+                      {moduleGroups.map((group) => (
+                        <optgroup key={group.id} label={group.title}>
+                          {group.items.map((item) => (
+                            <option key={item.key} value={item.key} disabled={!item.to}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="workspace-switch-grid">
+                    <label className="field">
+                      <span className="field-label-row">
+                        <span>Jumper focus</span>
+                        <AssistiveHint
+                          placement="right"
+                          text={
+                            selectedJumper
+                              ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                              : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
+                          }
+                          triggerLabel="Explain jumper focus"
+                        />
+                      </span>
+                      <select
+                        value={selectedJumperId}
+                        onChange={(event) => handleQuickJumperChange(event.target.value)}
+                        disabled={workspace.jumpers.length === 0}
+                      >
+                        {workspace.jumpers.length === 0 ? (
+                          <option value="">Create a jumper first</option>
+                        ) : (
+                          workspace.jumpers.map((jumper) => (
+                            <option key={jumper.id} value={jumper.id}>
+                              {jumper.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label-row">
+                        <span>Jump</span>
+                        <AssistiveHint
+                          placement="right"
+                          text={
+                            currentJump
+                              ? `Current jump context is ${currentJump.title}.`
+                              : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
+                          }
+                          triggerLabel="Explain jump focus"
+                        />
+                      </span>
+                      <select
+                        value={currentJump?.id ?? ''}
+                        onChange={(event) => void handleQuickJumpChange(event.target.value)}
+                        disabled={workspace.jumps.length === 0}
+                      >
+                        {workspace.jumps.length === 0 ? (
+                          <option value="">Create a jump first</option>
+                        ) : (
+                          workspace.jumps.map((jump) => (
+                            <option key={jump.id} value={jump.id}>
+                              {jump.orderIndex + 1}. {jump.title}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </details>
+            ) : (
+              <>
               <label className="field">
                 <span className="field-label-row">
                   <span>Go to module</span>
@@ -794,20 +814,22 @@ export function ChainWorkspaceLayout() {
               </TooltipFrame>
             ))}
           </div>
-        </section>
-      </aside>
+          </section>
+        </aside>
 
-      <div className="workspace-frame">
-        <section className="workspace-content">
-          <Outlet
-            context={{
-              chainId: resolvedChainId,
-              bundle: state.bundle,
-              workspace,
-            } satisfies ChainWorkspaceOutletContext}
-          />
-        </section>
+        <div className="workspace-frame">
+          {headerAttachment ? <section className="workspace-header-attachment">{headerAttachment}</section> : null}
+          <section className="workspace-content">
+            <Outlet
+              context={{
+                chainId: resolvedChainId,
+                bundle: state.bundle,
+                workspace,
+              } satisfies ChainWorkspaceOutletContext}
+            />
+          </section>
+        </div>
       </div>
-    </div>
+    </WorkspaceHeaderAttachmentContext.Provider>
   );
 }

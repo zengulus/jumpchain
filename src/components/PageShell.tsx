@@ -6,7 +6,6 @@ import {
   useMemo,
   useState,
   type Dispatch,
-  type ReactNode,
   type SetStateAction,
 } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -23,7 +22,6 @@ interface PageShellNavContextValue {
 }
 
 const PageShellNavContext = createContext<PageShellNavContextValue | null>(null);
-const PageShellHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
 
 interface AppNavItem {
   to: string;
@@ -40,22 +38,6 @@ export function usePageShellNav() {
   }
 
   return context;
-}
-
-export function usePageShellHeaderAttachment(attachment: ReactNode | null) {
-  const setHeaderAttachment = useContext(PageShellHeaderAttachmentContext);
-
-  if (!setHeaderAttachment) {
-    throw new Error('usePageShellHeaderAttachment must be used inside PageShell.');
-  }
-
-  useEffect(() => {
-    setHeaderAttachment(attachment);
-
-    return () => {
-      setHeaderAttachment((currentAttachment) => (currentAttachment === attachment ? null : currentAttachment));
-    };
-  }, [attachment, setHeaderAttachment]);
 }
 
 const APP_NAV_ITEMS: AppNavItem[] = [
@@ -101,7 +83,6 @@ function PageShellContent() {
   const { simpleMode, setSimpleMode } = useUiPreferences();
   const [navOpen, setNavOpen] = useState(false);
   const [workspaceDrawerRegistered, setWorkspaceDrawerRegistered] = useState(false);
-  const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
 
   useEffect(() => {
     setNavOpen(false);
@@ -137,84 +118,77 @@ function PageShellContent() {
 
   return (
     <PageShellNavContext.Provider value={navContextValue}>
-      <PageShellHeaderAttachmentContext.Provider value={setHeaderAttachment}>
-        <UniversalSearchProvider>
-          <div className="page-shell" data-ui-mode={simpleMode ? 'simple' : 'advanced'}>
-            <header className={`page-shell__header${headerAttachment ? ' page-shell__header--with-attachment' : ''}`}>
-              <div className="page-shell__brand">
-                <div className="page-shell__brand-row">
-                  <button
-                    className={`page-shell__nav-toggle${navOpen ? ' is-active' : ''}`}
-                    type="button"
-                    aria-expanded={navOpen}
-                    aria-controls={activeDrawerId}
-                    onClick={toggleNav}
-                  >
-                    <span className="page-shell__nav-toggle__icon" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
-                    <span>Navigation</span>
-                  </button>
-                  <div className="page-shell__brand-copy">
-                    <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
-                    <p className="page-shell__subtitle">
-                      {simpleMode
-                        ? 'A calmer, guided workspace for keeping a complicated chain understandable.'
-                        : 'Roomy local-first continuity tracking for branches, imports, snapshots, and supplement planning.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <UniversalSearchBar />
-              <div className="page-shell__header-controls">
-                <button
-                  className={`page-shell__mode-toggle${simpleMode ? ' is-active' : ''}`}
-                  type="button"
-                  aria-pressed={simpleMode}
-                  onClick={() => setSimpleMode(!simpleMode)}
-                >
-                  <span>View mode</span>
-                  <strong>{simpleMode ? 'Simple' : 'Normal'}</strong>
-                </button>
-              </div>
-              {headerAttachment ? <div className="page-shell__header-attachment">{headerAttachment}</div> : null}
-            </header>
-
-            {!workspaceDrawerRegistered ? (
-              <>
-                {navOpen ? (
-                  <button
-                    className="page-shell__drawer-backdrop"
-                    type="button"
-                    aria-label="Close navigation"
-                    onClick={closeNav}
-                  />
-                ) : null}
-                <aside className={`page-shell__drawer${navOpen ? ' is-open' : ''}`} id="page-shell-drawer">
-                  <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                    <div className="section-heading">
-                      <h3>App</h3>
-                      <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
-                    </div>
-                    <AppNavigationLinks onNavigate={closeNav} />
-                  </section>
-                </aside>
-              </>
-            ) : null}
-
-            <div className="page-shell__desktop-note" role="note">
-              {simpleMode
-                ? 'Simple mode is calmest on desktop or a wider window.'
-                : 'Normal mode keeps more data visible at once on desktop or a wider window.'}
+      <UniversalSearchProvider>
+        <div className="page-shell" data-ui-mode={simpleMode ? 'simple' : 'advanced'}>
+          <header className="page-shell__header">
+            <button
+              className={`page-shell__nav-toggle${navOpen ? ' is-active' : ''}`}
+              type="button"
+              aria-expanded={navOpen}
+              aria-controls={activeDrawerId}
+              onClick={toggleNav}
+            >
+              <span className="page-shell__nav-toggle__icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span>Navigation</span>
+            </button>
+            <div className="page-shell__brand">
+              <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
+              <p className="page-shell__subtitle">
+                {simpleMode
+                  ? 'A calmer, guided workspace for keeping a complicated chain understandable.'
+                  : 'Roomy local-first continuity tracking for branches, imports, snapshots, and supplement planning.'}
+              </p>
             </div>
-            <main className="page-shell__main">
-              <Outlet />
-            </main>
+            <UniversalSearchBar />
+            <div className="page-shell__header-controls">
+              <button
+                className={`page-shell__mode-toggle${simpleMode ? ' is-active' : ''}`}
+                type="button"
+                aria-pressed={simpleMode}
+                onClick={() => setSimpleMode(!simpleMode)}
+              >
+                <span>View mode</span>
+                <strong>{simpleMode ? 'Simple' : 'Normal'}</strong>
+              </button>
+            </div>
+          </header>
+
+          {!workspaceDrawerRegistered ? (
+            <>
+              {navOpen ? (
+                <button
+                  className="page-shell__drawer-backdrop"
+                  type="button"
+                  aria-label="Close navigation"
+                  onClick={closeNav}
+                />
+              ) : null}
+              <aside className={`page-shell__drawer${navOpen ? ' is-open' : ''}`} id="page-shell-drawer">
+                <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+                  <div className="section-heading">
+                    <h3>App</h3>
+                    <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
+                  </div>
+                  <AppNavigationLinks onNavigate={closeNav} />
+                </section>
+              </aside>
+            </>
+          ) : null}
+
+          <div className="page-shell__desktop-note" role="note">
+            {simpleMode
+              ? 'Simple mode is calmest on desktop or a wider window.'
+              : 'Normal mode keeps more data visible at once on desktop or a wider window.'}
           </div>
-        </UniversalSearchProvider>
-      </PageShellHeaderAttachmentContext.Provider>
+          <main className="page-shell__main">
+            <Outlet />
+          </main>
+        </div>
+      </UniversalSearchProvider>
     </PageShellNavContext.Provider>
   );
 }

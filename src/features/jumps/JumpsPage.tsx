@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
-import { usePageShellHeaderAttachment } from '../../components/PageShell';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
@@ -22,6 +21,7 @@ import {
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
+import { useWorkspaceHeaderAttachment } from '../workspace/ChainWorkspaceLayout';
 
 type JumpWorkspaceTab = 'basics' | 'party' | 'purchases' | 'advanced';
 type JumpGuidedStage = Extract<JumpWorkspaceTab, 'basics' | 'party' | 'purchases'>;
@@ -169,7 +169,7 @@ export function JumpsPage() {
     );
   }, [activeParticipation, activeParticipationJumper, activeTab, draftJump, workspace]);
 
-  usePageShellHeaderAttachment(purchaseBudgetAttachment);
+  useWorkspaceHeaderAttachment(purchaseBudgetAttachment);
 
   function getFirstIncompleteStage(reviewState: Partial<Record<JumpGuidedStage, true>>) {
     return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
