@@ -188,22 +188,15 @@ export function JumpsPage() {
           <h4>Participation and Purchases</h4>
           <span className="pill">{jumpParticipations.length} records</span>
         </div>
-        <p>
-          This lives inside the jump because purchases, drawbacks, budgets, and notes all belong to a specific jumper in this
-          specific jump.
-        </p>
         {workspace.jumpers.length === 0 ? (
-          <p>No jumpers exist yet. Add a jumper first.</p>
+          <p>No jumpers yet.</p>
         ) : focusedJumper && !draftJump.participantJumperIds.includes(focusedJumper.id) ? (
           <article className="card editor-sheet stack">
             <div className="section-heading">
               <h3>{focusedJumper.name}</h3>
               <span className="pill pill--soft">not participating yet</span>
             </div>
-            <p>
-              {focusedJumper.name} is the current jumper focus, but they are not in this jump yet. Add them here when you want
-              to track purchases and jump-specific notes.
-            </p>
+            <p>{focusedJumper.name} is not in this jump yet.</p>
             <div className="actions">
               <button className="button" type="button" onClick={() => void ensureParticipation(focusedJumper.id)}>
                 Add To This Jump
@@ -211,7 +204,7 @@ export function JumpsPage() {
             </div>
           </article>
         ) : visibleParticipationJumpers.length === 0 ? (
-          <p>No jumpers are marked as participating yet. Tick someone above to start their participation and purchases record.</p>
+          <p>No participating jumpers yet.</p>
         ) : (
           visibleParticipationJumpers.map((jumper) => {
             const participation = workspace.participations.find(
@@ -225,7 +218,7 @@ export function JumpsPage() {
                 jumper={jumper}
                 participation={participation}
                 workspace={workspace}
-                showBudgetSummary={simpleMode || !inspectedBudgetParticipation}
+                showBudgetSummary={!inspectedBudgetParticipation}
               />
             ) : (
               <article className="card editor-sheet stack" key={jumper.id}>
@@ -233,9 +226,7 @@ export function JumpsPage() {
                   <h3>{jumper.name}</h3>
                   <span className="pill pill--soft">record missing</span>
                 </div>
-                <p>
-                  {jumper.name} is marked as participating in this jump, but the detailed record has not been created yet.
-                </p>
+                <p>{jumper.name} is marked as participating, but the record is missing.</p>
                 <div className="actions">
                   <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
                     Create Record
@@ -257,11 +248,7 @@ export function JumpsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Jumps"
-        description={
-          simpleMode
-            ? 'Pick a jump, set the basics first, and use the jump itself for duration, participation, and purchases.'
-            : 'Ordered jump records with editors for status, type, duration, participant membership, and per-jumper participation and purchases details.'
-        }
+        description="Jump records."
         badge={`${workspace.jumps.length} total`}
         actions={
           <button className="button" type="button" onClick={() => void handleAddJump()}>
@@ -290,7 +277,6 @@ export function JumpsPage() {
               <h3>Ordered jump list</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
-                {simpleMode ? <p>Choose a jump, then start with title, status, and type. Ordering and participants stay tucked below.</p> : null}
             <label className="field">
               <span>Search jumps</span>
               <input
@@ -358,7 +344,6 @@ export function JumpsPage() {
                     </Link>
                   </div>
                 </div>
-                {simpleMode ? <p>Start with the jump basics here. The optional area below now also holds participation and purchases for this jump.</p> : null}
 
                 <div className="field-grid field-grid--two">
                   <label className="field">

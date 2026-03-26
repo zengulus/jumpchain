@@ -42,7 +42,7 @@ interface PurchaseTokenGroups {
 
 interface SelectionEditorSectionProps {
   title: string;
-  description: string;
+  description?: string;
   items: unknown[];
   emptyMessage: string;
   addLabel: string;
@@ -886,7 +886,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
       <div className="editor-section__header">
         <div className="stack stack--compact">
           <h4>{props.title}</h4>
-          <p className="editor-section__copy">{props.description}</p>
+          {props.description ? <p className="editor-section__copy">{props.description}</p> : null}
         </div>
         <span className="pill">{props.items.length}</span>
       </div>
@@ -1180,9 +1180,6 @@ function OriginEditorSection(props: {
       <div className="editor-section__header">
         <div className="stack stack--compact">
           <h4>Beginnings</h4>
-          <p className="editor-section__copy">
-            Origin, background, race, age bracket, and similar setup choices live here.
-          </p>
         </div>
         <span className="pill">{props.orderedOriginKeys.length}</span>
       </div>
@@ -1448,9 +1445,6 @@ export function ParticipationEditorCard(props: {
         <div className="editor-section__header">
           <div className="stack stack--compact">
             <h4>Starting budget lines</h4>
-            <p className="editor-section__copy">
-              This is the jump’s visible starting pool before perks, items, conversions, and drawbacks start pushing it around.
-            </p>
           </div>
           <span className="pill">{budgetRows.length}</span>
         </div>
@@ -1564,19 +1558,11 @@ export function ParticipationEditorCard(props: {
     );
   }
 
-  function renderStipendSection(
-    title: string,
-    description: string,
-    rows: StipendRow[],
-    section: 'subsystems' | 'items',
-  ) {
+  function renderStipendSection(title: string, rows: StipendRow[], section: 'subsystems' | 'items') {
     return (
       <section className="editor-section">
         <div className="editor-section__header">
-          <div className="stack stack--compact">
-            <h4>{title}</h4>
-            <p className="editor-section__copy">{description}</p>
-          </div>
+          <h4>{title}</h4>
           <span className="pill">{rows.length}</span>
         </div>
 
@@ -1758,28 +1744,16 @@ export function ParticipationEditorCard(props: {
   return (
     <article className="card editor-sheet stack" key={props.jumper.id}>
       <div className="section-heading">
-        <div className="stack stack--compact">
-          <h3>{props.jumper.name}</h3>
-          <p className="editor-section__copy">
-            {props.jump.title} participation. This now follows the actual jump-buy flow instead of a raw record dump.
-          </p>
-        </div>
+        <h3>{props.jumper.name}</h3>
         <span className="pill">{draftParticipation.status}</span>
       </div>
 
       <AutosaveStatusIndicator status={participationAutosave.status} />
 
-      <div className="guidance-strip guidance-strip--accent">
-        <strong>One jump, one purchase flow.</strong>
-        <p>
-          Beginnings sets the jumper up, perks and subsystems handle the core buys, items get their own lane, other handles conversions, and drawbacks now feed the budget they are meant to increase.
-        </p>
-      </div>
-
       <div className="summary-grid">
         <article className="metric">
           <strong>{cpBaseValue !== null ? formatNumericValue(cpBaseValue) : 'No base CP'}</strong>
-          <span>{cpBudgetLabel ? `${cpBudgetLabel} starting pool` : 'Define a primary currency below'}</span>
+          <span>{cpBudgetLabel ? `${cpBudgetLabel} starting pool` : 'No primary CP'}</span>
         </article>
         <article className="metric">
           <strong>
@@ -1799,7 +1773,7 @@ export function ParticipationEditorCard(props: {
         </article>
         <article className="metric">
           <strong>{cpBudgetValue !== null ? formatNumericValue(cpBudgetValue) : 'No current CP'}</strong>
-          <span>Current visible CP pool</span>
+          <span>Current CP</span>
         </article>
       </div>
 
@@ -1809,12 +1783,7 @@ export function ParticipationEditorCard(props: {
         <div className="stack stack--compact">
           <div className="editor-section">
             <div className="editor-section__header">
-              <div className="stack stack--compact">
-                <h4>Core Participation</h4>
-                <p className="editor-section__copy">
-                  Status, notes, deposit, and narrative beats stay here with the initial setup instead of hiding in a separate overview tab.
-                </p>
-              </div>
+              <h4>Core Participation</h4>
             </div>
 
             <div className="stack stack--compact">
@@ -1934,7 +1903,6 @@ export function ParticipationEditorCard(props: {
           {showBudgetSummary ? (
             <SummarySection
               title="Current budgets"
-              description="Base pool plus jump and chain drawback gains."
               items={getBudgetTokens(
                 effectiveBudgetState.effectiveBudgets,
                 effectiveBudgetState.baseBudgets,
@@ -1942,7 +1910,7 @@ export function ParticipationEditorCard(props: {
                 effectiveBudgetState.participationDrawbackBudgetGrants,
                 currencyDefinitions,
               )}
-              emptyMessage="No currency budgets are visible for this participation yet."
+              emptyMessage="No budgets yet."
             />
           ) : null}
 
@@ -1953,9 +1921,8 @@ export function ParticipationEditorCard(props: {
       {activeTab === 'perks' ? (
         <SelectionEditorSection
           title="Perks"
-          description="Core perk buys live here. Every entry now has free and discount controls, plus a source field for where the reduction came from."
           items={perkPurchases}
-          emptyMessage="No perk purchases are recorded for this jumper in the current jump."
+          emptyMessage="No perks yet."
           addLabel="Add Perk"
           createItem={() => createBlankSelection('New Perk', { purchaseType: 0, selectionKind: 'purchase', subtype: 0 })}
           onChange={(nextItems) => replacePurchaseSection('perk', nextItems)}
@@ -1970,9 +1937,8 @@ export function ParticipationEditorCard(props: {
         <div className="stack stack--compact">
           <SelectionEditorSection
             title="Subsystems"
-            description="Powers, companion imports, and other subsystem-flavoured buys sit here instead of getting mixed into general perks."
             items={subsystemPurchases}
-            emptyMessage="No subsystem purchases are recorded for this participation."
+            emptyMessage="No subsystem purchases yet."
             addLabel="Add Subsystem Purchase"
             createItem={() => createBlankSelection('New Subsystem Purchase', { purchaseType: 0, selectionKind: 'purchase', subtype: 10 })}
             onChange={(nextItems) => replacePurchaseSection('subsystem', nextItems)}
@@ -1984,18 +1950,16 @@ export function ParticipationEditorCard(props: {
 
           <SummarySection
             title="Subsystem stipends"
-            description="Subsystem-specific stipend pools stay beside the subsystem purchases that use them."
             items={getStipendTokens(
               buildStipendsFromRows(subsystemStipendRows),
               purchaseSubtypeDefinitions,
               currencyDefinitions,
             )}
-            emptyMessage="No subsystem stipend rows are defined yet."
+            emptyMessage="No subsystem stipends yet."
           />
 
           {renderStipendSection(
             'Subsystem stipend lines',
-            'Use this for subsystem allowances and non-item stipend pools.',
             subsystemStipendRows,
             'subsystems',
           )}
@@ -2006,9 +1970,8 @@ export function ParticipationEditorCard(props: {
         <div className="stack stack--compact">
           <SelectionEditorSection
             title="Items"
-            description="Items get their own lane, with the same free and discount controls as perks."
             items={itemPurchases}
-            emptyMessage="No item purchases are recorded for this jumper in the current jump."
+            emptyMessage="No items yet."
             addLabel="Add Item"
             createItem={() => createBlankSelection('New Item', { purchaseType: 1, selectionKind: 'purchase', subtype: 1 })}
             onChange={(nextItems) => replacePurchaseSection('item', nextItems)}
@@ -2020,18 +1983,16 @@ export function ParticipationEditorCard(props: {
 
           <SummarySection
             title="Item stipends"
-            description="Item stipend pools sit directly under the item buys they support."
             items={getStipendTokens(
               buildStipendsFromRows(itemStipendRows),
               purchaseSubtypeDefinitions,
               currencyDefinitions,
             )}
-            emptyMessage="No item stipend rows are defined yet."
+            emptyMessage="No item stipends yet."
           />
 
           {renderStipendSection(
             'Item stipend lines',
-            'Use this for item allowances and item-specific side pools.',
             itemStipendRows,
             'items',
           )}
@@ -2042,9 +2003,8 @@ export function ParticipationEditorCard(props: {
         <div className="stack stack--compact">
           <SelectionEditorSection
             title="Other purchases"
-            description="Anything that is not a perk, subsystem, or item lives here. This tab also owns currency conversion records like CP to WP."
             items={otherPurchases}
-            emptyMessage="No uncategorized purchases are recorded for this participation."
+            emptyMessage="No other purchases yet."
             addLabel="Add Other Purchase"
             createItem={() => createBlankSelection('New Other Purchase', { selectionKind: 'purchase' })}
             onChange={(nextItems) => replacePurchaseSection('other', nextItems)}
@@ -2056,19 +2016,13 @@ export function ParticipationEditorCard(props: {
 
           <SummarySection
             title="Currency exchanges"
-            description="CP to WP and similar conversion records now live beside the nonstandard purchase flows that usually rely on them."
             items={exchangeTokens}
-            emptyMessage="No currency exchanges are recorded for this participation yet."
+            emptyMessage="No currency exchanges yet."
           />
 
           <section className="editor-section">
             <div className="editor-section__header">
-              <div className="stack stack--compact">
-                <h4>Currency exchange editor</h4>
-                <p className="editor-section__copy">
-                  Exchange data is still source-shaped, so it stays JSON-based for now, but it now sits in the main purchase flow instead of hiding in an advanced panel.
-                </p>
-              </div>
+              <h4>Currency exchange editor</h4>
             </div>
             <JsonEditorField
               label="Currency exchanges (CP -> WP and similar)"
@@ -2086,16 +2040,8 @@ export function ParticipationEditorCard(props: {
 
       {activeTab === 'drawbacks' ? (
         <div className="stack stack--compact">
-          <div className="guidance-strip">
-            <strong>Drawbacks increase budget here.</strong>
-            <p>
-              The value on these entries is now treated as jump budget gain, so the current budget view updates when you change drawback value or currency.
-            </p>
-          </div>
-
           <SummarySection
             title="Drawback budget gains"
-            description="Current jump drawback entries that are contributing budget right now."
             items={effectiveBudgetState.contributingParticipationDrawbacks.map((contribution) => ({
               label: contribution.title,
               detail: Object.entries(contribution.budgetGrants)
@@ -2105,14 +2051,13 @@ export function ParticipationEditorCard(props: {
                 )
                 .join(' - '),
             }))}
-            emptyMessage="No drawback entries are currently increasing budget."
+            emptyMessage="No drawback gains yet."
           />
 
           <SelectionEditorSection
             title="Drawbacks"
-            description="Active drawbacks for this jump. Their value increases the jump budget for the matching currency."
             items={draftParticipation.drawbacks}
-            emptyMessage="No drawbacks recorded for this jumper in the current jump."
+            emptyMessage="No drawbacks yet."
             addLabel="Add Drawback"
             createItem={() => createBlankSelection('New Drawback', { selectionKind: 'drawback' })}
             onChange={(nextItems) =>
@@ -2126,9 +2071,8 @@ export function ParticipationEditorCard(props: {
 
           <SelectionEditorSection
             title="Retained drawbacks"
-            description="Carry-forward drawbacks still visible in this jump. Their value also feeds the effective budget if you leave a value on them."
             items={draftParticipation.retainedDrawbacks}
-            emptyMessage="No retained drawbacks recorded."
+            emptyMessage="No retained drawbacks."
             addLabel="Add Retained Drawback"
             createItem={() => createBlankSelection('New Retained Drawback', { selectionKind: 'retained-drawback' })}
             onChange={(nextItems) =>
@@ -2150,7 +2094,7 @@ export function ParticipationEditorCard(props: {
         <div className="details-panel__body stack stack--compact">
           <AssistiveHint
             as="p"
-            text="The tabs above are now the primary workflow. Keep this section for migration cleanup, odd edge cases, or source fragments that still need a first-class editor."
+            text="Use this only when the main tabs do not cover a case yet."
             triggerLabel="Explain advanced JSON editors"
           />
           <div className="field-grid field-grid--two">
@@ -2342,13 +2286,6 @@ export function ParticipationBudgetInspector(props: {
 
   return (
     <div className="stack stack--compact">
-      <div className="guidance-strip guidance-strip--accent">
-        <strong>{props.jumper.name}</strong>
-        <p>
-          Current jump budget details for this jumper, including baseline pools, jump drawback gains, chain drawback gains, and any stored currency exchanges.
-        </p>
-      </div>
-
       {cpBudgetLabel && cpBudgetValue !== null ? (
         <div className="summary-panel stack stack--compact">
           <h4>Current CP budget</h4>
@@ -2365,47 +2302,42 @@ export function ParticipationBudgetInspector(props: {
 
       <SummarySection
         title="Effective budgets"
-        description="Base budgets plus current jump drawback value and any active chain drawback gains."
         items={budgetTokens}
-        emptyMessage="No budgets are defined for this participation yet."
+        emptyMessage="No budgets yet."
       />
 
       <SummarySection
         title="Jump drawback gains"
-        description="Current drawback entries on this participation that are feeding budget."
         items={effectiveBudgetState.contributingParticipationDrawbacks.map((contribution) => ({
           label: contribution.title,
           detail: Object.entries(contribution.budgetGrants)
             .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
             .join(' - '),
         }))}
-        emptyMessage="No participation drawbacks are adding budget right now."
+        emptyMessage="No jump drawback gains."
       />
 
       <SummarySection
         title="Stipends"
-        description="Recurring or subtype-specific stipend allocations attached to this participation."
         items={stipendTokens}
-        emptyMessage="No stipends are defined for this participation yet."
+        emptyMessage="No stipends yet."
       />
 
       <SummarySection
         title="Currency exchanges"
-        description="Visible CP to WP and similar conversion records."
         items={exchangeTokens}
-        emptyMessage="No currency exchanges are stored for this participation yet."
+        emptyMessage="No currency exchanges yet."
       />
 
       <SummarySection
         title="Chain drawback gains"
-        description="Active chain drawbacks currently contributing extra budget."
         items={effectiveBudgetState.contributingChainDrawbacks.map((contribution) => ({
           label: contribution.effect.title,
           detail: Object.entries(contribution.budgetGrants)
             .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
             .join(' - '),
         }))}
-        emptyMessage="No active chain drawbacks are adding budget right now."
+        emptyMessage="No chain drawback gains."
       />
     </div>
   );
