@@ -1,9 +1,11 @@
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
 import { buildUniversalSearchResults, normalizeSearchQuery } from './searchUtils';
 
 export function SearchResultsPage() {
+  const { simpleMode } = useUiPreferences();
   const [searchParams] = useSearchParams();
   const searchData = useUniversalSearchData();
   const query = searchParams.get('q') ?? '';
@@ -24,7 +26,9 @@ export function SearchResultsPage() {
       <section className="hero stack stack--compact">
         <h2>Universal Search</h2>
         <p>
-          Search chains, active-branch records, notes, effects, participation data, backups, and the Personal Reality builder from one place.
+          {simpleMode
+            ? 'Search everything from one place, then jump straight to the matching page.'
+            : 'Search chains, active-branch records, notes, effects, participation data, backups, and the Personal Reality builder from one place.'}
         </p>
         <div className="inline-meta">
           <span className="pill">{normalizedQuery.length > 0 ? `Query: ${query}` : 'Enter a query in the header'}</span>
@@ -56,15 +60,22 @@ export function SearchResultsPage() {
                   <strong>
                     <SearchHighlight text={result.title} query={query} />
                   </strong>
-                  <span className="search-page__result-subtitle">
-                    <SearchHighlight text={result.subtitle} query={query} />
-                  </span>
+                  {simpleMode ? null : (
+                    <span className="search-page__result-subtitle">
+                      <SearchHighlight text={result.subtitle} query={query} />
+                    </span>
+                  )}
                 </div>
                 <div className="inline-meta">
-                  <span className="pill pill--soft">{result.kindLabel}</span>
                   <span className="pill">{result.chainTitle}</span>
+                  {simpleMode ? null : <span className="pill pill--soft">{result.kindLabel}</span>}
                 </div>
               </div>
+              {simpleMode ? (
+                <span className="search-page__result-subtitle">
+                  <SearchHighlight text={result.subtitle} query={query} />
+                </span>
+              ) : null}
               {result.snippet ? (
                 <p>
                   <SearchHighlight text={result.snippet} query={query} />

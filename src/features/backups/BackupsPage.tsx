@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { detectImportSource } from '../../domain/import/sourceDetection';
 import { createBranchFromJump, createSnapshotForBranch, exportBranchSave, exportNativeSave, importNativeSave, restoreSnapshotAsBranch } from '../../db/persistence';
 import { downloadJson } from '../../utils/download';
@@ -18,6 +19,7 @@ function formatTimestamp(value: string) {
 }
 
 export function BackupsPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, bundle, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [snapshotTitle, setSnapshotTitle] = useState('Checkpoint');
@@ -170,61 +172,129 @@ export function BackupsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Backups, Branches, and Recovery"
-        description="Full-chain export, branch-only export, native safe-copy import, branch forks, snapshots, and restore-to-new-branch flows."
+        description={
+          simpleMode
+            ? 'Safety tools for exports, snapshots, and branch forks. The main actions stay visible, and the ledgers stay tucked away until you want them.'
+            : 'Full-chain export, branch-only export, native safe-copy import, branch forks, snapshots, and restore-to-new-branch flows.'
+        }
         badge={workspace.activeBranch?.title ?? 'No branch'}
       />
 
       <StatusNoticeBanner notice={notice} />
 
-      <section className="card stack stack--compact">
-        <label className="field">
-          <span>Search branches and snapshots</span>
-          <input
-            value={searchQuery}
-            placeholder="branch titles, snapshot names, descriptions..."
-            onChange={(event) =>
-              setSearchParams((currentParams) => {
-                const nextParams = new URLSearchParams(currentParams);
+      {simpleMode ? (
+        <details className="details-panel">
+          <summary className="details-panel__summary">
+            <span>Find a branch or snapshot</span>
+            <span className="pill">Optional</span>
+          </summary>
+          <div className="details-panel__body">
+            <label className="field">
+              <span>Search branches and snapshots</span>
+              <input
+                value={searchQuery}
+                placeholder="branch titles, snapshot names, descriptions..."
+                onChange={(event) =>
+                  setSearchParams((currentParams) => {
+                    const nextParams = new URLSearchParams(currentParams);
 
-                if (event.target.value.trim()) {
-                  nextParams.set('search', event.target.value);
-                } else {
-                  nextParams.delete('search');
+                    if (event.target.value.trim()) {
+                      nextParams.set('search', event.target.value);
+                    } else {
+                      nextParams.delete('search');
+                    }
+
+                    return nextParams;
+                  })
                 }
+              />
+            </label>
+          </div>
+        </details>
+      ) : (
+        <section className="card stack stack--compact">
+          <label className="field">
+            <span>Search branches and snapshots</span>
+            <input
+              value={searchQuery}
+              placeholder="branch titles, snapshot names, descriptions..."
+              onChange={(event) =>
+                setSearchParams((currentParams) => {
+                  const nextParams = new URLSearchParams(currentParams);
 
-                return nextParams;
-              })
-            }
-          />
-        </label>
-      </section>
+                  if (event.target.value.trim()) {
+                    nextParams.set('search', event.target.value);
+                  } else {
+                    nextParams.delete('search');
+                  }
+
+                  return nextParams;
+                })
+              }
+            />
+          </label>
+        </section>
+      )}
 
       <section className="grid grid--two">
         <article className="card stack">
           <div className="section-heading">
-            <h3>Exports & Imports</h3>
+            <h3>{simpleMode ? 'Safe copies' : 'Exports & Imports'}</h3>
             <span className="pill">Native envelope</span>
           </div>
-          <div className="actions">
-            <button className="button" type="button" onClick={() => void handleExportFullChain()}>
-              Export Full Chain
-            </button>
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={!workspace.activeBranch}
-              onClick={() => void handleExportActiveBranch()}
-            >
-              Export Active Branch
-            </button>
-            <button
-              className="button button--secondary"
-              type="button"
-              onClick={() => nativeImportInputRef.current?.click()}
-            >
-              Import Native Save
-            </button>
-          </div>
+          {simpleMode ? (
+            <>
+              <div className="actions">
+                <button className="button" type="button" onClick={() => void handleExportFullChain()}>
+                  Export Full Chain
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => nativeImportInputRef.current?.click()}
+                >
+                  Import Native Save
+                </button>
+              </div>
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>More backup actions</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body actions">
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    disabled={!workspace.activeBranch}
+                    onClick={() => void handleExportActiveBranch()}
+                  >
+                    Export Active Branch
+                  </button>
+                </div>
+              </details>
+            </>
+          ) : (
+            <div className="actions">
+              <button className="button" type="button" onClick={() => void handleExportFullChain()}>
+                Export Full Chain
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={!workspace.activeBranch}
+                onClick={() => void handleExportActiveBranch()}
+              >
+                Export Active Branch
+              </button>
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => nativeImportInputRef.current?.click()}
+              >
+                Import Native Save
+              </button>
+            </div>
+          )}
           <input
             ref={nativeImportInputRef}
             type="file"
@@ -232,7 +302,11 @@ export function BackupsPage() {
             hidden
             onChange={handleNativeImportSelection}
           />
-          <p>Native imports always create safe copies. Existing chains and branches are never overwritten.</p>
+          <p>
+            {simpleMode
+              ? 'These actions are safe. Imports create copies, and exports never change the stored chain.'
+              : 'Native imports always create safe copies. Existing chains and branches are never overwritten.'}
+          </p>
         </article>
 
         <article className="card stack">
@@ -240,6 +314,7 @@ export function BackupsPage() {
             <h3>Fork Active Branch</h3>
             <span className="pill">{workspace.branches.length} total branches</span>
           </div>
+          {simpleMode ? <p>Use this when you want to try a different path without changing the current line.</p> : null}
           <label className="field">
             <span>New branch title</span>
             <input value={branchTitle} onChange={(event) => setBranchTitle(event.target.value)} />
@@ -273,14 +348,30 @@ export function BackupsPage() {
             <h3>Snapshots</h3>
             <span className="pill">{workspace.snapshots.length} active-branch snapshots</span>
           </div>
+          {simpleMode ? <p>Take a checkpoint before major edits. Restoring always creates a new branch instead of overwriting the current one.</p> : null}
           <label className="field">
             <span>Snapshot title</span>
             <input value={snapshotTitle} onChange={(event) => setSnapshotTitle(event.target.value)} />
           </label>
-          <label className="field">
-            <span>Description</span>
-            <textarea rows={4} value={snapshotDescription} onChange={(event) => setSnapshotDescription(event.target.value)} />
-          </label>
+          {simpleMode ? (
+            <details className="details-panel">
+              <summary className="details-panel__summary">
+                <span>Add a snapshot description</span>
+                <span className="pill">Optional</span>
+              </summary>
+              <div className="details-panel__body">
+                <label className="field">
+                  <span>Description</span>
+                  <textarea rows={4} value={snapshotDescription} onChange={(event) => setSnapshotDescription(event.target.value)} />
+                </label>
+              </div>
+            </details>
+          ) : (
+            <label className="field">
+              <span>Description</span>
+              <textarea rows={4} value={snapshotDescription} onChange={(event) => setSnapshotDescription(event.target.value)} />
+            </label>
+          )}
           <div className="actions">
             <button
               className="button"
@@ -298,7 +389,33 @@ export function BackupsPage() {
             <h3>Branch Ledger</h3>
             <span className="pill">{filteredBranches.length} shown</span>
           </div>
-          {workspace.branches.length === 0 ? (
+          {simpleMode ? (
+            <details className="details-panel">
+              <summary className="details-panel__summary">
+                <span>Show branch ledger</span>
+                <span className="pill">{filteredBranches.length}</span>
+              </summary>
+              <div className="details-panel__body">
+                {workspace.branches.length === 0 ? (
+                  <p>No branches exist yet.</p>
+                ) : filteredBranches.length === 0 ? (
+                  <p>No branches match the current search.</p>
+                ) : (
+                  <ul className="list">
+                    {filteredBranches.map((branch) => (
+                      <li key={branch.id}>
+                        <strong>
+                          <SearchHighlight text={branch.title} query={searchQuery} />
+                        </strong>
+                        {branch.id === workspace.activeBranch?.id ? ' (active)' : ''}
+                        {branch.forkedFromJumpId ? ' | forked from a jump' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </details>
+          ) : workspace.branches.length === 0 ? (
             <p>No branches exist yet.</p>
           ) : filteredBranches.length === 0 ? (
             <p>No branches match the current search.</p>
@@ -340,20 +457,26 @@ export function BackupsPage() {
                   <p>
                     <SearchHighlight text={snapshot.description || 'No snapshot description provided.'} query={searchQuery} />
                   </p>
-                  <div className="inline-meta">
-                    <span className="metric">
-                      <strong>{Number(snapshot.summary.jumpCount ?? 0)}</strong>
-                      Jumps
-                    </span>
-                    <span className="metric">
-                      <strong>{Number(snapshot.summary.jumperCount ?? 0)}</strong>
-                      Jumpers
-                    </span>
-                    <span className="metric">
-                      <strong>{Number(snapshot.summary.effectCount ?? 0)}</strong>
-                      Effects
-                    </span>
-                  </div>
+                  {simpleMode ? (
+                    <p>
+                      {Number(snapshot.summary.jumpCount ?? 0)} jumps, {Number(snapshot.summary.jumperCount ?? 0)} jumpers, {Number(snapshot.summary.effectCount ?? 0)} effects.
+                    </p>
+                  ) : (
+                    <div className="inline-meta">
+                      <span className="metric">
+                        <strong>{Number(snapshot.summary.jumpCount ?? 0)}</strong>
+                        Jumps
+                      </span>
+                      <span className="metric">
+                        <strong>{Number(snapshot.summary.jumperCount ?? 0)}</strong>
+                        Jumpers
+                      </span>
+                      <span className="metric">
+                        <strong>{Number(snapshot.summary.effectCount ?? 0)}</strong>
+                        Effects
+                      </span>
+                    </div>
+                  )}
                   <div className="entity-actions">
                     <button className="button button--secondary" type="button" onClick={() => void handleRestoreSnapshot(snapshot.id)}>
                       Restore Into New Branch

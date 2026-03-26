@@ -1,15 +1,21 @@
 import { Link } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { WorkspaceModuleHeader } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function TimelinePage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
 
   return (
     <div className="stack">
       <WorkspaceModuleHeader
         title="Timeline"
-        description="Ordered jump sequence with branch forks, snapshot markers, and quick links back into editing modules."
+        description={
+          simpleMode
+            ? 'A calmer read-through of the jump order, with extra history tucked behind Optional when you want it.'
+            : 'Ordered jump sequence with branch forks, snapshot markers, and quick links back into editing modules.'
+        }
         badge={`${workspace.jumps.length} jumps`}
       />
 
@@ -39,59 +45,126 @@ export function TimelinePage() {
                   </span>
                 </div>
 
-                <div className="inline-meta">
-                  <span className="metric">
-                    <strong>{participations.length}</strong>
-                    Participations
-                  </span>
-                  <span className="metric">
-                    <strong>{forkedBranches.length}</strong>
-                    Forked branches
-                  </span>
-                  <span className="metric">
-                    <strong>{snapshots.length}</strong>
-                    Snapshots
-                  </span>
-                  <span className="metric">
-                    <strong>{jumpNotes.length}</strong>
-                    Jump notes
-                  </span>
-                </div>
-
-                {forkedBranches.length > 0 ? (
-                  <div className="stack stack--compact">
-                    <h4>Branch markers</h4>
-                    <ul className="list">
-                      {forkedBranches.map((branch) => (
-                        <li key={branch.id}>
-                          <strong>{branch.title}</strong> forked here
-                        </li>
-                      ))}
-                    </ul>
+                {simpleMode ? (
+                  <p>
+                    {participations.length} participations, {forkedBranches.length + snapshots.length} history markers, and {jumpNotes.length} jump notes.
+                  </p>
+                ) : (
+                  <div className="inline-meta">
+                    <span className="metric">
+                      <strong>{participations.length}</strong>
+                      Participations
+                    </span>
+                    <span className="metric">
+                      <strong>{forkedBranches.length}</strong>
+                      Forked branches
+                    </span>
+                    <span className="metric">
+                      <strong>{snapshots.length}</strong>
+                      Snapshots
+                    </span>
+                    <span className="metric">
+                      <strong>{jumpNotes.length}</strong>
+                      Jump notes
+                    </span>
                   </div>
-                ) : null}
+                )}
 
-                {snapshots.length > 0 ? (
-                  <div className="stack stack--compact">
-                    <h4>Snapshot markers</h4>
-                    <ul className="list">
-                      {snapshots.map((snapshot) => (
-                        <li key={snapshot.id}>
-                          <strong>{snapshot.title}</strong>
-                        </li>
-                      ))}
-                    </ul>
+                {simpleMode ? (
+                  forkedBranches.length > 0 || snapshots.length > 0 ? (
+                    <details className="details-panel">
+                      <summary className="details-panel__summary">
+                        <span>Markers and history</span>
+                        <span className="pill">Optional</span>
+                      </summary>
+                      <div className="details-panel__body stack stack--compact">
+                        {forkedBranches.length > 0 ? (
+                          <div className="stack stack--compact">
+                            <h4>Branch markers</h4>
+                            <ul className="list">
+                              {forkedBranches.map((branch) => (
+                                <li key={branch.id}>
+                                  <strong>{branch.title}</strong> forked here
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+
+                        {snapshots.length > 0 ? (
+                          <div className="stack stack--compact">
+                            <h4>Snapshot markers</h4>
+                            <ul className="list">
+                              {snapshots.map((snapshot) => (
+                                <li key={snapshot.id}>
+                                  <strong>{snapshot.title}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : null
+                ) : (
+                  <>
+                    {forkedBranches.length > 0 ? (
+                      <div className="stack stack--compact">
+                        <h4>Branch markers</h4>
+                        <ul className="list">
+                          {forkedBranches.map((branch) => (
+                            <li key={branch.id}>
+                              <strong>{branch.title}</strong> forked here
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {snapshots.length > 0 ? (
+                      <div className="stack stack--compact">
+                        <h4>Snapshot markers</h4>
+                        <ul className="list">
+                          {snapshots.map((snapshot) => (
+                            <li key={snapshot.id}>
+                              <strong>{snapshot.title}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+
+                {simpleMode ? (
+                  <>
+                    <div className="actions">
+                      <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}`}>
+                        Jump Detail
+                      </Link>
+                    </div>
+                    <details className="details-panel">
+                      <summary className="details-panel__summary">
+                        <span>Related pages</span>
+                        <span className="pill">Optional</span>
+                      </summary>
+                      <div className="details-panel__body actions">
+                        <Link className="button button--secondary" to={`/chains/${chainId}/participation/${jump.id}`}>
+                          Participation
+                        </Link>
+                      </div>
+                    </details>
+                  </>
+                ) : (
+                  <div className="actions">
+                    <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}`}>
+                      Jump Detail
+                    </Link>
+                    <Link className="button button--secondary" to={`/chains/${chainId}/participation/${jump.id}`}>
+                      Participation
+                    </Link>
                   </div>
-                ) : null}
-
-                <div className="actions">
-                  <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}`}>
-                    Jump Detail
-                  </Link>
-                  <Link className="button button--secondary" to={`/chains/${chainId}/participation/${jump.id}`}>
-                    Participation
-                  </Link>
-                </div>
+                )}
               </article>
             );
           })}

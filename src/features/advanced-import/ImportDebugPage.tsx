@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../app/store';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { prepareChainMakerV2ImportSession } from '../../domain/import/chainmakerV2';
 import { detectImportSource } from '../../domain/import/sourceDetection';
 import { listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
@@ -47,6 +48,7 @@ function PreviewPanel(props: { title: string; items: string[]; emptyMessage: str
 }
 
 export function ImportDebugPage() {
+  const { simpleMode } = useUiPreferences();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { importSession, setImportSession } = useAppStore();
@@ -196,6 +198,12 @@ export function ImportDebugPage() {
   const hiddenSourceNoteCount = Math.max(0, preservedSourceNotes.length - visibleSourceNotes.length);
   const visibleCleanerChanges = importSession?.cleaning.changes.slice(0, 12) ?? [];
   const hiddenCleanerChangeCount = Math.max(0, cleanerChangeCount - visibleCleanerChanges.length);
+  const commitButtonLabel =
+    importMode === 'new-chain'
+      ? 'Import as new chain'
+      : importMode === 'new-jumpers'
+        ? 'Stage as jumper branch'
+        : 'Import as branch';
 
   return (
     <div className="stack import-review">
@@ -203,9 +211,9 @@ export function ImportDebugPage() {
         <span className="pill">ChainMaker v2 adapter</span>
         <h2>Detect, normalize, review, then commit</h2>
         <p>
-          This screen is the importer foundation layer. It runs a real JSON payload through source detection, DTO
-          validation, normalized mapping, unresolved-field preservation, and native bundle generation before anything
-          touches IndexedDB.
+          {simpleMode
+            ? 'Load a ChainMaker export, review the important checks, then import it safely.'
+            : 'This screen is the importer foundation layer. It runs a real JSON payload through source detection, DTO validation, normalized mapping, unresolved-field preservation, and native bundle generation before anything touches IndexedDB.'}
         </p>
         <div className="actions">
           <button className="button" type="button" onClick={() => fileInputRef.current?.click()}>
@@ -242,14 +250,30 @@ export function ImportDebugPage() {
         />
       </section>
 
-      <section className="guidance-strip">
-        <strong>Where imported perks and items end up</strong>
-        <p>
-          After import, open a jump&apos;s Participation page. ChainMaker perk and item selections are already stored on
-          each jumper&apos;s participation record under purchases, and the editor groups them into perks, items, and other
-          purchases instead of hiding them behind raw JSON.
-        </p>
-      </section>
+      {simpleMode ? (
+        <details className="details-panel">
+          <summary className="details-panel__summary">
+            <span>Where imported perks and items go</span>
+            <span className="pill">Help</span>
+          </summary>
+          <div className="details-panel__body">
+            <p>
+              After import, open a jump&apos;s Participation page. ChainMaker perk and item selections are already stored on
+              each jumper&apos;s participation record under purchases, and the editor groups them into perks, items, and other
+              purchases instead of hiding them behind raw JSON.
+            </p>
+          </div>
+        </details>
+      ) : (
+        <section className="guidance-strip">
+          <strong>Where imported perks and items end up</strong>
+          <p>
+            After import, open a jump&apos;s Participation page. ChainMaker perk and item selections are already stored on
+            each jumper&apos;s participation record under purchases, and the editor groups them into perks, items, and other
+            purchases instead of hiding them behind raw JSON.
+          </p>
+        </section>
+      )}
 
       {statusMessage ? <div className="status status--success">{statusMessage}</div> : null}
       {errorMessage ? <div className="status status--error">{errorMessage}</div> : null}
@@ -275,10 +299,6 @@ export function ImportDebugPage() {
                 Chain name
               </div>
               <div className="metric">
-                <strong>{importSession.sourceDetection.sourceVersion}</strong>
-                Detected version
-              </div>
-              <div className="metric">
                 <strong>{importSession.normalized.summary.jumperCount}</strong>
                 Jumpers
               </div>
@@ -287,27 +307,51 @@ export function ImportDebugPage() {
                 Jumps
               </div>
               <div className="metric">
-                <strong>{importSession.normalized.summary.chainDrawbackCount}</strong>
-                Chain drawbacks
+                <strong>{importSession.normalized.warnings.length + actionableMappings.length}</strong>
+                Things to review
               </div>
-              <div className="metric">
-                <strong>{importSession.normalized.summary.altformCount}</strong>
-                Altforms
-              </div>
-              <div className="metric">
-                <strong>{importSession.normalized.summary.participationCount}</strong>
-                Participations
-              </div>
-              <div className="metric">
-                <strong>{purchaseCatalogCount}</strong>
-                Preserved purchase catalog entries
-              </div>
-              <div className="metric">
-                <strong>{cleanerChangeCount}</strong>
-                Cleaner adjustments
-              </div>
+              {simpleMode ? null : (
+                <>
+                  <div className="metric">
+                    <strong>{importSession.sourceDetection.sourceVersion}</strong>
+                    Detected version
+                  </div>
+                  <div className="metric">
+                    <strong>{importSession.normalized.summary.chainDrawbackCount}</strong>
+                    Chain drawbacks
+                  </div>
+                  <div className="metric">
+                    <strong>{importSession.normalized.summary.altformCount}</strong>
+                    Altforms
+                  </div>
+                  <div className="metric">
+                    <strong>{importSession.normalized.summary.participationCount}</strong>
+                    Participations
+                  </div>
+                  <div className="metric">
+                    <strong>{purchaseCatalogCount}</strong>
+                    Preserved purchase catalog entries
+                  </div>
+                  <div className="metric">
+                    <strong>{cleanerChangeCount}</strong>
+                    Cleaner adjustments
+                  </div>
+                </>
+              )}
             </div>
-            <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
+            {simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>Why this file was recognized</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body">
+                  <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
+                </div>
+              </details>
+            ) : (
+              <p>{summarizeReasons(importSession.sourceDetection.reasons)}</p>
+            )}
             <div className="section-grid section-grid--two">
               <section className="section-surface stack stack--compact">
                 <div className="editor-section__header">
@@ -362,43 +406,175 @@ export function ImportDebugPage() {
                   </p>
                 )}
               </section>
-              <PreviewPanel
-                title="Jumpers"
-                items={jumperNames}
-                emptyMessage="No jumpers were found in the current import session."
-              />
-              <PreviewPanel
-                title="Jumps"
-                items={jumpTitles}
-                emptyMessage="No jumps were found in the current import session."
-              />
-              <PreviewPanel
-                title="Chain drawbacks and effects"
-                items={effectTitles}
-                emptyMessage="No chain-scoped drawbacks or effects were created from this source."
-              />
-              <PreviewPanel
-                title="Preserved source blocks"
-                items={preservedTopLevelBlocks}
-                emptyMessage="Everything mapped into the current native contract."
-              />
-              <PreviewPanel
-                title="Cleaner touched fields"
-                items={cleanerTouchedPaths}
-                emptyMessage="No source cleanup was required before validation."
-              />
+              {simpleMode ? (
+                <details className="details-panel">
+                  <summary className="details-panel__summary">
+                    <span>Imported content overview</span>
+                    <span className="pill">Reference</span>
+                  </summary>
+                  <div className="details-panel__body section-grid section-grid--two">
+                    <PreviewPanel
+                      title="Jumpers"
+                      items={jumperNames}
+                      emptyMessage="No jumpers were found in the current import session."
+                      previewLimit={5}
+                    />
+                    <PreviewPanel
+                      title="Jumps"
+                      items={jumpTitles}
+                      emptyMessage="No jumps were found in the current import session."
+                      previewLimit={5}
+                    />
+                    <PreviewPanel
+                      title="Chain drawbacks and effects"
+                      items={effectTitles}
+                      emptyMessage="No chain-scoped drawbacks or effects were created from this source."
+                      previewLimit={5}
+                    />
+                    <PreviewPanel
+                      title="Preserved source blocks"
+                      items={preservedTopLevelBlocks}
+                      emptyMessage="Everything mapped into the current native contract."
+                      previewLimit={5}
+                    />
+                    <PreviewPanel
+                      title="Cleaner touched fields"
+                      items={cleanerTouchedPaths}
+                      emptyMessage="No source cleanup was required before validation."
+                      previewLimit={5}
+                    />
+                  </div>
+                </details>
+              ) : (
+                <>
+                  <PreviewPanel
+                    title="Jumpers"
+                    items={jumperNames}
+                    emptyMessage="No jumpers were found in the current import session."
+                  />
+                  <PreviewPanel
+                    title="Jumps"
+                    items={jumpTitles}
+                    emptyMessage="No jumps were found in the current import session."
+                  />
+                  <PreviewPanel
+                    title="Chain drawbacks and effects"
+                    items={effectTitles}
+                    emptyMessage="No chain-scoped drawbacks or effects were created from this source."
+                  />
+                  <PreviewPanel
+                    title="Preserved source blocks"
+                    items={preservedTopLevelBlocks}
+                    emptyMessage="Everything mapped into the current native contract."
+                  />
+                  <PreviewPanel
+                    title="Cleaner touched fields"
+                    items={cleanerTouchedPaths}
+                    emptyMessage="No source cleanup was required before validation."
+                  />
+                </>
+              )}
             </div>
             <div className="actions">
               <button className="button" type="button" onClick={() => void handleImportAsNewChain()} disabled={isSaving}>
-                Import As New Chain
+                {commitButtonLabel}
               </button>
             </div>
           </section>
 
-          <section className="section-grid section-grid--two">
-            <article className="section-surface stack">
-              <div className="editor-section__header">
-                <h3>Cleaner Adjustments</h3>
+          {simpleMode ? (
+            <details className="details-panel">
+              <summary className="details-panel__summary">
+                <span>Import checks</span>
+                <span className="pill">{importSession.normalized.warnings.length + actionableMappings.length}</span>
+              </summary>
+              <div className="details-panel__body section-grid section-grid--two">
+                <article className="section-surface stack">
+                  <div className="editor-section__header">
+                    <h3>Cleaner Adjustments</h3>
+                    <span className="pill">{cleanerChangeCount}</span>
+                  </div>
+                  {cleanerChangeCount === 0 ? (
+                    <p>No cleanup was required for this source payload.</p>
+                  ) : (
+                    <ul className="list">
+                      {visibleCleanerChanges.map((change) => (
+                        <li key={change.path}>
+                          <strong>{change.path}</strong>: {change.reason}
+                        </li>
+                      ))}
+                      {hiddenCleanerChangeCount > 0 ? (
+                        <li>+{hiddenCleanerChangeCount} more cleaner adjustments were applied before validation.</li>
+                      ) : null}
+                    </ul>
+                  )}
+                </article>
+
+                <article className="section-surface stack">
+                  <div className="editor-section__header">
+                    <h3>Warnings</h3>
+                    <span className="pill">{importSession.normalized.warnings.length}</span>
+                  </div>
+                  {importSession.normalized.warnings.length === 0 ? (
+                    <p>No warnings for the current sample.</p>
+                  ) : (
+                    <ul className="list">
+                      {visibleWarnings.map((warning) => (
+                        <li key={`${warning.code}-${warning.path ?? 'root'}`}>
+                          <strong>{warning.code}</strong>: {warning.message}
+                        </li>
+                      ))}
+                      {hiddenWarningCount > 0 ? <li>+{hiddenWarningCount} more warnings in the full import report.</li> : null}
+                    </ul>
+                  )}
+                </article>
+
+                <article className="section-surface stack">
+                  <div className="editor-section__header">
+                    <h3>Mapping Warnings</h3>
+                    <span className="pill">{actionableMappings.length}</span>
+                  </div>
+                  {actionableMappings.length === 0 ? (
+                    <p>Everything mapped cleanly for this file.</p>
+                  ) : (
+                    <ul className="list">
+                      {visibleMappings.map((mapping) => (
+                        <li key={mapping.path}>
+                          <strong>{mapping.path}</strong>: {mapping.reason}
+                        </li>
+                      ))}
+                      {hiddenMappingCount > 0 ? <li>+{hiddenMappingCount} more mapping warnings in the full import report.</li> : null}
+                    </ul>
+                  )}
+                </article>
+
+                <article className="section-surface stack">
+                  <div className="editor-section__header">
+                    <h3>Preserved Source Notes</h3>
+                    <span className="pill">{preservedSourceNotes.length}</span>
+                  </div>
+                  {preservedSourceNotes.length === 0 ? (
+                    <p>No informational preservation notes were recorded for this source.</p>
+                  ) : (
+                    <ul className="list">
+                      {visibleSourceNotes.map((mapping) => (
+                        <li key={mapping.path}>
+                          <strong>{mapping.path}</strong>: {mapping.reason}
+                        </li>
+                      ))}
+                      {hiddenSourceNoteCount > 0 ? (
+                        <li>+{hiddenSourceNoteCount} more preserved-source notes in the full import report.</li>
+                      ) : null}
+                    </ul>
+                  )}
+                </article>
+              </div>
+            </details>
+          ) : (
+            <section className="section-grid section-grid--two">
+              <article className="section-surface stack">
+                <div className="editor-section__header">
+                  <h3>Cleaner Adjustments</h3>
                 <span className="pill">{cleanerChangeCount}</span>
               </div>
               {cleanerChangeCount === 0 ? (
@@ -475,7 +651,8 @@ export function ImportDebugPage() {
                 </ul>
               )}
             </article>
-          </section>
+            </section>
+          )}
         </>
       )}
     </div>

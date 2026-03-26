@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { companionStatuses } from '../../domain/common';
 import type { Companion } from '../../domain/jumper/types';
 import { db } from '../../db/database';
@@ -39,7 +40,16 @@ function getCompanionFilterSummary(
   return parts.join(' | ');
 }
 
+function getCompanionSimpleSummary(companion: Companion, parentName: string | null) {
+  if (companion.status === 'inactive' || companion.status === 'retired') {
+    return parentName ? `${companion.status} | ${parentName}` : companion.status;
+  }
+
+  return parentName ? `Attached to ${parentName}` : 'Independent companion';
+}
+
 export function CompanionsPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<CompanionFilter>('all');
@@ -140,7 +150,11 @@ export function CompanionsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Companions"
-        description="Roster, parent-jumper assignment, and continuity basics for branch-scoped companion records."
+        description={
+          simpleMode
+            ? 'Pick a companion, set the relationship basics, and use Optional only for continuity or raw import cleanup.'
+            : 'Roster, parent-jumper assignment, and continuity basics for branch-scoped companion records.'
+        }
         badge={`${workspace.companions.length} total`}
         actions={
           <button className="button" type="button" onClick={() => void handleAddCompanion()}>
@@ -169,16 +183,37 @@ export function CompanionsPage() {
               <h3>Roster</h3>
               <span className="pill">{filteredCompanions.length} shown</span>
             </div>
+            {simpleMode ? <p>Choose a companion, then start with name, role, and whether they are attached or independent.</p> : null}
 
-            <label className="field">
-              <span>Filter</span>
-              <select value={filter} onChange={(event) => setFilter(event.target.value as CompanionFilter)}>
-                <option value="all">all</option>
-                <option value="attached">attached</option>
-                <option value="independent">independent</option>
-                <option value="inactive">inactive</option>
-              </select>
-            </label>
+            {simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>More roster filters</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body">
+                  <label className="field">
+                    <span>Filter</span>
+                    <select value={filter} onChange={(event) => setFilter(event.target.value as CompanionFilter)}>
+                      <option value="all">all</option>
+                      <option value="attached">attached</option>
+                      <option value="independent">independent</option>
+                      <option value="inactive">inactive</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
+            ) : (
+              <label className="field">
+                <span>Filter</span>
+                <select value={filter} onChange={(event) => setFilter(event.target.value as CompanionFilter)}>
+                  <option value="all">all</option>
+                  <option value="attached">attached</option>
+                  <option value="independent">independent</option>
+                  <option value="inactive">inactive</option>
+                </select>
+              </label>
+            )}
 
             <label className="field">
               <span>Search roster</span>
@@ -222,7 +257,14 @@ export function CompanionsPage() {
                       <SearchHighlight text={companion.name} query={searchQuery} />
                     </strong>
                     <span>
-                      <SearchHighlight text={getCompanionFilterSummary(companion, parentName)} query={searchQuery} />
+                      <SearchHighlight
+                        text={
+                          simpleMode
+                            ? getCompanionSimpleSummary(companion, parentName)
+                            : getCompanionFilterSummary(companion, parentName)
+                        }
+                        query={searchQuery}
+                      />
                     </span>
                   </button>
                 );
@@ -238,6 +280,12 @@ export function CompanionsPage() {
                     <SearchHighlight text={draftCompanion.name} query={searchQuery} />
                   </h3>
                   <div className="actions">
+                    <Link
+                      className="button button--secondary"
+                      to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
+                    >
+                      Companion Notes
+                    </Link>
                     {draftCompanion.parentJumperId ? (
                       <Link
                         className="button button--secondary"
@@ -246,23 +294,40 @@ export function CompanionsPage() {
                         Open Parent Jumper
                       </Link>
                     ) : null}
-                    <Link
-                      className="button button--secondary"
-                      to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
-                    >
-                      Companion Notes
-                    </Link>
-                    <Link
-                      className="button button--secondary"
-                      to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
-                    >
-                      Companion Effects
-                    </Link>
-                    <button className="button button--secondary" type="button" onClick={() => void handleDeleteCompanion()}>
-                      Delete
-                    </button>
+                    {simpleMode ? (
+                      <details className="details-panel">
+                        <summary className="details-panel__summary">
+                          <span>More actions</span>
+                          <span className="pill">Optional</span>
+                        </summary>
+                        <div className="details-panel__body actions">
+                          <Link
+                            className="button button--secondary"
+                            to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
+                          >
+                            Companion Effects
+                          </Link>
+                          <button className="button button--secondary" type="button" onClick={() => void handleDeleteCompanion()}>
+                            Delete
+                          </button>
+                        </div>
+                      </details>
+                    ) : (
+                      <>
+                        <Link
+                          className="button button--secondary"
+                          to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
+                        >
+                          Companion Effects
+                        </Link>
+                        <button className="button button--secondary" type="button" onClick={() => void handleDeleteCompanion()}>
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
+                {simpleMode ? <p>Start with the relationship basics here. Optional holds origin and raw import details.</p> : null}
 
                 <section className="stack stack--compact">
                   <h4>Simple</h4>
@@ -331,66 +396,133 @@ export function CompanionsPage() {
                   </div>
                 </section>
 
-                <section className="stack stack--compact">
-                  <h4>Continuity</h4>
-                  <div className="field-grid field-grid--two">
-                    <label className="field">
-                      <span>Origin jump</span>
-                      <select
-                        value={draftCompanion.originJumpId ?? ''}
-                        onChange={(event) =>
-                          companionAutosave.updateDraft({
-                            ...draftCompanion,
-                            originJumpId: event.target.value || null,
-                          })
-                        }
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Continuity and advanced details</span>
+                      <span className="pill">Optional</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Origin jump</span>
+                          <select
+                            value={draftCompanion.originJumpId ?? ''}
+                            onChange={(event) =>
+                              companionAutosave.updateDraft({
+                                ...draftCompanion,
+                                originJumpId: event.target.value || null,
+                              })
+                            }
+                          >
+                            <option value="">Unknown</option>
+                            {workspace.jumps.map((jump) => (
+                              <option key={jump.id} value={jump.id}>
+                                {jump.orderIndex + 1}. {jump.title}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Branch</span>
+                          <input value={workspace.activeBranch.title} readOnly />
+                        </label>
+                      </div>
+
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Companion id</span>
+                          <input value={draftCompanion.id} readOnly />
+                        </label>
+                        <label className="field">
+                          <span>Updated</span>
+                          <input value={new Date(draftCompanion.updatedAt).toLocaleString()} readOnly />
+                        </label>
+                      </div>
+
+                      <AdvancedJsonDetails
+                        summary="Advanced JSON"
+                        badge="import metadata"
+                        hint="Companion import leftovers stay hidden here unless you actually need the raw structure."
                       >
-                        <option value="">Unknown</option>
-                        {workspace.jumps.map((jump) => (
-                          <option key={jump.id} value={jump.id}>
-                            {jump.orderIndex + 1}. {jump.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Branch</span>
-                      <input value={workspace.activeBranch.title} readOnly />
-                    </label>
-                  </div>
-                </section>
+                        <JsonEditorField
+                          label="Import Source Metadata"
+                          value={draftCompanion.importSourceMetadata}
+                          rows={10}
+                          onValidChange={(value) =>
+                            companionAutosave.updateDraft({
+                              ...draftCompanion,
+                              importSourceMetadata: value as Companion['importSourceMetadata'],
+                            })
+                          }
+                        />
+                      </AdvancedJsonDetails>
+                    </div>
+                  </details>
+                ) : (
+                  <>
+                    <section className="stack stack--compact">
+                      <h4>Continuity</h4>
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Origin jump</span>
+                          <select
+                            value={draftCompanion.originJumpId ?? ''}
+                            onChange={(event) =>
+                              companionAutosave.updateDraft({
+                                ...draftCompanion,
+                                originJumpId: event.target.value || null,
+                              })
+                            }
+                          >
+                            <option value="">Unknown</option>
+                            {workspace.jumps.map((jump) => (
+                              <option key={jump.id} value={jump.id}>
+                                {jump.orderIndex + 1}. {jump.title}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Branch</span>
+                          <input value={workspace.activeBranch.title} readOnly />
+                        </label>
+                      </div>
+                    </section>
 
-                <section className="stack stack--compact">
-                  <h4>Advanced</h4>
-                  <div className="field-grid field-grid--two">
-                    <label className="field">
-                      <span>Companion id</span>
-                      <input value={draftCompanion.id} readOnly />
-                    </label>
-                    <label className="field">
-                      <span>Updated</span>
-                      <input value={new Date(draftCompanion.updatedAt).toLocaleString()} readOnly />
-                    </label>
-                  </div>
+                    <section className="stack stack--compact">
+                      <h4>Advanced</h4>
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Companion id</span>
+                          <input value={draftCompanion.id} readOnly />
+                        </label>
+                        <label className="field">
+                          <span>Updated</span>
+                          <input value={new Date(draftCompanion.updatedAt).toLocaleString()} readOnly />
+                        </label>
+                      </div>
 
-                  <AdvancedJsonDetails
-                    summary="Advanced JSON"
-                    badge="import metadata"
-                    hint="Companion import leftovers stay hidden here unless you actually need the raw structure."
-                  >
-                    <JsonEditorField
-                      label="Import Source Metadata"
-                      value={draftCompanion.importSourceMetadata}
-                      rows={10}
-                      onValidChange={(value) =>
-                        companionAutosave.updateDraft({
-                          ...draftCompanion,
-                          importSourceMetadata: value as Companion['importSourceMetadata'],
-                        })
-                      }
-                    />
-                  </AdvancedJsonDetails>
-                </section>
+                      <AdvancedJsonDetails
+                        summary="Advanced JSON"
+                        badge="import metadata"
+                        hint="Companion import leftovers stay hidden here unless you actually need the raw structure."
+                      >
+                        <JsonEditorField
+                          label="Import Source Metadata"
+                          value={draftCompanion.importSourceMetadata}
+                          rows={10}
+                          onValidChange={(value) =>
+                            companionAutosave.updateDraft({
+                              ...draftCompanion,
+                              importSourceMetadata: value as Companion['importSourceMetadata'],
+                            })
+                          }
+                        />
+                      </AdvancedJsonDetails>
+                    </section>
+                  </>
+                )}
               </>
             ) : (
               <p>No companion matches the current filter.</p>

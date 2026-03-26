@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { db } from '../../db/database';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
@@ -17,6 +18,7 @@ import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpersPage() {
+  const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
@@ -76,7 +78,11 @@ export function JumpersPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Jumpers"
-        description="Simple identity editing up front, source metadata and deep structure in advanced sections."
+        description={
+          simpleMode
+            ? 'Pick a jumper, fill in the basics, and open Optional only when you want the deeper profile.'
+            : 'Simple identity editing up front, source metadata and deep structure in advanced sections.'
+        }
         badge={`${workspace.jumpers.length} total`}
         actions={
           <button className="button" type="button" onClick={() => void handleAddJumper()}>
@@ -105,6 +111,7 @@ export function JumpersPage() {
               <h3>Roster</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
+            {simpleMode ? <p>Choose who you want to work on, then start with name, age, and notes.</p> : null}
             <label className="field">
               <span>Search roster</span>
               <input
@@ -143,7 +150,18 @@ export function JumpersPage() {
                     <SearchHighlight text={jumper.name} query={searchQuery} />
                   </strong>
                   <span>
-                    <SearchHighlight text={jumper.isPrimary ? 'Primary jumper' : 'Secondary jumper'} query={searchQuery} />
+                    <SearchHighlight
+                      text={
+                        simpleMode
+                          ? jumper.isPrimary
+                            ? 'Primary jumper'
+                            : jumper.gender.trim() || 'Jumper record'
+                          : jumper.isPrimary
+                            ? 'Primary jumper'
+                            : 'Secondary jumper'
+                      }
+                      query={searchQuery}
+                    />
                   </span>
                 </button>
               ))}
@@ -161,61 +179,22 @@ export function JumpersPage() {
                     Open Iconic
                   </Link>
                 </div>
+                {simpleMode ? <p>Start with identity and notes. Optional holds personality, background, and import cleanup.</p> : null}
 
                 <section className="stack stack--compact">
                   <h4>Simple</h4>
-                  <div className="field-grid field-grid--two">
-                    <label className="field">
-                      <span>Name</span>
-                      <input
-                        value={draftJumper.name}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            name: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Gender</span>
-                      <input
-                        value={draftJumper.gender}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            gender: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Original age</span>
-                      <input
-                        type="number"
-                        value={draftJumper.originalAge ?? ''}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            originalAge: event.target.value === '' ? null : Number(event.target.value),
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field field--checkbox">
-                      <input
-                        type="checkbox"
-                        checked={draftJumper.isPrimary}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            isPrimary: event.target.checked,
-                          })
-                        }
-                      />
-                      <span>Primary jumper</span>
-                    </label>
-                  </div>
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={draftJumper.name}
+                      onChange={(event) =>
+                        jumperAutosave.updateDraft({
+                          ...draftJumper,
+                          name: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
 
                   <label className="field">
                     <span>Notes</span>
@@ -230,146 +209,384 @@ export function JumpersPage() {
                       }
                     />
                   </label>
+
+                  {simpleMode ? (
+                    <details className="details-panel">
+                      <summary className="details-panel__summary">
+                        <span>Identity details</span>
+                        <span className="pill">Optional</span>
+                      </summary>
+                      <div className="details-panel__body">
+                        <div className="field-grid field-grid--two">
+                          <label className="field">
+                            <span>Gender</span>
+                            <input
+                              value={draftJumper.gender}
+                              onChange={(event) =>
+                                jumperAutosave.updateDraft({
+                                  ...draftJumper,
+                                  gender: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Original age</span>
+                            <input
+                              type="number"
+                              value={draftJumper.originalAge ?? ''}
+                              onChange={(event) =>
+                                jumperAutosave.updateDraft({
+                                  ...draftJumper,
+                                  originalAge: event.target.value === '' ? null : Number(event.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="field field--checkbox">
+                            <input
+                              type="checkbox"
+                              checked={draftJumper.isPrimary}
+                              onChange={(event) =>
+                                jumperAutosave.updateDraft({
+                                  ...draftJumper,
+                                  isPrimary: event.target.checked,
+                                })
+                              }
+                            />
+                            <span>Primary jumper</span>
+                          </label>
+                        </div>
+                      </div>
+                    </details>
+                  ) : (
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Gender</span>
+                        <input
+                          value={draftJumper.gender}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              gender: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Original age</span>
+                        <input
+                          type="number"
+                          value={draftJumper.originalAge ?? ''}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              originalAge: event.target.value === '' ? null : Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field field--checkbox">
+                        <input
+                          type="checkbox"
+                          checked={draftJumper.isPrimary}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              isPrimary: event.target.checked,
+                            })
+                          }
+                        />
+                        <span>Primary jumper</span>
+                      </label>
+                    </div>
+                  )}
                 </section>
 
-                <section className="stack stack--compact">
-                  <h4>Advanced</h4>
-                  <div className="field-grid field-grid--two">
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Background and advanced details</span>
+                      <span className="pill">Optional</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <div className="field-grid field-grid--two">
+                        <label className="field">
+                          <span>Personality</span>
+                          <textarea
+                            rows={4}
+                            value={draftJumper.personality.personality}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                personality: {
+                                  ...draftJumper.personality,
+                                  personality: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Motivation</span>
+                          <textarea
+                            rows={4}
+                            value={draftJumper.personality.motivation}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                personality: {
+                                  ...draftJumper.personality,
+                                  motivation: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Likes</span>
+                          <textarea
+                            rows={3}
+                            value={draftJumper.personality.likes}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                personality: {
+                                  ...draftJumper.personality,
+                                  likes: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Dislikes</span>
+                          <textarea
+                            rows={3}
+                            value={draftJumper.personality.dislikes}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                personality: {
+                                  ...draftJumper.personality,
+                                  dislikes: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Quirks</span>
+                          <textarea
+                            rows={3}
+                            value={draftJumper.personality.quirks}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                personality: {
+                                  ...draftJumper.personality,
+                                  quirks: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Background summary</span>
+                          <textarea
+                            rows={3}
+                            value={draftJumper.background.summary}
+                            onChange={(event) =>
+                              jumperAutosave.updateDraft({
+                                ...draftJumper,
+                                background: {
+                                  ...draftJumper.background,
+                                  summary: event.target.value,
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+
+                      <label className="field">
+                        <span>Background description</span>
+                        <textarea
+                          rows={6}
+                          value={draftJumper.background.description}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              background: {
+                                ...draftJumper.background,
+                                description: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+
+                      <AdvancedJsonDetails
+                        summary="Advanced JSON"
+                        badge="import metadata"
+                        hint="Raw preserved import fields are available here if you need them for cleanup."
+                      >
+                        <JsonEditorField
+                          label="Import source metadata"
+                          value={draftJumper.importSourceMetadata}
+                          onValidChange={(value) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              importSourceMetadata:
+                                typeof value === 'object' && value !== null && !Array.isArray(value)
+                                  ? (value as Record<string, unknown>)
+                                  : {},
+                            })
+                          }
+                        />
+                      </AdvancedJsonDetails>
+                    </div>
+                  </details>
+                ) : (
+                  <section className="stack stack--compact">
+                    <h4>Advanced</h4>
+                    <div className="field-grid field-grid--two">
+                      <label className="field">
+                        <span>Personality</span>
+                        <textarea
+                          rows={4}
+                          value={draftJumper.personality.personality}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              personality: {
+                                ...draftJumper.personality,
+                                personality: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Motivation</span>
+                        <textarea
+                          rows={4}
+                          value={draftJumper.personality.motivation}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              personality: {
+                                ...draftJumper.personality,
+                                motivation: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Likes</span>
+                        <textarea
+                          rows={3}
+                          value={draftJumper.personality.likes}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              personality: {
+                                ...draftJumper.personality,
+                                likes: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Dislikes</span>
+                        <textarea
+                          rows={3}
+                          value={draftJumper.personality.dislikes}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              personality: {
+                                ...draftJumper.personality,
+                                dislikes: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Quirks</span>
+                        <textarea
+                          rows={3}
+                          value={draftJumper.personality.quirks}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              personality: {
+                                ...draftJumper.personality,
+                                quirks: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Background summary</span>
+                        <textarea
+                          rows={3}
+                          value={draftJumper.background.summary}
+                          onChange={(event) =>
+                            jumperAutosave.updateDraft({
+                              ...draftJumper,
+                              background: {
+                                ...draftJumper.background,
+                                summary: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+
                     <label className="field">
-                      <span>Personality</span>
+                      <span>Background description</span>
                       <textarea
-                        rows={4}
-                        value={draftJumper.personality.personality}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            personality: {
-                              ...draftJumper.personality,
-                              personality: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Motivation</span>
-                      <textarea
-                        rows={4}
-                        value={draftJumper.personality.motivation}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            personality: {
-                              ...draftJumper.personality,
-                              motivation: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Likes</span>
-                      <textarea
-                        rows={3}
-                        value={draftJumper.personality.likes}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            personality: {
-                              ...draftJumper.personality,
-                              likes: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Dislikes</span>
-                      <textarea
-                        rows={3}
-                        value={draftJumper.personality.dislikes}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            personality: {
-                              ...draftJumper.personality,
-                              dislikes: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Quirks</span>
-                      <textarea
-                        rows={3}
-                        value={draftJumper.personality.quirks}
-                        onChange={(event) =>
-                          jumperAutosave.updateDraft({
-                            ...draftJumper,
-                            personality: {
-                              ...draftJumper.personality,
-                              quirks: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Background summary</span>
-                      <textarea
-                        rows={3}
-                        value={draftJumper.background.summary}
+                        rows={6}
+                        value={draftJumper.background.description}
                         onChange={(event) =>
                           jumperAutosave.updateDraft({
                             ...draftJumper,
                             background: {
                               ...draftJumper.background,
-                              summary: event.target.value,
+                              description: event.target.value,
                             },
                           })
                         }
                       />
                     </label>
-                  </div>
 
-                  <label className="field">
-                    <span>Background description</span>
-                    <textarea
-                      rows={6}
-                      value={draftJumper.background.description}
-                      onChange={(event) =>
-                        jumperAutosave.updateDraft({
-                          ...draftJumper,
-                          background: {
-                            ...draftJumper.background,
-                            description: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-
-                  <AdvancedJsonDetails
-                    summary="Advanced JSON"
-                    badge="import metadata"
-                    hint="Raw preserved import fields are available here if you need them for cleanup."
-                  >
-                    <JsonEditorField
-                      label="Import source metadata"
-                      value={draftJumper.importSourceMetadata}
-                      onValidChange={(value) =>
-                        jumperAutosave.updateDraft({
-                          ...draftJumper,
-                          importSourceMetadata:
-                            typeof value === 'object' && value !== null && !Array.isArray(value)
-                              ? (value as Record<string, unknown>)
-                              : {},
-                        })
-                      }
-                    />
-                  </AdvancedJsonDetails>
-                </section>
+                    <AdvancedJsonDetails
+                      summary="Advanced JSON"
+                      badge="import metadata"
+                      hint="Raw preserved import fields are available here if you need them for cleanup."
+                    >
+                      <JsonEditorField
+                        label="Import source metadata"
+                        value={draftJumper.importSourceMetadata}
+                        onValidChange={(value) =>
+                          jumperAutosave.updateDraft({
+                            ...draftJumper,
+                            importSourceMetadata:
+                              typeof value === 'object' && value !== null && !Array.isArray(value)
+                                ? (value as Record<string, unknown>)
+                                : {},
+                          })
+                        }
+                      />
+                    </AdvancedJsonDetails>
+                  </section>
+                )}
               </>
             ) : (
               <p>No jumpers match the current search.</p>

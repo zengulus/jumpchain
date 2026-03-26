@@ -501,6 +501,7 @@ export function ChainOverviewPage() {
       to: `/chains/${chainId}/backups`,
     },
   ];
+  const visibleWorkSurfaceCards = simpleMode ? workSurfaceCards.slice(0, 3) : workSurfaceCards;
 
   async function handleBranchChange(branchId: string) {
     try {
@@ -558,32 +559,39 @@ export function ChainOverviewPage() {
             <h3>Setup Snapshot</h3>
             <span className="pill pill--soft">{workspace.branches.length} branches</span>
           </div>
-          <div className="inline-meta">
-            <span className="metric">
-              <strong>{workspace.jumpers.length}</strong>
-              Jumpers
-            </span>
-            <span className="metric">
-              <strong>{workspace.companions.length}</strong>
-              Companions
-            </span>
-            <span className="metric">
-              <strong>{workspace.jumps.length}</strong>
-              Jumps
-            </span>
-            <span className="metric">
-              <strong>{workspace.bodymodProfiles.length}</strong>
-              Iconic Profiles
-            </span>
-            <span className="metric">
-              <strong>{workspace.participations.length}</strong>
-              Participations
-            </span>
-            <span className="metric">
-              <strong>{workspace.snapshots.length}</strong>
-              Snapshots
-            </span>
-          </div>
+          {simpleMode ? (
+            <p>
+              This branch currently has {formatCountLabel(workspace.jumpers.length, 'jumper')},{' '}
+              {formatCountLabel(workspace.jumps.length, 'jump')}, and {formatCountLabel(workspace.snapshots.length, 'snapshot')}.
+            </p>
+          ) : (
+            <div className="inline-meta">
+              <span className="metric">
+                <strong>{workspace.jumpers.length}</strong>
+                Jumpers
+              </span>
+              <span className="metric">
+                <strong>{workspace.companions.length}</strong>
+                Companions
+              </span>
+              <span className="metric">
+                <strong>{workspace.jumps.length}</strong>
+                Jumps
+              </span>
+              <span className="metric">
+                <strong>{workspace.bodymodProfiles.length}</strong>
+                Iconic Profiles
+              </span>
+              <span className="metric">
+                <strong>{workspace.participations.length}</strong>
+                Participations
+              </span>
+              <span className="metric">
+                <strong>{workspace.snapshots.length}</strong>
+                Snapshots
+              </span>
+            </div>
+          )}
           <TooltipFrame
             tooltip={
               !simpleMode
@@ -610,14 +618,18 @@ export function ChainOverviewPage() {
               ) : null}
             </div>
           </TooltipFrame>
-          <p>
-            Native format <strong>{bundle.chain.formatVersion}</strong> | updated {formatTimestamp(bundle.chain.updatedAt)}
-          </p>
-          <p>
-            Narratives: <strong>{bundle.chain.chainSettings.narratives}</strong> | Alt forms:{' '}
-            <strong>{bundle.chain.chainSettings.altForms ? 'enabled' : 'disabled'}</strong> | Bank:{' '}
-            <strong>{bundle.chain.bankSettings.enabled ? 'enabled' : 'disabled'}</strong>
-          </p>
+          {!simpleMode ? (
+            <>
+              <p>
+                Native format <strong>{bundle.chain.formatVersion}</strong> | updated {formatTimestamp(bundle.chain.updatedAt)}
+              </p>
+              <p>
+                Narratives: <strong>{bundle.chain.chainSettings.narratives}</strong> | Alt forms:{' '}
+                <strong>{bundle.chain.chainSettings.altForms ? 'enabled' : 'disabled'}</strong> | Bank:{' '}
+                <strong>{bundle.chain.bankSettings.enabled ? 'enabled' : 'disabled'}</strong>
+              </p>
+            </>
+          ) : null}
         </article>
 
         <article className="card stack">
@@ -745,7 +757,7 @@ export function ChainOverviewPage() {
           <span className="pill">Context aware</span>
         </div>
         <div className="summary-grid">
-          {workSurfaceCards.map((card) => (
+          {visibleWorkSurfaceCards.map((card) => (
             <TooltipFrame key={card.id} tooltip={!simpleMode ? card.hint : undefined}>
               <Link className="selection-list__item" to={card.to}>
                 <strong>{card.title}</strong>

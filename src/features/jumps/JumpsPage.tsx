@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
@@ -19,6 +20,7 @@ import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function JumpsPage() {
+  const { simpleMode } = useUiPreferences();
   const navigate = useNavigate();
   const { jumpId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -112,7 +114,11 @@ export function JumpsPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Jumps"
-        description="Ordered jump records with thin editors for status, type, duration, and participant membership."
+        description={
+          simpleMode
+            ? 'Pick a jump, set the basics first, and open Optional when you want duration, ordering, or participant details.'
+            : 'Ordered jump records with thin editors for status, type, duration, and participant membership.'
+        }
         badge={`${workspace.jumps.length} total`}
         actions={
           <button className="button" type="button" onClick={() => void handleAddJump()}>
@@ -141,6 +147,7 @@ export function JumpsPage() {
               <h3>Ordered jump list</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
+            {simpleMode ? <p>Choose a jump, then start with title, status, and type. Ordering and participants stay tucked below.</p> : null}
             <label className="field">
               <span>Search jumps</span>
               <input
@@ -172,7 +179,16 @@ export function JumpsPage() {
                     {jump.orderIndex + 1}. <SearchHighlight text={jump.title} query={searchQuery} />
                   </strong>
                   <span>
-                    <SearchHighlight text={`${jump.status} | ${jump.jumpType}`} query={searchQuery} />
+                    <SearchHighlight
+                      text={
+                        simpleMode
+                          ? jump.id === workspace.currentJump?.id
+                            ? 'Current jump'
+                            : jump.status
+                          : `${jump.status} | ${jump.jumpType}`
+                      }
+                      query={searchQuery}
+                    />
                   </span>
                 </Link>
               ))}
@@ -187,14 +203,19 @@ export function JumpsPage() {
                     <SearchHighlight text={draftJump.title} query={searchQuery} />
                   </h3>
                   <div className="actions">
-                    <button className="button button--secondary" type="button" onClick={() => void handleMakeCurrentJump()}>
-                      Make Current Jump
-                    </button>
+                    {workspace.currentJump?.id === draftJump.id ? (
+                      <span className="pill">Current jump</span>
+                    ) : (
+                      <button className="button button--secondary" type="button" onClick={() => void handleMakeCurrentJump()}>
+                        Make Current Jump
+                      </button>
+                    )}
                     <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/participation/${draftJump.id}`, { search: searchQuery })}>
                       Open Participation
                     </Link>
                   </div>
                 </div>
+                {simpleMode ? <p>Start with the jump basics here. Optional holds manual ordering, duration, and who is taking part.</p> : null}
 
                 <div className="field-grid field-grid--two">
                   <label className="field">
@@ -206,22 +227,24 @@ export function JumpsPage() {
                           ...draftJump,
                           title: event.target.value,
                         })
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Order index</span>
-                    <input
-                      type="number"
-                      value={draftJump.orderIndex}
-                      onChange={(event) =>
-                        jumpAutosave.updateDraft({
-                          ...draftJump,
-                          orderIndex: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
+                        }
+                      />
+                    </label>
+                  {simpleMode ? null : (
+                    <label className="field">
+                      <span>Order index</span>
+                      <input
+                        type="number"
+                        value={draftJump.orderIndex}
+                        onChange={(event) =>
+                          jumpAutosave.updateDraft({
+                            ...draftJump,
+                            orderIndex: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  )}
                   <label className="field">
                     <span>Status</span>
                     <select
@@ -260,83 +283,180 @@ export function JumpsPage() {
                   </label>
                 </div>
 
-                <section className="stack stack--compact">
-                  <h4>Duration</h4>
-                  <div className="field-grid field-grid--three">
-                    <label className="field">
-                      <span>Years</span>
-                      <input
-                        type="number"
-                        value={draftJump.duration.years}
-                        onChange={(event) =>
-                          jumpAutosave.updateDraft({
-                            ...draftJump,
-                            duration: {
-                              ...draftJump.duration,
-                              years: Number(event.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Months</span>
-                      <input
-                        type="number"
-                        value={draftJump.duration.months}
-                        onChange={(event) =>
-                          jumpAutosave.updateDraft({
-                            ...draftJump,
-                            duration: {
-                              ...draftJump.duration,
-                              months: Number(event.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Days</span>
-                      <input
-                        type="number"
-                        value={draftJump.duration.days}
-                        onChange={(event) =>
-                          jumpAutosave.updateDraft({
-                            ...draftJump,
-                            duration: {
-                              ...draftJump.duration,
-                              days: Number(event.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
-                </section>
+                {simpleMode ? (
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Ordering, duration, and participants</span>
+                      <span className="pill">Optional</span>
+                    </summary>
+                    <div className="details-panel__body stack stack--compact">
+                      <label className="field">
+                        <span>Order index</span>
+                        <input
+                          type="number"
+                          value={draftJump.orderIndex}
+                          onChange={(event) =>
+                            jumpAutosave.updateDraft({
+                              ...draftJump,
+                              orderIndex: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                      <div className="field-grid field-grid--three">
+                        <label className="field">
+                          <span>Years</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.years}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  years: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Months</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.months}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  months: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Days</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.days}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  days: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
 
-                <section className="stack stack--compact">
-                  <h4>Participant Summary</h4>
-                  <div className="chip-grid">
-                    {workspace.jumpers.length === 0 ? (
-                      <p>No jumpers exist yet. Add a jumper first.</p>
-                    ) : (
-                      workspace.jumpers.map((jumper) => {
-                        const checked = draftJump.participantJumperIds.includes(jumper.id);
+                      <div className="chip-grid">
+                        {workspace.jumpers.length === 0 ? (
+                          <p>No jumpers exist yet. Add a jumper first.</p>
+                        ) : (
+                          workspace.jumpers.map((jumper) => {
+                            const checked = draftJump.participantJumperIds.includes(jumper.id);
 
-                        return (
-                          <label className="choice-chip" key={jumper.id}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => void toggleParticipant(jumper.id)}
-                            />
-                            <span>{jumper.name}</span>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
+                            return (
+                              <label className="choice-chip" key={jumper.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => void toggleParticipant(jumper.id)}
+                                />
+                                <span>{jumper.name}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                ) : (
+                  <>
+                    <section className="stack stack--compact">
+                      <h4>Duration</h4>
+                      <div className="field-grid field-grid--three">
+                        <label className="field">
+                          <span>Years</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.years}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  years: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Months</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.months}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  months: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Days</span>
+                          <input
+                            type="number"
+                            value={draftJump.duration.days}
+                            onChange={(event) =>
+                              jumpAutosave.updateDraft({
+                                ...draftJump,
+                                duration: {
+                                  ...draftJump.duration,
+                                  days: Number(event.target.value),
+                                },
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className="stack stack--compact">
+                      <h4>Participant Summary</h4>
+                      <div className="chip-grid">
+                        {workspace.jumpers.length === 0 ? (
+                          <p>No jumpers exist yet. Add a jumper first.</p>
+                        ) : (
+                          workspace.jumpers.map((jumper) => {
+                            const checked = draftJump.participantJumperIds.includes(jumper.id);
+
+                            return (
+                              <label className="choice-chip" key={jumper.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => void toggleParticipant(jumper.id)}
+                                />
+                                <span>{jumper.name}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </section>
+                  </>
+                )}
 
                 <AdvancedJsonDetails
                   summary="Advanced JSON"

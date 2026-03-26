@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { detectImportSource } from '../../domain/import/sourceDetection';
 import { createBlankChain, deleteChain, exportNativeSave, importNativeSave, listChainOverviews, type ChainOverview } from '../../db/persistence';
 import { downloadJson } from '../../utils/download';
@@ -14,6 +15,7 @@ function toFileSlug(value: string) {
 }
 
 export function HomePage() {
+  const { simpleMode } = useUiPreferences();
   const [chains, setChains] = useState<ChainOverview[]>([]);
   const [draftTitle, setDraftTitle] = useState('Untitled Chain');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -120,6 +122,11 @@ export function HomePage() {
         <section className="hero hero--split">
           <div className="hero__content stack stack--compact">
             <h2>Jumpchain Tracker</h2>
+            <p>
+              {simpleMode
+                ? 'Start by creating a blank chain or importing a save. Once a chain exists, open its workspace and follow the guided setup steps.'
+                : 'Local-first continuity tracking for branches, imports, snapshots, and page-by-page supplement planning.'}
+            </p>
             <div className="actions">
               <button
                 className="button button--secondary"
@@ -135,22 +142,37 @@ export function HomePage() {
             </div>
           </div>
           <div className="hero__stats summary-grid">
-            <div className="metric">
-              <strong>{chains.length}</strong>
-              Stored chains
-            </div>
-            <div className="metric">
-              <strong>IndexedDB</strong>
-              Authoritative store
-            </div>
-            <div className="metric">
-              <strong>Native saves</strong>
-              Portable round-trip
-            </div>
-            <div className="metric">
-              <strong>ChainMaker v2</strong>
-              Import foundation
-            </div>
+            {simpleMode ? (
+              <>
+                <div className="metric">
+                  <strong>{chains.length}</strong>
+                  Stored chains
+                </div>
+                <div className="metric">
+                  <strong>{chains.length === 0 ? 'Start here' : 'Ready'}</strong>
+                  Create or open a chain
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="metric">
+                  <strong>{chains.length}</strong>
+                  Stored chains
+                </div>
+                <div className="metric">
+                  <strong>IndexedDB</strong>
+                  Authoritative store
+                </div>
+                <div className="metric">
+                  <strong>Native saves</strong>
+                  Portable round-trip
+                </div>
+                <div className="metric">
+                  <strong>ChainMaker v2</strong>
+                  Import foundation
+                </div>
+              </>
+            )}
           </div>
         </section>
       </section>
@@ -158,8 +180,9 @@ export function HomePage() {
       <section className="home-dashboard-grid">
         <article className="card stack">
           <div className="section-heading">
-            <h3>New Chain</h3>
+            <h3>{simpleMode ? 'Create a new chain' : 'New Chain'}</h3>
           </div>
+          {simpleMode ? <p>Give the chain a name. You can change the details later once the workspace exists.</p> : null}
           <label className="field">
             <span>Chain title</span>
             <input
@@ -175,8 +198,9 @@ export function HomePage() {
 
         <article className="card stack">
           <div className="section-heading">
-            <h3>Native Save</h3>
+            <h3>{simpleMode ? 'Import an existing save' : 'Native Save'}</h3>
           </div>
+          {simpleMode ? <p>Use this when you already have a native Jumpchain Tracker export and want a safe local copy here.</p> : null}
           <button
             className="button button--secondary"
             type="button"
@@ -214,41 +238,76 @@ export function HomePage() {
                   <h4>{chain.title}</h4>
                   <span className="pill">{chain.importReportCount > 0 ? 'imported' : 'native'}</span>
                 </div>
-                <div className="inline-meta">
-                  <span className="metric">
-                    <strong>{chain.jumperCount}</strong>
-                    Jumpers
-                  </span>
-                  <span className="metric">
-                    <strong>{chain.jumpCount}</strong>
-                    Jumps
-                  </span>
-                  <span className="metric">
-                    <strong>{chain.importReportCount}</strong>
-                    Import reports
-                  </span>
-                </div>
-                <p>Last updated {formatTimestamp(chain.updatedAt)}</p>
+                {simpleMode ? (
+                  <p>
+                    {chain.jumperCount} jumpers, {chain.jumpCount} jumps, last updated {formatTimestamp(chain.updatedAt)}.
+                  </p>
+                ) : (
+                  <div className="inline-meta">
+                    <span className="metric">
+                      <strong>{chain.jumperCount}</strong>
+                      Jumpers
+                    </span>
+                    <span className="metric">
+                      <strong>{chain.jumpCount}</strong>
+                      Jumps
+                    </span>
+                    <span className="metric">
+                      <strong>{chain.importReportCount}</strong>
+                      Import reports
+                    </span>
+                  </div>
+                )}
+                {!simpleMode ? <p>Last updated {formatTimestamp(chain.updatedAt)}</p> : null}
                 <div className="entity-actions">
                   <Link className="button" to={`/chains/${chain.chainId}/overview`}>
                     Open Workspace
                   </Link>
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => void handleExport(chain.chainId, chain.title)}
-                    disabled={busyChainId === chain.chainId}
-                  >
-                    Export Native Save
-                  </button>
-                  <button
-                    className="button button--danger"
-                    type="button"
-                    onClick={() => void handleDeleteChain(chain)}
-                    disabled={busyChainId === chain.chainId}
-                  >
-                    {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
-                  </button>
+                  {simpleMode ? (
+                    <details className="details-panel">
+                      <summary className="details-panel__summary">
+                        <span>More actions</span>
+                        <span className="pill">Optional</span>
+                      </summary>
+                      <div className="details-panel__body actions">
+                        <button
+                          className="button button--secondary"
+                          type="button"
+                          onClick={() => void handleExport(chain.chainId, chain.title)}
+                          disabled={busyChainId === chain.chainId}
+                        >
+                          Export Native Save
+                        </button>
+                        <button
+                          className="button button--danger"
+                          type="button"
+                          onClick={() => void handleDeleteChain(chain)}
+                          disabled={busyChainId === chain.chainId}
+                        >
+                          {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
+                        </button>
+                      </div>
+                    </details>
+                  ) : (
+                    <>
+                      <button
+                        className="button button--secondary"
+                        type="button"
+                        onClick={() => void handleExport(chain.chainId, chain.title)}
+                        disabled={busyChainId === chain.chainId}
+                      >
+                        Export Native Save
+                      </button>
+                      <button
+                        className="button button--danger"
+                        type="button"
+                        onClick={() => void handleDeleteChain(chain)}
+                        disabled={busyChainId === chain.chainId}
+                      >
+                        {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </article>
             ))}

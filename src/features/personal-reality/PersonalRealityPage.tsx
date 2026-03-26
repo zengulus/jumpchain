@@ -299,6 +299,7 @@ function BudgetEditor(props: {
   completedJumpCountFromChain: number;
   onStateChange: (updater: (state: PersonalRealityState) => PersonalRealityState) => void;
 }) {
+  const { simpleMode } = useUiPreferences();
   const discountGroups = getDiscountGroups();
 
   function setDiscountGroup(index: number, nextGroupId: string) {
@@ -330,56 +331,79 @@ function BudgetEditor(props: {
 
       <div className="personal-reality-budget-layout">
         <div className="stack">
-          <div className="personal-reality-reference-table">
-            <div className="personal-reality-reference-table__title">Core mode reference</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Mode</th>
-                  <th>Start</th>
-                  <th>Growth</th>
-                  <th>Purchase rule</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coreModeGuideRows.map((row) => (
-                  <tr className={props.state.coreModeId === row.id ? 'is-active' : ''} key={row.id}>
-                    <td>
-                      <strong>{row.title}</strong>
-                      <span>{row.planningRead}</span>
-                    </td>
-                    <td>{row.startingBudget}</td>
-                    <td>{row.ongoingBudget}</td>
-                    <td>{row.purchaseRule}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {simpleMode ? (
+            <section className="section-surface stack stack--compact">
+              <strong>Start here</strong>
+              <p className="workspace-sidebar-copy">
+                Pick one core mode first. After that, only turn on extra modes that actually apply to this chain. The reference tables are still here when you need them, but they do not have to sit open all the time.
+              </p>
+            </section>
+          ) : null}
 
-          <div className="personal-reality-reference-table">
-            <div className="personal-reality-reference-table__title">Extra mode reference</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Extra mode</th>
-                  <th>Effect</th>
-                  <th>Planning read</th>
-                </tr>
-              </thead>
-              <tbody>
-                {extraModeGuideRows.map((row) => (
-                  <tr className={props.state.extraModeIds.includes(row.id) ? 'is-active' : ''} key={row.id}>
-                    <td>
-                      <strong>{row.title}</strong>
-                    </td>
-                    <td>{row.effect}</td>
-                    <td>{row.planningRead}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <details className="details-panel" open={simpleMode ? undefined : true}>
+            <summary className="details-panel__summary">
+              <span>Core mode reference</span>
+              <span className="pill">Lookup</span>
+            </summary>
+            <div className="details-panel__body">
+              <div className="personal-reality-reference-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Mode</th>
+                      <th>Start</th>
+                      <th>Growth</th>
+                      <th>Purchase rule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {coreModeGuideRows.map((row) => (
+                      <tr className={props.state.coreModeId === row.id ? 'is-active' : ''} key={row.id}>
+                        <td>
+                          <strong>{row.title}</strong>
+                          <span>{row.planningRead}</span>
+                        </td>
+                        <td>{row.startingBudget}</td>
+                        <td>{row.ongoingBudget}</td>
+                        <td>{row.purchaseRule}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          <details className="details-panel" open={simpleMode ? undefined : true}>
+            <summary className="details-panel__summary">
+              <span>Extra mode reference</span>
+              <span className="pill">Lookup</span>
+            </summary>
+            <div className="details-panel__body">
+              <div className="personal-reality-reference-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Extra mode</th>
+                      <th>Effect</th>
+                      <th>Planning read</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {extraModeGuideRows.map((row) => (
+                      <tr className={props.state.extraModeIds.includes(row.id) ? 'is-active' : ''} key={row.id}>
+                        <td>
+                          <strong>{row.title}</strong>
+                        </td>
+                        <td>{row.effect}</td>
+                        <td>{row.planningRead}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div className="stack">
@@ -1101,38 +1125,61 @@ export function PersonalRealityPage() {
           </div>
 
           <div className="personal-reality-summary-strip">
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.availableWp)}</strong>
-              <span>Available WP</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.wpSpent)}</strong>
-              <span>Spent WP</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.remainingWp)}</strong>
-              <span>Remaining WP</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.cpSpent)}</strong>
-              <span>Committed CP</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.selectedOptionCount)}</strong>
-              <span>Tracked rows</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.activeLimitationCount)}</strong>
-              <span>Active limitations</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.collectiveWp)}</strong>
-              <span>Crossroads C-WP</span>
-            </div>
-            <div className="personal-reality-summary-stat">
-              <strong>{formatNumber(summary.completedJumpCount)}</strong>
-              <span>Counted jumps</span>
-            </div>
+            {simpleMode ? (
+              <>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.availableWp)}</strong>
+                  <span>Total WP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.remainingWp)}</strong>
+                  <span>Still available</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{currentModeGuide?.title ?? 'Choose a mode'}</strong>
+                  <span>Current mode</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.warnings.length)}</strong>
+                  <span>Things to check</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.availableWp)}</strong>
+                  <span>Available WP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.wpSpent)}</strong>
+                  <span>Spent WP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.remainingWp)}</strong>
+                  <span>Remaining WP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.cpSpent)}</strong>
+                  <span>Committed CP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.selectedOptionCount)}</strong>
+                  <span>Tracked rows</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.activeLimitationCount)}</strong>
+                  <span>Active limitations</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.collectiveWp)}</strong>
+                  <span>Crossroads C-WP</span>
+                </div>
+                <div className="personal-reality-summary-stat">
+                  <strong>{formatNumber(summary.completedJumpCount)}</strong>
+                  <span>Counted jumps</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -1151,52 +1198,75 @@ export function PersonalRealityPage() {
 
           <div className="personal-reality-rail__body">
             {personalRealitySections.map((section) => (
-              <section className="personal-reality-rail__section" key={section.id}>
-                <TooltipFrame tooltip={!simpleMode ? section.summary : undefined} placement="right">
-                  <header>
+              simpleMode ? (
+                <details
+                  className="personal-reality-rail__section personal-reality-rail__section--simple"
+                  key={`${section.id}-${currentSection.id}`}
+                  open={section.id === currentSection.id ? true : undefined}
+                >
+                  <summary className="personal-reality-rail__section-summary">
                     <strong>{section.title}</strong>
                     <span>
                       {section.pageStart}-{section.pageEnd}
                     </span>
-                  </header>
-                </TooltipFrame>
-                {simpleMode ? <p>{section.summary}</p> : null}
-                <div className="personal-reality-rail__pages">
-                  {personalRealityPages
-                    .filter((page) => page.sectionId === section.id)
-                    .map((page) => (
-                      <TooltipFrame
-                        key={page.number}
-                        tooltip={
-                          !simpleMode
-                            ? `${page.summary} ${getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked`
-                            : undefined
-                        }
-                        placement="right"
-                      >
+                  </summary>
+                  <p>{section.summary}</p>
+                  <div className="personal-reality-rail__pages">
+                    {personalRealityPages
+                      .filter((page) => page.sectionId === section.id)
+                      .map((page) => (
                         <button
                           className={`personal-reality-rail__page${page.number === currentPage.number ? ' is-active' : ''}`}
+                          key={page.number}
                           type="button"
                           onClick={() => goToPage(page.number)}
                         >
                           <span className="personal-reality-rail__page-label">
                             {page.number}. <SearchHighlight text={page.title} query={highlightQuery} />
                           </span>
-                          {simpleMode ? (
-                            <>
-                              <span className="personal-reality-rail__page-summary">
-                                <SearchHighlight text={page.summary} query={highlightQuery} />
-                              </span>
-                              <span className="personal-reality-rail__page-count">
-                                {getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked
-                              </span>
-                            </>
-                          ) : null}
+                          <span className="personal-reality-rail__page-summary">
+                            <SearchHighlight text={page.summary} query={highlightQuery} />
+                          </span>
+                          <span className="personal-reality-rail__page-count">
+                            {getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked
+                          </span>
                         </button>
-                      </TooltipFrame>
-                    ))}
-                </div>
-              </section>
+                      ))}
+                  </div>
+                </details>
+              ) : (
+                <section className="personal-reality-rail__section" key={section.id}>
+                  <TooltipFrame tooltip={section.summary} placement="right">
+                    <header>
+                      <strong>{section.title}</strong>
+                      <span>
+                        {section.pageStart}-{section.pageEnd}
+                      </span>
+                    </header>
+                  </TooltipFrame>
+                  <div className="personal-reality-rail__pages">
+                    {personalRealityPages
+                      .filter((page) => page.sectionId === section.id)
+                      .map((page) => (
+                        <TooltipFrame
+                          key={page.number}
+                          tooltip={`${page.summary} ${getPageSummaryCount(summary.pageSelectionCounts, page.number)} tracked`}
+                          placement="right"
+                        >
+                          <button
+                            className={`personal-reality-rail__page${page.number === currentPage.number ? ' is-active' : ''}`}
+                            type="button"
+                            onClick={() => goToPage(page.number)}
+                          >
+                            <span className="personal-reality-rail__page-label">
+                              {page.number}. <SearchHighlight text={page.title} query={highlightQuery} />
+                            </span>
+                          </button>
+                        </TooltipFrame>
+                      ))}
+                  </div>
+                </section>
+              )
             ))}
           </div>
         </aside>
@@ -1344,44 +1414,81 @@ export function PersonalRealityPage() {
             </div>
           </section>
 
-          <section className="personal-reality-panel">
-            <div className="personal-reality-panel__header">
-              <div>
-                <h3>Purchase Rules</h3>
-                <p>These are the interpretation rules the worksheet is following.</p>
+          {simpleMode ? (
+            <details className="details-panel">
+              <summary className="details-panel__summary">
+                <span>Purchase rules</span>
+                <span className="pill">Reference</span>
+              </summary>
+              <div className="details-panel__body">
+                <ul className="list">
+                  {purchaseGuideItems.map((item) => (
+                    <li key={item}>
+                      <SearchHighlight text={item} query={highlightQuery} />
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
-            <div className="personal-reality-panel__body">
-              <ul className="list">
-                {purchaseGuideItems.map((item) => (
-                  <li key={item}>
-                    <SearchHighlight text={item} query={highlightQuery} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          {summary.therehouseCpPerCompletedJump > 0 ? (
+            </details>
+          ) : (
             <section className="personal-reality-panel">
               <div className="personal-reality-panel__header">
                 <div>
-                  <h3>Therehouse Accounting</h3>
-                  <p>Tracked separately from the WP pool.</p>
+                  <h3>Purchase Rules</h3>
+                  <p>These are the interpretation rules the worksheet is following.</p>
                 </div>
-                <span className="pill">Page 2 / 56</span>
               </div>
-              <div className="personal-reality-panel__body personal-reality-state-list">
-                <div>
-                  <span>CP per jump</span>
-                  <strong>{formatNumber(summary.therehouseCpPerCompletedJump)}</strong>
-                </div>
-                <div>
-                  <span>Earned so far</span>
-                  <strong>{formatNumber(summary.therehouseEarnedCp)}</strong>
-                </div>
+              <div className="personal-reality-panel__body">
+                <ul className="list">
+                  {purchaseGuideItems.map((item) => (
+                    <li key={item}>
+                      <SearchHighlight text={item} query={highlightQuery} />
+                    </li>
+                  ))}
+                </ul>
               </div>
             </section>
+          )}
+
+          {summary.therehouseCpPerCompletedJump > 0 ? (
+            simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>Therehouse accounting</span>
+                  <span className="pill">Reference</span>
+                </summary>
+                <div className="details-panel__body personal-reality-state-list">
+                  <div>
+                    <span>CP per jump</span>
+                    <strong>{formatNumber(summary.therehouseCpPerCompletedJump)}</strong>
+                  </div>
+                  <div>
+                    <span>Earned so far</span>
+                    <strong>{formatNumber(summary.therehouseEarnedCp)}</strong>
+                  </div>
+                </div>
+              </details>
+            ) : (
+              <section className="personal-reality-panel">
+                <div className="personal-reality-panel__header">
+                  <div>
+                    <h3>Therehouse Accounting</h3>
+                    <p>Tracked separately from the WP pool.</p>
+                  </div>
+                  <span className="pill">Page 2 / 56</span>
+                </div>
+                <div className="personal-reality-panel__body personal-reality-state-list">
+                  <div>
+                    <span>CP per jump</span>
+                    <strong>{formatNumber(summary.therehouseCpPerCompletedJump)}</strong>
+                  </div>
+                  <div>
+                    <span>Earned so far</span>
+                    <strong>{formatNumber(summary.therehouseEarnedCp)}</strong>
+                  </div>
+                </div>
+              </section>
+            )
           ) : null}
 
           {summary.warnings.length > 0 ? (

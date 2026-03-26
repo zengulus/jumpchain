@@ -1,6 +1,7 @@
 import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
+import { UiPreferencesProvider } from '../app/UiPreferencesContext';
 import { HomePage } from '../features/home/HomePage';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
@@ -497,9 +498,11 @@ describe('native persistence and round-trip safety', () => {
     await createBlankChain('Rendered Chain');
 
     const view = render(
-      <MemoryRouter>
-        <HomePage />
-      </MemoryRouter>,
+      <UiPreferencesProvider>
+        <MemoryRouter>
+          <HomePage />
+        </MemoryRouter>
+      </UiPreferencesProvider>,
     );
 
     await waitFor(() => {

@@ -343,8 +343,10 @@ export function ChainWorkspaceLayout() {
           title: 'Open Overview',
           description: 'Use the overview to see what the active branch already has and what is still missing.',
           to: `/chains/${resolvedChainId}/overview`,
-        },
+      },
   ];
+  const primaryQuickAction = quickActions[0];
+  const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
 
   const moduleGroups: Array<{
     id: string;
@@ -479,123 +481,237 @@ export function ChainWorkspaceLayout() {
               <strong>{state.bundle.chain.title}</strong>
               <span>{currentJump ? `Current jump: ${currentJump.title}` : 'Current jump: None selected'}</span>
             </div>
-            <div className="workspace-stat-strip" aria-label="Workspace totals">
-              <div className="workspace-stat-chip">
-                <strong>{workspace.jumpers.length}</strong>
-                <span>Jumpers</span>
+            {simpleMode ? (
+              <p className="workspace-sidebar-copy">
+                Start with <strong>{primaryQuickAction.title}</strong>. You can come back to the deeper navigation controls once the chain has a little structure.
+              </p>
+            ) : (
+              <div className="workspace-stat-strip" aria-label="Workspace totals">
+                <div className="workspace-stat-chip">
+                  <strong>{workspace.jumpers.length}</strong>
+                  <span>Jumpers</span>
+                </div>
+                <div className="workspace-stat-chip">
+                  <strong>{workspace.jumps.length}</strong>
+                  <span>Jumps</span>
+                </div>
+                <div className="workspace-stat-chip">
+                  <strong>{workspace.effects.length}</strong>
+                  <span>Effects</span>
+                </div>
+                <div className="workspace-stat-chip">
+                  <strong>{workspace.snapshots.length}</strong>
+                  <span>Snapshots</span>
+                </div>
               </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.jumps.length}</strong>
-                <span>Jumps</span>
-              </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.effects.length}</strong>
-                <span>Effects</span>
-              </div>
-              <div className="workspace-stat-chip">
-                <strong>{workspace.snapshots.length}</strong>
-                <span>Snapshots</span>
-              </div>
-            </div>
+            )}
           </section>
 
           <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
             <div className="section-heading">
               <h3>Navigator</h3>
-              <span className="pill">Menus</span>
+              <span className="pill">{simpleMode ? 'Guided' : 'Menus'}</span>
             </div>
 
-            <label className="field">
-              <span className="field-label-row">
-                <span>Go to module</span>
-                <AssistiveHint
-                  placement="right"
-                  text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
-                  triggerLabel="Explain module routing"
-                />
-              </span>
-              <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
-                {moduleGroups.map((group) => (
-                  <optgroup key={group.id} label={group.title}>
-                    {group.items.map((item) => (
-                      <option key={item.key} value={item.key} disabled={!item.to}>
-                        {item.label}
-                      </option>
+            {simpleMode ? (
+              <div className="section-surface stack stack--compact">
+                <strong>Start here</strong>
+                <p className="workspace-sidebar-copy">
+                  The quickest safe next step is <strong>{primaryQuickAction.title}</strong>. Once you have the basics in place, open the navigation controls below.
+                </p>
+                <button className="button" type="button" onClick={() => navigate(primaryQuickAction.to)}>
+                  {primaryQuickAction.title}
+                </button>
+              </div>
+            ) : null}
+
+            {simpleMode ? (
+              <details className="details-panel">
+                <summary className="details-panel__summary">
+                  <span>More navigation</span>
+                  <span className="pill">Optional</span>
+                </summary>
+                <div className="details-panel__body stack stack--compact">
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Go to module</span>
+                      <AssistiveHint
+                        placement="right"
+                        text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
+                        triggerLabel="Explain module routing"
+                      />
+                    </span>
+                    <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
+                      {moduleGroups.map((group) => (
+                        <optgroup key={group.id} label={group.title}>
+                          {group.items.map((item) => (
+                            <option key={item.key} value={item.key} disabled={!item.to}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="workspace-switch-grid">
+                    <label className="field">
+                      <span className="field-label-row">
+                        <span>Jumper focus</span>
+                        <AssistiveHint
+                          placement="right"
+                          text={
+                            selectedJumper
+                              ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                              : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
+                          }
+                          triggerLabel="Explain jumper focus"
+                        />
+                      </span>
+                      <select
+                        value={selectedJumperId}
+                        onChange={(event) => handleQuickJumperChange(event.target.value)}
+                        disabled={workspace.jumpers.length === 0}
+                      >
+                        {workspace.jumpers.length === 0 ? (
+                          <option value="">Create a jumper first</option>
+                        ) : (
+                          workspace.jumpers.map((jumper) => (
+                            <option key={jumper.id} value={jumper.id}>
+                              {jumper.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label-row">
+                        <span>Jump</span>
+                        <AssistiveHint
+                          placement="right"
+                          text={
+                            currentJump
+                              ? `Current jump context is ${currentJump.title}.`
+                              : 'Create the first jump to unlock participation and current-jump rules.'
+                          }
+                          triggerLabel="Explain jump focus"
+                        />
+                      </span>
+                      <select
+                        value={currentJump?.id ?? ''}
+                        onChange={(event) => void handleQuickJumpChange(event.target.value)}
+                        disabled={workspace.jumps.length === 0}
+                      >
+                        {workspace.jumps.length === 0 ? (
+                          <option value="">Create a jump first</option>
+                        ) : (
+                          workspace.jumps.map((jump) => (
+                            <option key={jump.id} value={jump.id}>
+                              {jump.orderIndex + 1}. {jump.title}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </details>
+            ) : (
+              <>
+                <label className="field">
+                  <span className="field-label-row">
+                    <span>Go to module</span>
+                    <AssistiveHint
+                      placement="right"
+                      text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
+                      triggerLabel="Explain module routing"
+                    />
+                  </span>
+                  <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
+                    {moduleGroups.map((group) => (
+                      <optgroup key={group.id} label={group.title}>
+                        {group.items.map((item) => (
+                          <option key={item.key} value={item.key} disabled={!item.to}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
+                  </select>
+                </label>
 
-            <div className="workspace-switch-grid">
-              <label className="field">
-                <span className="field-label-row">
-                  <span>Jumper focus</span>
-                  <AssistiveHint
-                    placement="right"
-                    text={
-                      selectedJumper
-                        ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                        : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
-                    }
-                    triggerLabel="Explain jumper focus"
-                  />
-                </span>
-                <select
-                  value={selectedJumperId}
-                  onChange={(event) => handleQuickJumperChange(event.target.value)}
-                  disabled={workspace.jumpers.length === 0}
-                >
-                  {workspace.jumpers.length === 0 ? (
-                    <option value="">Create a jumper first</option>
-                  ) : (
-                    workspace.jumpers.map((jumper) => (
-                      <option key={jumper.id} value={jumper.id}>
-                        {jumper.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
+                <div className="workspace-switch-grid">
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Jumper focus</span>
+                      <AssistiveHint
+                        placement="right"
+                        text={
+                          selectedJumper
+                            ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                            : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
+                        }
+                        triggerLabel="Explain jumper focus"
+                      />
+                    </span>
+                    <select
+                      value={selectedJumperId}
+                      onChange={(event) => handleQuickJumperChange(event.target.value)}
+                      disabled={workspace.jumpers.length === 0}
+                    >
+                      {workspace.jumpers.length === 0 ? (
+                        <option value="">Create a jumper first</option>
+                      ) : (
+                        workspace.jumpers.map((jumper) => (
+                          <option key={jumper.id} value={jumper.id}>
+                            {jumper.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
 
-              <label className="field">
-                <span className="field-label-row">
-                  <span>Jump</span>
-                  <AssistiveHint
-                    placement="right"
-                    text={
-                      currentJump
-                        ? `Current jump context is ${currentJump.title}.`
-                        : 'Create the first jump to unlock participation and current-jump rules.'
-                    }
-                    triggerLabel="Explain jump focus"
-                  />
-                </span>
-                <select
-                  value={currentJump?.id ?? ''}
-                  onChange={(event) => void handleQuickJumpChange(event.target.value)}
-                  disabled={workspace.jumps.length === 0}
-                >
-                  {workspace.jumps.length === 0 ? (
-                    <option value="">Create a jump first</option>
-                  ) : (
-                    workspace.jumps.map((jump) => (
-                      <option key={jump.id} value={jump.id}>
-                        {jump.orderIndex + 1}. {jump.title}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-            </div>
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Jump</span>
+                      <AssistiveHint
+                        placement="right"
+                        text={
+                          currentJump
+                            ? `Current jump context is ${currentJump.title}.`
+                            : 'Create the first jump to unlock participation and current-jump rules.'
+                        }
+                        triggerLabel="Explain jump focus"
+                      />
+                    </span>
+                    <select
+                      value={currentJump?.id ?? ''}
+                      onChange={(event) => void handleQuickJumpChange(event.target.value)}
+                      disabled={workspace.jumps.length === 0}
+                    >
+                      {workspace.jumps.length === 0 ? (
+                        <option value="">Create a jump first</option>
+                      ) : (
+                        workspace.jumps.map((jump) => (
+                          <option key={jump.id} value={jump.id}>
+                            {jump.orderIndex + 1}. {jump.title}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                </div>
+              </>
+            )}
 
             <div className="section-heading">
-              <h4>Suggested Next Steps</h4>
+              <h4>{simpleMode ? 'Next steps' : 'Suggested Next Steps'}</h4>
               <span className="pill">Context aware</span>
             </div>
 
             <div className="workspace-action-grid">
-              {quickActions.map((action) => (
+              {visibleQuickActions.map((action) => (
                 <TooltipFrame
                   key={action.id}
                   tooltip={!simpleMode ? action.description : undefined}
