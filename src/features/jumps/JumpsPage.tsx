@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
+import { usePageShellHeaderAttachment } from '../../components/PageShell';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import { ParticipationBudgetInspector, ParticipationEditorCard } from '../participation/ParticipationPage';
+import { ParticipationBudgetShellAttachment, ParticipationEditorCard } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
@@ -153,6 +154,22 @@ export function JumpsPage() {
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
+  const purchaseBudgetAttachment = useMemo(() => {
+    if (activeTab !== 'purchases' || !draftJump || !activeParticipationJumper || !activeParticipation) {
+      return null;
+    }
+
+    return (
+      <ParticipationBudgetShellAttachment
+        jump={draftJump}
+        jumper={activeParticipationJumper}
+        participation={activeParticipation}
+        workspace={workspace}
+      />
+    );
+  }, [activeParticipation, activeParticipationJumper, activeTab, draftJump, workspace]);
+
+  usePageShellHeaderAttachment(purchaseBudgetAttachment);
 
   function getFirstIncompleteStage(reviewState: Partial<Record<JumpGuidedStage, true>>) {
     return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
@@ -639,13 +656,16 @@ export function JumpsPage() {
         </section>
 
         {activeParticipationJumper && activeParticipation ? (
-          <ParticipationEditorCard
-            jump={draftJump}
-            jumper={activeParticipationJumper}
-            participation={activeParticipation}
-            workspace={workspace}
-            showBudgetSummary={false}
-          />
+          <>
+            <ParticipationEditorCard
+              jump={draftJump}
+              jumper={activeParticipationJumper}
+              participation={activeParticipation}
+              workspace={workspace}
+              showBudgetSummary={false}
+              showBudgetHeader={false}
+            />
+          </>
         ) : activeParticipationJumper ? (
           <article className="card editor-sheet stack">
             <div className="section-heading">
@@ -757,11 +777,7 @@ export function JumpsPage() {
             )}
           </section>
 
-          <section
-            className={`jump-workspace${
-              activeTab === 'purchases' && activeParticipationJumper && activeParticipation ? ' jump-workspace--with-rail' : ''
-            }`}
-          >
+          <section className="jump-workspace">
             <article className="card stack jump-editor-shell">
               {draftJump ? (
                 <>
@@ -845,20 +861,6 @@ export function JumpsPage() {
                 <p>No jumps match the current search.</p>
               )}
             </article>
-
-            {!simpleMode && activeTab === 'purchases' && activeParticipationJumper && activeParticipation ? (
-              <aside className="card stack jump-budget-rail">
-                <div className="section-heading">
-                  <h3>Budget</h3>
-                  <span className="pill">{activeParticipationJumper.name}</span>
-                </div>
-                <ParticipationBudgetInspector
-                  jumper={activeParticipationJumper}
-                  participation={activeParticipation}
-                  workspace={workspace}
-                />
-              </aside>
-            ) : null}
           </section>
         </div>
       )}

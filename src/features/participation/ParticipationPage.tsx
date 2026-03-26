@@ -2198,6 +2198,7 @@ export function ParticipationEditorCard(props: {
   participation: WorkspaceParticipation;
   workspace: Workspace;
   showBudgetSummary?: boolean;
+  showBudgetHeader?: boolean;
 }) {
   const participationAutosave = useAutosaveRecord(props.participation, {
     onSave: async (nextValue) => {
@@ -2252,6 +2253,7 @@ export function ParticipationEditorCard(props: {
   );
   const inheritedBaseBudgets = getInheritedBaseBudgets(rawCurrencyDefinitions, draftParticipation.budgets);
   const showBudgetSummary = props.showBudgetSummary ?? true;
+  const showBudgetHeader = props.showBudgetHeader ?? true;
   const exchangeTokens = getCurrencyExchangeTokens(draftParticipation.currencyExchanges, currencyDefinitions);
   const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
   const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(currencyDefinitions)[0] ?? '0';
@@ -2693,32 +2695,15 @@ export function ParticipationEditorCard(props: {
 
       <AutosaveStatusIndicator status={participationAutosave.status} />
 
-      <div className="summary-grid">
-        <article className="metric">
-          <strong>{cpBaseValue !== null ? formatNumericValue(cpBaseValue) : 'No base CP'}</strong>
-          <span>{cpBudgetLabel ? `${cpBudgetLabel} starting pool` : 'No primary CP'}</span>
-        </article>
-        <article className="metric">
-          <strong>
-            {cpJumpDrawbackGrant !== null && cpJumpDrawbackGrant !== 0
-              ? `${cpJumpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpJumpDrawbackGrant)}`
-              : '0'}
-          </strong>
-          <span>Jump drawback gain</span>
-        </article>
-        <article className="metric">
-          <strong>
-            {cpChainDrawbackGrant !== null && cpChainDrawbackGrant !== 0
-              ? `${cpChainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpChainDrawbackGrant)}`
-              : '0'}
-          </strong>
-          <span>Chain drawback gain</span>
-        </article>
-        <article className="metric">
-          <strong>{cpBudgetValue !== null ? formatNumericValue(cpBudgetValue) : 'No current CP'}</strong>
-          <span>Current CP</span>
-        </article>
-      </div>
+      {showBudgetHeader ? (
+        <ParticipationBudgetSummaryGrid
+          cpBaseValue={cpBaseValue}
+          cpBudgetLabel={cpBudgetLabel}
+          cpBudgetValue={cpBudgetValue}
+          cpJumpDrawbackGrant={cpJumpDrawbackGrant}
+          cpChainDrawbackGrant={cpChainDrawbackGrant}
+        />
+      ) : null}
 
       <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
@@ -3203,6 +3188,149 @@ export function ParticipationEditorCard(props: {
         </div>
       </details>
     </article>
+  );
+}
+
+function ParticipationBudgetSummaryGrid(props: {
+  cpBaseValue: number | null;
+  cpBudgetLabel: string | null;
+  cpBudgetValue: number | null;
+  cpJumpDrawbackGrant: number | null;
+  cpChainDrawbackGrant: number | null;
+}) {
+  return (
+    <div className="summary-grid">
+      <article className="metric">
+        <strong>{props.cpBaseValue !== null ? formatNumericValue(props.cpBaseValue) : 'No base CP'}</strong>
+        <span>{props.cpBudgetLabel ? `${props.cpBudgetLabel} starting pool` : 'No primary CP'}</span>
+      </article>
+      <article className="metric">
+        <strong>
+          {props.cpJumpDrawbackGrant !== null && props.cpJumpDrawbackGrant !== 0
+            ? `${props.cpJumpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(props.cpJumpDrawbackGrant)}`
+            : '0'}
+        </strong>
+        <span>Jump drawback gain</span>
+      </article>
+      <article className="metric">
+        <strong>
+          {props.cpChainDrawbackGrant !== null && props.cpChainDrawbackGrant !== 0
+            ? `${props.cpChainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(props.cpChainDrawbackGrant)}`
+            : '0'}
+        </strong>
+        <span>Chain drawback gain</span>
+      </article>
+      <article className="metric">
+        <strong>{props.cpBudgetValue !== null ? formatNumericValue(props.cpBudgetValue) : 'No current CP'}</strong>
+        <span>Current CP</span>
+      </article>
+    </div>
+  );
+}
+
+function getParticipationBudgetSummaryData(workspace: Workspace, participation: WorkspaceParticipation) {
+  const effectiveBudgetState = getEffectiveParticipationBudgetState(workspace, participation);
+  const rawCurrencyDefinitions = getCurrencyDefinitions(asRecord(participation.importSourceMetadata).currencies);
+  const stipendRows = flattenStipends(participation.stipends);
+  const currencyDefinitions = ensureCurrencyDefinitions(
+    rawCurrencyDefinitions,
+    Array.from(
+      new Set([
+        PERSONAL_REALITY_WP_CURRENCY_KEY,
+        ...Object.keys(rawCurrencyDefinitions),
+        ...Object.keys(effectiveBudgetState.baseBudgets),
+        ...Object.keys(participation.budgets),
+        ...Object.keys(effectiveBudgetState.chainDrawbackBudgetGrants),
+        ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
+        ...stipendRows.map((row) => row.currencyKey),
+        ...participation.purchases.map((purchase) => getSelectionCurrencyKey(purchase)),
+        ...participation.currencyExchanges.flatMap((exchange) => {
+          const record = normalizeCurrencyExchangeForEdit(exchange, '0');
+          return [String(record.fromCurrency), String(record.toCurrency)];
+        }),
+      ]),
+    ),
+  );
+  const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+
+  return {
+    cpBudgetLabel: cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null,
+    cpBudgetValue: cpBudgetEntry?.[1] ?? null,
+    cpBaseValue: cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null,
+    cpJumpDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.participationDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,
+    cpChainDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,
+  };
+}
+
+export function ParticipationBudgetHeader(props: {
+  jumper: WorkspaceJumper;
+  participation: WorkspaceParticipation;
+  workspace: Workspace;
+}) {
+  const summary = getParticipationBudgetSummaryData(props.workspace, props.participation);
+
+  return (
+    <section className="section-surface stack stack--compact">
+      <div className="section-heading">
+        <h4>Budget snapshot</h4>
+        <span className="pill">{props.jumper.name}</span>
+      </div>
+      <ParticipationBudgetSummaryGrid
+        cpBaseValue={summary.cpBaseValue}
+        cpBudgetLabel={summary.cpBudgetLabel}
+        cpBudgetValue={summary.cpBudgetValue}
+        cpJumpDrawbackGrant={summary.cpJumpDrawbackGrant}
+        cpChainDrawbackGrant={summary.cpChainDrawbackGrant}
+      />
+    </section>
+  );
+}
+
+export function ParticipationBudgetShellAttachment(props: {
+  jump: WorkspaceJump;
+  jumper: WorkspaceJumper;
+  participation: WorkspaceParticipation;
+  workspace: Workspace;
+}) {
+  const summary = getParticipationBudgetSummaryData(props.workspace, props.participation);
+
+  return (
+    <section className="jump-shell-budget" aria-label="Active purchase budget">
+      <div className="jump-shell-budget__identity">
+        <div className="jump-shell-budget__identity-topline">
+          <span className="pill">Purchases</span>
+          <span className="pill pill--soft">{props.jumper.name}</span>
+        </div>
+        <strong>{props.jump.title}</strong>
+        <span>Budget snapshot stays visible while you work through purchases.</span>
+      </div>
+      <div className="jump-shell-budget__metrics">
+        <article className="jump-shell-budget__metric">
+          <strong>{summary.cpBudgetValue !== null ? formatNumericValue(summary.cpBudgetValue) : 'No current CP'}</strong>
+          <span>Current CP</span>
+        </article>
+        <article className="jump-shell-budget__metric">
+          <strong>{summary.cpBaseValue !== null ? formatNumericValue(summary.cpBaseValue) : 'No base CP'}</strong>
+          <span>{summary.cpBudgetLabel ? `${summary.cpBudgetLabel} start` : 'No primary CP'}</span>
+        </article>
+        <article className="jump-shell-budget__metric">
+          <strong>
+            {summary.cpJumpDrawbackGrant !== null && summary.cpJumpDrawbackGrant !== 0
+              ? `${summary.cpJumpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(summary.cpJumpDrawbackGrant)}`
+              : '0'}
+          </strong>
+          <span>Jump gain</span>
+        </article>
+        <article className="jump-shell-budget__metric">
+          <strong>
+            {summary.cpChainDrawbackGrant !== null && summary.cpChainDrawbackGrant !== 0
+              ? `${summary.cpChainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(summary.cpChainDrawbackGrant)}`
+              : '0'}
+          </strong>
+          <span>Chain gain</span>
+        </article>
+      </div>
+    </section>
   );
 }
 
