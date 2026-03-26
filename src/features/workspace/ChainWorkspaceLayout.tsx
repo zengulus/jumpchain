@@ -50,7 +50,7 @@ interface WorkspaceQuickAction {
 
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
-    return 'participation';
+    return 'jumps';
   }
 
   if (pathname.includes('/jumpers')) {
@@ -291,7 +291,7 @@ export function ChainWorkspaceLayout() {
       ? {
           id: 'create-first-jumper',
           title: 'Create First Jumper',
-          description: 'Start here. Iconic, participation, and most character-focused modules hang off a jumper.',
+          description: 'Start here. Iconic, jump participation and purchases, and most character-focused modules hang off a jumper.',
           to: `/chains/${resolvedChainId}/jumpers`,
           tone: 'accent',
         }
@@ -306,7 +306,7 @@ export function ChainWorkspaceLayout() {
       ? {
           id: 'create-first-jump',
           title: 'Create First Jump',
-          description: 'Participation, current-jump rules, and timeline become meaningful once a jump exists.',
+          description: 'Participation and purchases, current-jump rules, and timeline become meaningful once a jump exists.',
           to: `/chains/${resolvedChainId}/jumps`,
           tone: 'accent',
         }
@@ -333,17 +333,17 @@ export function ChainWorkspaceLayout() {
         },
     hasJumpers && hasJumps
       ? {
-          id: 'open-participation',
-          title: `Participation: ${selectedJumper?.name ?? 'Selected Jumper'}`,
-          description: `Jump straight into ${selectedJumper?.name ?? 'the jumper'} inside ${currentJump?.title ?? 'the current jump'}.`,
-          to: getParticipationPath(),
+          id: 'open-jump-participation',
+          title: `Participation & Purchases: ${selectedJumper?.name ?? 'Selected Jumper'}`,
+          description: `Open ${currentJump?.title ?? 'the current jump'} and work on ${selectedJumper?.name ?? 'the jumper'} inside it.`,
+          to: `${getJumpEditorPath()}${buildSearch(selectedJumperId)}`,
         }
       : {
           id: 'overview',
           title: 'Open Overview',
           description: 'Use the overview to see what the active branch already has and what is still missing.',
           to: `/chains/${resolvedChainId}/overview`,
-      },
+        },
   ];
   const primaryQuickAction = quickActions[0];
   const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
@@ -376,11 +376,6 @@ export function ChainWorkspaceLayout() {
           key: 'jumps',
           label: 'Jumps',
           to: getModulePath('jumps'),
-        },
-        {
-          key: 'participation',
-          label: 'Participation',
-          to: getModulePath('participation'),
         },
       ],
     },
@@ -563,7 +558,7 @@ export function ChainWorkspaceLayout() {
                           text={
                             selectedJumper
                               ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                              : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
+                              : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
                           }
                           triggerLabel="Explain jumper focus"
                         />
@@ -593,7 +588,7 @@ export function ChainWorkspaceLayout() {
                           text={
                             currentJump
                               ? `Current jump context is ${currentJump.title}.`
-                              : 'Create the first jump to unlock participation and current-jump rules.'
+                              : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
                           }
                           triggerLabel="Explain jump focus"
                         />
@@ -650,7 +645,7 @@ export function ChainWorkspaceLayout() {
                         text={
                           selectedJumper
                             ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                            : 'Create the first jumper to unlock Iconic and jumper-specific participation routes.'
+                            : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
                         }
                         triggerLabel="Explain jumper focus"
                       />
@@ -680,7 +675,7 @@ export function ChainWorkspaceLayout() {
                         text={
                           currentJump
                             ? `Current jump context is ${currentJump.title}.`
-                            : 'Create the first jump to unlock participation and current-jump rules.'
+                            : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
                         }
                         triggerLabel="Explain jump focus"
                       />

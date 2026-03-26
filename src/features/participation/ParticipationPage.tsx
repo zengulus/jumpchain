@@ -499,7 +499,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
   );
 }
 
-function ParticipationEditorCard(props: {
+export function ParticipationEditorCard(props: {
   jumper: ReturnType<typeof useChainWorkspace>['workspace']['jumpers'][number];
   jump: ReturnType<typeof useChainWorkspace>['workspace']['jumps'][number];
   participation: ReturnType<typeof useChainWorkspace>['workspace']['participations'][number];
@@ -1013,12 +1013,12 @@ export function ParticipationPage() {
 
       setNotice({
         tone: 'success',
-        message: 'Created a participation record for this jumper.',
+        message: 'Created a participation and purchases record for this jumper.',
       });
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to create participation.',
+        message: error instanceof Error ? error.message : 'Unable to create a participation and purchases record.',
       });
     }
   }
@@ -1027,7 +1027,7 @@ export function ParticipationPage() {
     return (
       <EmptyWorkspaceCard
         title="Jump not found"
-        body="Open a jump from the Jumps module first, then edit per-jumper participation from there."
+        body="Open a jump from the Jumps module first, then edit participation and purchases from there."
       />
     );
   }
@@ -1035,8 +1035,8 @@ export function ParticipationPage() {
   return (
     <div className="stack">
       <WorkspaceModuleHeader
-        title="Participation"
-        description="Per-jumper, per-jump editing for perks, items, drawbacks, currencies, narratives, and preserved imported blocks."
+        title="Participation and Purchases"
+        description="Per-jumper, per-jump editing for purchases, drawbacks, budgets, currencies, narratives, and preserved imported blocks."
         badge={jump.title}
         actions={
           focusedJumperId && workspace.jumpers.length > 1 ? (
@@ -1052,7 +1052,7 @@ export function ParticipationPage() {
       {workspace.jumpers.length === 0 ? (
         <EmptyWorkspaceCard
           title="No jumpers available"
-          body="Add a jumper before editing participation for this jump."
+          body="Add a jumper before editing participation and purchases for this jump."
         />
       ) : (
         visibleJumpers.map((jumper) => {
@@ -1071,7 +1071,7 @@ export function ParticipationPage() {
 
                   <div className="actions">
                     <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
-                      Add Participation Record
+                      Add To This Jump
                     </button>
                   </div>
                 </article>

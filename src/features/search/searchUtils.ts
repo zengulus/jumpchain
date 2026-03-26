@@ -35,7 +35,7 @@ const kindLabels: Record<UniversalSearchResultKind, string> = {
   jumper: 'Jumper',
   companion: 'Companion',
   jump: 'Jump',
-  participation: 'Participation',
+  participation: 'Participation & Purchases',
   effect: 'Effect',
   note: 'Note',
   snapshot: 'Snapshot',
@@ -374,7 +374,7 @@ export function buildUniversalSearchResults(input: {
           chainId: bundle.chain.id,
           chainTitle,
           title: `${cleanLabel(jumper?.name, 'Jumper')} @ ${cleanLabel(jump?.title, 'Jump')}`,
-          subtitle: `Participation | ${chainTitle}`,
+          subtitle: `Participation & Purchases | ${chainTitle}`,
           snippet: buildSearchSnippet(
             query,
             participation.notes,

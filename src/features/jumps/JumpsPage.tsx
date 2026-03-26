@@ -4,9 +4,10 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
+import { ParticipationEditorCard } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
-import { createBlankJump, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
+import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
 import {
   AdvancedJsonDetails,
   AutosaveStatusIndicator,
@@ -27,6 +28,7 @@ export function JumpsPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const searchQuery = searchParams.get('search') ?? '';
+  const focusedJumperId = searchParams.get('jumper');
   const filteredJumps = workspace.jumps.filter((jump) =>
     matchesSearchQuery(searchQuery, jump.title, jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata),
   );
@@ -38,6 +40,23 @@ export function JumpsPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save jump changes.'),
   });
   const draftJump = jumpAutosave.draft ?? selectedJump;
+  const focusedJumper =
+    focusedJumperId && workspace.jumpers.some((jumper) => jumper.id === focusedJumperId)
+      ? workspace.jumpers.find((jumper) => jumper.id === focusedJumperId) ?? null
+      : null;
+  const visibleParticipationJumpers =
+    draftJump && focusedJumper
+      ? [focusedJumper]
+      : draftJump
+        ? workspace.jumpers.filter((jumper) => draftJump.participantJumperIds.includes(jumper.id))
+        : [];
+
+  function getParticipationPath(nextJumpId: string) {
+    return withSearchParams(`/chains/${chainId}/participation/${nextJumpId}`, {
+      search: searchQuery,
+      jumper: focusedJumperId,
+    });
+  }
 
   async function handleAddJump() {
     if (!workspace.activeBranch) {
@@ -96,7 +115,9 @@ export function JumpsPage() {
       await syncJumpParticipantMembership(chainId, selectedJump, jumperId, !alreadyParticipating);
       setNotice({
         tone: 'success',
-        message: alreadyParticipating ? 'Removed jumper from this jump and cleaned up participation data.' : 'Updated jump participants.',
+        message: alreadyParticipating
+          ? 'Removed jumper from this jump and cleaned up participation and purchases data.'
+          : 'Updated jump participants and their records.',
       });
     } catch (error) {
       setNotice({
@@ -104,6 +125,119 @@ export function JumpsPage() {
         message: error instanceof Error ? error.message : 'Unable to update jump participants.',
       });
     }
+  }
+
+  async function ensureParticipation(jumperId: string) {
+    if (!workspace.activeBranch || !selectedJump) {
+      return;
+    }
+
+    const existing = workspace.participations.find(
+      (participation) => participation.jumpId === selectedJump.id && participation.jumperId === jumperId,
+    );
+
+    if (existing) {
+      return;
+    }
+
+    try {
+      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, selectedJump.id, jumperId));
+
+      if (!selectedJump.participantJumperIds.includes(jumperId)) {
+        await saveChainRecord(db.jumps, {
+          ...selectedJump,
+          participantJumperIds: [...selectedJump.participantJumperIds, jumperId],
+        });
+      }
+
+      setNotice({
+        tone: 'success',
+        message: 'Created a participation and purchases record for this jumper.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to create a participation and purchases record.',
+      });
+    }
+  }
+
+  function renderParticipationAndPurchasesSection() {
+    if (!draftJump) {
+      return null;
+    }
+
+    const jumpParticipations = workspace.participations.filter((participation) => participation.jumpId === draftJump.id);
+
+    return (
+      <section className="stack stack--compact">
+        <div className="section-heading">
+          <h4>Participation and Purchases</h4>
+          <span className="pill">{jumpParticipations.length} records</span>
+        </div>
+        <p>
+          This lives inside the jump because purchases, drawbacks, budgets, and notes all belong to a specific jumper in this
+          specific jump.
+        </p>
+        {workspace.jumpers.length === 0 ? (
+          <p>No jumpers exist yet. Add a jumper first.</p>
+        ) : focusedJumper && !draftJump.participantJumperIds.includes(focusedJumper.id) ? (
+          <article className="card editor-sheet stack">
+            <div className="section-heading">
+              <h3>{focusedJumper.name}</h3>
+              <span className="pill pill--soft">not participating yet</span>
+            </div>
+            <p>
+              {focusedJumper.name} is the current jumper focus, but they are not in this jump yet. Add them here when you want
+              to track purchases and jump-specific notes.
+            </p>
+            <div className="actions">
+              <button className="button" type="button" onClick={() => void ensureParticipation(focusedJumper.id)}>
+                Add To This Jump
+              </button>
+            </div>
+          </article>
+        ) : visibleParticipationJumpers.length === 0 ? (
+          <p>No jumpers are marked as participating yet. Tick someone above to start their participation and purchases record.</p>
+        ) : (
+          visibleParticipationJumpers.map((jumper) => {
+            const participation = workspace.participations.find(
+              (entry) => entry.jumpId === draftJump.id && entry.jumperId === jumper.id,
+            );
+
+            return participation ? (
+              <ParticipationEditorCard
+                key={jumper.id}
+                jump={draftJump}
+                jumper={jumper}
+                participation={participation}
+                workspace={workspace}
+              />
+            ) : (
+              <article className="card editor-sheet stack" key={jumper.id}>
+                <div className="section-heading">
+                  <h3>{jumper.name}</h3>
+                  <span className="pill pill--soft">record missing</span>
+                </div>
+                <p>
+                  {jumper.name} is marked as participating in this jump, but the detailed record has not been created yet.
+                </p>
+                <div className="actions">
+                  <button className="button" type="button" onClick={() => void ensureParticipation(jumper.id)}>
+                    Create Record
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        )}
+        <div className="actions">
+          <Link className="button button--secondary" to={getParticipationPath(draftJump.id)}>
+            Open Dedicated View
+          </Link>
+        </div>
+      </section>
+    );
   }
 
   if (!workspace.activeBranch) {
@@ -116,8 +250,8 @@ export function JumpsPage() {
         title="Jumps"
         description={
           simpleMode
-            ? 'Pick a jump, set the basics first, and open Optional when you want duration, ordering, or participant details.'
-            : 'Ordered jump records with thin editors for status, type, duration, and participant membership.'
+            ? 'Pick a jump, set the basics first, and use the jump itself for duration, participation, and purchases.'
+            : 'Ordered jump records with editors for status, type, duration, participant membership, and per-jumper participation and purchases details.'
         }
         badge={`${workspace.jumps.length} total`}
         actions={
@@ -133,7 +267,7 @@ export function JumpsPage() {
       {workspace.jumps.length === 0 ? (
         <EmptyWorkspaceCard
           title="No jumps yet"
-          body="Add the first jump for this branch. Once a jump exists, participation, rules, and timeline views will light up."
+          body="Add the first jump for this branch. Once a jump exists, participation and purchases, rules, and timeline views will light up."
           action={
             <button className="button" type="button" onClick={() => void handleAddJump()}>
               Create First Jump
@@ -147,7 +281,7 @@ export function JumpsPage() {
               <h3>Ordered jump list</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
-            {simpleMode ? <p>Choose a jump, then start with title, status, and type. Ordering and participants stay tucked below.</p> : null}
+                {simpleMode ? <p>Choose a jump, then start with title, status, and type. Ordering and participants stay tucked below.</p> : null}
             <label className="field">
               <span>Search jumps</span>
               <input
@@ -210,12 +344,12 @@ export function JumpsPage() {
                         Make Current Jump
                       </button>
                     )}
-                    <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/participation/${draftJump.id}`, { search: searchQuery })}>
-                      Open Participation
+                    <Link className="button button--secondary" to={getParticipationPath(draftJump.id)}>
+                      Open Participation and Purchases
                     </Link>
                   </div>
                 </div>
-                {simpleMode ? <p>Start with the jump basics here. Optional holds manual ordering, duration, and who is taking part.</p> : null}
+                {simpleMode ? <p>Start with the jump basics here. The optional area below now also holds participation and purchases for this jump.</p> : null}
 
                 <div className="field-grid field-grid--two">
                   <label className="field">
@@ -286,7 +420,7 @@ export function JumpsPage() {
                 {simpleMode ? (
                   <details className="details-panel">
                     <summary className="details-panel__summary">
-                      <span>Ordering, duration, and participants</span>
+                      <span>Jump details, participation, and purchases</span>
                       <span className="pill">Optional</span>
                     </summary>
                     <div className="details-panel__body stack stack--compact">
@@ -374,6 +508,8 @@ export function JumpsPage() {
                           })
                         )}
                       </div>
+
+                      {renderParticipationAndPurchasesSection()}
                     </div>
                   </details>
                 ) : (
@@ -455,6 +591,8 @@ export function JumpsPage() {
                         )}
                       </div>
                     </section>
+
+                    {renderParticipationAndPurchasesSection()}
                   </>
                 )}
 

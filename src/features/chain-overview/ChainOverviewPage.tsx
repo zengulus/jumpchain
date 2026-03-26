@@ -21,7 +21,6 @@ import {
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../workspace/records';
-import { SetupGuidePanels, iconicSetupGuide, personalRealitySetupGuide } from '../supplement-guides/SetupGuidePanels';
 import { AssistiveHint, AutosaveStatusIndicator, StatusNoticeBanner, TooltipFrame, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
 import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -356,12 +355,12 @@ export function ChainOverviewPage() {
       await syncJumpParticipantMembership(chainId, currentJump, selectedJumper.id, true);
       setNotice({
         tone: 'success',
-        message: `Created participation for ${selectedJumper.name} in ${currentJump.title}.`,
+        message: `Created a participation and purchases record for ${selectedJumper.name} in ${currentJump.title}.`,
       });
     } catch (error) {
       setNotice({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Unable to create participation from Overview.',
+        message: error instanceof Error ? error.message : 'Unable to create a participation and purchases record from Overview.',
       });
     }
   }
@@ -514,7 +513,7 @@ export function ChainOverviewPage() {
     simpleSetupWizardSteps.push({
       id: 'create-jump',
       title: 'Create your first jump',
-      description: 'Once a jump exists, participation, rules, and the rest of the workflow can attach to it.',
+      description: 'Once a jump exists, participation and purchases, rules, and the rest of the workflow can attach to it.',
     });
   } else if (hasUnguidedJump && draftWizardJump) {
     simpleSetupWizardSteps.push(
@@ -659,7 +658,7 @@ export function ChainOverviewPage() {
         : 'Needed for character setup.',
       context: hasJumpers
         ? `Open ${selectedJumper?.name ?? 'the roster'} to keep identity, background, and concept notes aligned.`
-        : 'Start with at least one jumper before worrying about Iconic or participation.',
+        : 'Start with at least one jumper before worrying about Iconic or jump participation.',
       tone: hasJumpers ? 'ready' : 'attention',
       primaryAction: hasJumpers
         ? {
@@ -769,10 +768,10 @@ export function ChainOverviewPage() {
     },
     {
       id: 'participation',
-      title: selectedJumper && currentJump ? `${selectedJumper.name} @ ${currentJump.title}` : 'Wire participation',
+      title: selectedJumper && currentJump ? `${selectedJumper.name} @ ${currentJump.title}` : 'Wire participation and purchases',
       description: selectedJumper && currentJump
         ? selectedParticipation
-          ? 'Participation is ready.'
+          ? 'Participation and purchases are ready.'
           : 'Current jump record is missing.'
         : selectedJumper
           ? hasJumps
@@ -781,20 +780,20 @@ export function ChainOverviewPage() {
           : 'Needs a jumper and jump.',
       context: selectedJumper && currentJump
         ? selectedParticipation
-          ? 'Open the participation editor to keep imports, purchases, and narratives in sync.'
+          ? 'Open the jump record to keep participation, purchases, imports, and narratives in sync.'
           : 'This is usually the last missing setup step before ordinary jump-by-jump editing feels smooth.'
         : 'This stays blocked until the chain has both a jumper focus and a current jump.',
       tone: selectedParticipation ? 'ready' : selectedJumper && currentJump ? 'attention' : 'blocked',
       primaryAction: selectedParticipation
         ? {
             kind: 'link',
-            label: 'Open Participation',
+            label: 'Open Participation and Purchases',
             to: getParticipationPath(),
           }
         : selectedJumper && currentJump
           ? {
               kind: 'button',
-              label: 'Add Participation',
+              label: 'Add Participation Record',
               onClick: () => handleCreateParticipation(),
             }
           : hasJumpers
@@ -823,7 +822,7 @@ export function ChainOverviewPage() {
       title: selectedJumper ? `Focused Jumper: ${selectedJumper.name}` : 'Jumpers',
       description: selectedJumper ? 'Roster and identity editing.' : 'Create the roster.',
       hint: selectedJumper
-        ? 'Identity, background, and concept edits for the jumper currently driving Iconic and participation routes.'
+        ? 'Identity, background, and concept edits for the jumper currently driving Iconic and jump participation routes.'
         : 'Create and manage the chain’s character roster.',
       to: `/chains/${chainId}/jumpers${buildSearch(selectedJumperId)}`,
     },
@@ -853,7 +852,7 @@ export function ChainOverviewPage() {
     },
     {
       id: 'participation',
-      title: selectedJumper && currentJump ? `Participation: ${selectedJumper.name}` : 'Participation',
+      title: selectedJumper && currentJump ? `Participation & Purchases: ${selectedJumper.name}` : 'Participation & Purchases',
       description: selectedJumper && currentJump
         ? selectedParticipation
           ? 'Current jump record.'
@@ -862,7 +861,7 @@ export function ChainOverviewPage() {
       hint: selectedJumper && currentJump
         ? selectedParticipation
           ? `Open ${selectedJumper.name}'s live record inside ${currentJump.title}.`
-          : `Create ${selectedJumper.name}'s participation record inside ${currentJump.title}.`
+          : `Create ${selectedJumper.name}'s participation and purchases record inside ${currentJump.title}.`
         : 'Needs both a jumper focus and a current jump.',
       to: getParticipationPath(),
     },
@@ -1024,7 +1023,7 @@ export function ChainOverviewPage() {
               </span>
               <span className="metric">
                 <strong>{workspace.participations.length}</strong>
-                Participations
+                Participation Records
               </span>
               <span className="metric">
                 <strong>{workspace.snapshots.length}</strong>
@@ -1037,7 +1036,7 @@ export function ChainOverviewPage() {
               !simpleMode
                 ? nextSetupStep
                   ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
-                  : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+                  : 'Jumpers, jumps, current jump focus, Iconic, and participation and purchases are all represented for the current context.'
                 : undefined
             }
           >
@@ -1051,7 +1050,7 @@ export function ChainOverviewPage() {
                   text={
                     nextSetupStep
                       ? joinHelpText(nextSetupStep.description, nextSetupStep.context)
-                      : 'Jumpers, jumps, current jump focus, Iconic, and participation are all represented for the current context.'
+                      : 'Jumpers, jumps, current jump focus, Iconic, and participation and purchases are all represented for the current context.'
                   }
                   triggerLabel="Explain next setup step"
                 />
@@ -1102,7 +1101,7 @@ export function ChainOverviewPage() {
               <AssistiveHint
                 text={
                   selectedJumper
-                    ? `Iconic and participation setup will follow ${selectedJumper.name}.`
+                    ? `Iconic and participation and purchases setup will follow ${selectedJumper.name}.`
                     : 'Create the first jumper to unlock jumper-specific setup work.'
                 }
                 triggerLabel="Explain focused jumper"
@@ -1126,7 +1125,7 @@ export function ChainOverviewPage() {
               <AssistiveHint
                 text={
                   currentJump
-                    ? `${currentJump.title} is the active jump for rules, participation, and overview summaries.`
+                    ? `${currentJump.title} is the active jump for rules, participation and purchases, and overview summaries.`
                     : hasJumps
                       ? 'Pick which jump is currently in play so the rest of the workspace can follow it.'
                       : 'Create the first jump to unlock current-jump workflows.'
@@ -1612,7 +1611,6 @@ export function ChainOverviewPage() {
                 This stays in the wizard on purpose. Iconic is small enough that simple mode can set it up here without kicking
                 you out to a separate workspace.
               </p>
-              <SetupGuidePanels guide={iconicSetupGuide} />
               {!selectedJumper ? (
                 <div className="status status--warning">Focus a jumper first so the Iconic setup has someone to belong to.</div>
               ) : !draftIconicProfile ? (
@@ -1652,7 +1650,6 @@ export function ChainOverviewPage() {
                 This part stays in the wizard too. You can make the first Personal Reality decisions here, then use the full
                 worksheet later for the page-by-page build.
               </p>
-              <SetupGuidePanels guide={personalRealitySetupGuide} />
 
               <label className="field">
                 <span>Core mode</span>
@@ -1854,7 +1851,7 @@ export function ChainOverviewPage() {
                   Open Jumps
                 </Link>
                 <Link className="button button--secondary" to={getParticipationPath()}>
-                  Open Participation
+                  Open Participation and Purchases
                 </Link>
               </div>
             </div>
@@ -1966,7 +1963,7 @@ export function ChainOverviewPage() {
               <p>No current jump is selected yet.</p>
               <TooltipFrame
                 inline
-                tooltip={!simpleMode ? 'Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries.' : undefined}
+                tooltip={!simpleMode ? 'Choose the active jump above to unlock live rules context, participation and purchases focus, and jump-scoped summaries.' : undefined}
               >
                 <Link className="button button--secondary" to={`/chains/${chainId}/jumps`}>
                   Open Jumps
@@ -1975,7 +1972,7 @@ export function ChainOverviewPage() {
               {simpleMode ? (
                 <AssistiveHint
                   as="p"
-                  text="Choose the active jump above to unlock live rules context, participation focus, and jump-scoped summaries."
+                  text="Choose the active jump above to unlock live rules context, participation and purchases focus, and jump-scoped summaries."
                   triggerLabel="Explain current jump rules"
                 />
               ) : null}
