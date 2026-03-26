@@ -158,6 +158,9 @@ function PageShellContent() {
               </p>
             </div>
             <UniversalSearchBar />
+            <div className="page-shell__header-controls">
+              <ViewModeToggle simpleMode={simpleMode} onToggle={() => setSimpleMode(!simpleMode)} />
+            </div>
           </header>
 
           {!workspaceDrawerRegistered ? (
@@ -177,9 +180,6 @@ function PageShellContent() {
                       <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
                     </div>
                     <AppNavigationLinks onNavigate={closeNav} />
-                    <div className="workspace-sidebar-controls">
-                      <ViewModeToggle simpleMode={simpleMode} onToggle={() => setSimpleMode(!simpleMode)} />
-                    </div>
                   </section>
                 </aside>
             </>

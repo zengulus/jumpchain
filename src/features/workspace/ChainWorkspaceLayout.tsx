@@ -129,7 +129,7 @@ export function ChainWorkspaceLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { simpleMode, setSimpleMode } = useUiPreferences();
+  const { simpleMode } = useUiPreferences();
   const { navOpen: sidebarOpen, closeNav, registerWorkspaceDrawer } = usePageShellNav();
   const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
   const activeModuleKey = getActiveModuleKey(location.pathname);
@@ -566,17 +566,6 @@ export function ChainWorkspaceLayout() {
                 <span>Review and convert external jump data.</span>
               </NavLink>
             </nav>
-            <div className="workspace-sidebar-controls">
-              <button
-                className={`page-shell__mode-toggle${simpleMode ? ' is-active' : ''}`}
-                type="button"
-                aria-pressed={simpleMode}
-                onClick={() => setSimpleMode(!simpleMode)}
-              >
-                <span>View mode</span>
-                <strong>{simpleMode ? 'Simple' : 'Normal'}</strong>
-              </button>
-            </div>
           </section>
 
           <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
