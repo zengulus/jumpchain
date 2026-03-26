@@ -20,6 +20,7 @@ type WorkspaceParticipation = Workspace['participations'][number];
 type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks';
 type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
 type DiscountLevel = 0 | 1 | 2;
+type BeginningSlotId = 'origin' | 'background' | 'race' | 'age';
 
 const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }> = [
   { level: 0, label: 'Full price', factor: 1 },
@@ -87,6 +88,22 @@ interface StipendRow {
   amount: number;
 }
 
+interface BudgetLedgerEntry {
+  currencyKey: string;
+  starting: number;
+  spent: number;
+  exchangedOut: number;
+  exchangedIn: number;
+  remaining: number;
+}
+
+const CORE_BEGINNING_SLOTS: Array<{ id: BeginningSlotId; label: string; defaultKey: string; singleLine: boolean }> = [
+  { id: 'origin', label: 'Origin', defaultKey: 'origin', singleLine: true },
+  { id: 'background', label: 'Background', defaultKey: 'background', singleLine: true },
+  { id: 'race', label: 'Race', defaultKey: 'race', singleLine: true },
+  { id: 'age', label: 'Age / starting state', defaultKey: 'age', singleLine: true },
+];
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -107,6 +124,14 @@ function getKeyList(value: unknown): string[] {
 
 function formatCountLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function titleCaseIdentifier(value: string) {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function formatNumericValue(value: number) {
@@ -430,27 +455,9 @@ function updateSelectionItems(
 
 function getSelectionMetadata(record: Record<string, unknown>) {
   const metadata: string[] = [];
-  const sourcePurchaseId = getOptionalNumber(record.sourcePurchaseId);
-  const value = getOptionalNumber(record.value);
-  const selectionKind =
-    typeof record.selectionKind === 'string' && record.selectionKind.trim().length > 0
-      ? record.selectionKind
-      : null;
-
-  if (sourcePurchaseId !== null) {
-    metadata.push(`Source #${sourcePurchaseId}`);
-  }
-
-  if (value !== null) {
-    metadata.push(`${value > 0 ? '+' : ''}${formatNumericValue(value)} value`);
-  }
-
-  if (selectionKind !== null) {
-    metadata.push(selectionKind);
-  }
 
   if (record.unresolved === true) {
-    metadata.push('Unresolved import');
+    metadata.push('Needs review');
   }
 
   return metadata;
@@ -547,7 +554,9 @@ function getOriginCategoryDefinitions(value: unknown): Record<string, OriginCate
           name:
             typeof record.name === 'string' && record.name.trim().length > 0
               ? record.name
-              : `Field ${key}`,
+              : key.startsWith('origin-field') || key.startsWith('custom-beginning')
+                ? 'Custom beginning'
+                : titleCaseIdentifier(key),
           singleLine: record.singleLine === true,
           defaultValue: typeof record.default === 'string' ? record.default : '',
         },
@@ -578,7 +587,13 @@ function getOrderedOriginCategoryKeys(
 
 function formatCurrencyLabel(currencyKey: string, definitions: Record<string, CurrencyDefinition>) {
   const definition = definitions[currencyKey];
-  const name = definition?.name ?? `Currency ${currencyKey}`;
+  const name =
+    definition?.name ??
+    (currencyKey === '0'
+      ? 'Choice Points'
+      : currencyKey.startsWith('custom-currency')
+        ? 'Custom currency'
+        : titleCaseIdentifier(currencyKey) || 'Custom currency');
   const abbreviation = definition?.abbrev?.trim() ? definition.abbrev : null;
 
   return abbreviation ? `${name} (${abbreviation})` : name;
@@ -592,10 +607,82 @@ function formatPurchaseSubtypeLabel(
   const definition = subtypeDefinitions[subtypeKey];
 
   if (!definition) {
-    return `Subtype ${subtypeKey}`;
+    return subtypeKey.startsWith('stipend-subtype') ? 'Custom stipend' : titleCaseIdentifier(subtypeKey) || 'Custom stipend';
   }
 
   return `${definition.name} • ${formatCurrencyLabel(definition.currencyKey, currencyDefinitions)}`;
+}
+
+function getOriginCustomLabel(record: Record<string, unknown>) {
+  return getRecordStringValue(record, ['label', 'title', 'name']);
+}
+
+function getOriginDisplayName(
+  originKey: string,
+  originCategories: Record<string, OriginCategoryDefinition>,
+  record: Record<string, unknown>,
+) {
+  const customLabel = getOriginCustomLabel(record);
+
+  if (customLabel) {
+    return customLabel;
+  }
+
+  if (originCategories[originKey]?.name) {
+    return originCategories[originKey].name;
+  }
+
+  if (originKey.startsWith('origin-field') || originKey.startsWith('custom-beginning')) {
+    return 'Custom beginning';
+  }
+
+  return titleCaseIdentifier(originKey) || 'Custom beginning';
+}
+
+function inferBeginningSlotId(
+  originKey: string,
+  originCategories: Record<string, OriginCategoryDefinition>,
+  record: Record<string, unknown>,
+): BeginningSlotId | null {
+  const combined = [originKey, originCategories[originKey]?.name ?? '', getOriginCustomLabel(record) ?? '']
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ');
+
+  if (combined.includes('background')) {
+    return 'background';
+  }
+
+  if (combined.includes('race') || combined.includes('species')) {
+    return 'race';
+  }
+
+  if (combined.includes('age')) {
+    return 'age';
+  }
+
+  if (combined.includes('origin')) {
+    return 'origin';
+  }
+
+  return null;
+}
+
+function getSuggestedOriginKeyForSlot(
+  slotId: BeginningSlotId,
+  orderedOriginKeys: string[],
+  originCategories: Record<string, OriginCategoryDefinition>,
+  origins: Record<string, unknown>,
+) {
+  const matchingKey = orderedOriginKeys.find((originKey) => {
+    if (originKey in origins) {
+      return false;
+    }
+
+    return inferBeginningSlotId(originKey, originCategories, asRecord(origins[originKey])) === slotId;
+  });
+
+  return matchingKey ?? CORE_BEGINNING_SLOTS.find((slot) => slot.id === slotId)?.defaultKey ?? slotId;
 }
 
 function getOriginTokens(
@@ -610,7 +697,7 @@ function getOriginTokens(
       return [];
     }
 
-    const categoryName = originCategories[originKey]?.name ?? `Field ${originKey}`;
+    const categoryName = getOriginDisplayName(originKey, originCategories, record);
     const summary =
       typeof record.summary === 'string' && record.summary.trim().length > 0
         ? record.summary
@@ -746,10 +833,162 @@ function getCurrencyExchangeTokens(
 
     return {
       label: `Exchange ${index + 1}`,
-      detail: 'Unstructured exchange data. Use the JSON editor below to inspect or clean it up.',
+      detail: 'Conversion record',
       muted: true,
     };
   });
+}
+
+function normalizeCurrencyExchangeForEdit(value: unknown, defaultCurrencyKey: string) {
+  const record = asRecord(value);
+
+  return {
+    ...record,
+    fromCurrency:
+      getRecordStringValue(record, ['fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??
+      getRecordStringValue(record, ['currency']) ??
+      defaultCurrencyKey,
+    toCurrency:
+      getRecordStringValue(record, ['toCurrency', 'targetCurrency', 'currencyTo', 'targetCurrencyKey', 'to', 'target']) ??
+      defaultCurrencyKey,
+    fromAmount: getRecordNumberValue(record, ['fromAmount', 'sourceAmount', 'spent', 'amount', 'value']) ?? 0,
+    toAmount: getRecordNumberValue(record, ['toAmount', 'targetAmount', 'receivedAmount', 'convertedAmount', 'received']) ?? 0,
+    notes: getRecordStringValue(record, ['notes', 'summary', 'description']) ?? '',
+  };
+}
+
+function updateCurrencyExchangeItems(
+  items: unknown[],
+  index: number,
+  defaultCurrencyKey: string,
+  updater: (record: Record<string, unknown>) => Record<string, unknown>,
+) {
+  return items.map((item, itemIndex) =>
+    itemIndex === index ? updater(normalizeCurrencyExchangeForEdit(item, defaultCurrencyKey)) : item,
+  );
+}
+
+function getSelectionSpendAmount(selection: unknown) {
+  const record = asRecord(selection);
+
+  if (record.free === true) {
+    return 0;
+  }
+
+  return getOptionalNumber(record.purchaseValue) ?? getComputedSelectionCost(record) ?? getOptionalNumber(record.value) ?? 0;
+}
+
+function sumCurrencyAmounts(entries: Array<{ currencyKey: string; amount: number }>) {
+  return entries.reduce<Record<string, number>>((totals, entry) => {
+    if (!Number.isFinite(entry.amount) || entry.amount === 0) {
+      return totals;
+    }
+
+    return {
+      ...totals,
+      [entry.currencyKey]: (totals[entry.currencyKey] ?? 0) + entry.amount,
+    };
+  }, {});
+}
+
+function getOriginSpendAmounts(
+  origins: Record<string, unknown>,
+  orderedOriginKeys: string[],
+  primaryCurrencyKey: string,
+) {
+  return sumCurrencyAmounts(
+    orderedOriginKeys
+      .map((originKey) => {
+        const cost = getOptionalNumber(asRecord(origins[originKey]).cost);
+
+        return cost !== null ? { currencyKey: primaryCurrencyKey, amount: cost } : null;
+      })
+      .filter((entry): entry is { currencyKey: string; amount: number } => entry !== null),
+  );
+}
+
+function getCurrencyExchangeFlows(
+  exchanges: unknown[],
+  defaultCurrencyKey: string,
+): { outflows: Record<string, number>; inflows: Record<string, number> } {
+  return exchanges.reduce<{ outflows: Record<string, number>; inflows: Record<string, number> }>(
+    (flows, exchange) => {
+      const record = normalizeCurrencyExchangeForEdit(exchange, defaultCurrencyKey);
+      const fromCurrency = typeof record.fromCurrency === 'string' ? record.fromCurrency : defaultCurrencyKey;
+      const toCurrency = typeof record.toCurrency === 'string' ? record.toCurrency : defaultCurrencyKey;
+      const fromAmount = getOptionalNumber(record.fromAmount) ?? 0;
+      const toAmount = getOptionalNumber(record.toAmount) ?? 0;
+
+      if (fromAmount !== 0) {
+        flows.outflows[fromCurrency] = (flows.outflows[fromCurrency] ?? 0) + fromAmount;
+      }
+
+      if (toAmount !== 0) {
+        flows.inflows[toCurrency] = (flows.inflows[toCurrency] ?? 0) + toAmount;
+      }
+
+      return flows;
+    },
+    { outflows: {}, inflows: {} },
+  );
+}
+
+function getBudgetLedgerEntries(
+  effectiveBudgets: Record<string, number>,
+  purchases: unknown[],
+  origins: Record<string, unknown>,
+  orderedOriginKeys: string[],
+  currencyExchanges: unknown[],
+  currencyDefinitions: Record<string, CurrencyDefinition>,
+) {
+  const primaryCurrencyKey = findPrimaryCpBudget(effectiveBudgets, currencyDefinitions)?.[0] ?? Object.keys(effectiveBudgets)[0] ?? '0';
+  const purchaseSpend = sumCurrencyAmounts(
+    purchases.map((purchase) => ({
+      currencyKey: getSelectionCurrencyKey(purchase),
+      amount: getSelectionSpendAmount(purchase),
+    })),
+  );
+  const originSpend = getOriginSpendAmounts(origins, orderedOriginKeys, primaryCurrencyKey);
+  const combinedSpend = sumCurrencyAmounts(
+    [...Object.entries(purchaseSpend), ...Object.entries(originSpend)].map(([currencyKey, amount]) => ({ currencyKey, amount })),
+  );
+  const exchangeFlows = getCurrencyExchangeFlows(currencyExchanges, primaryCurrencyKey);
+  const currencyKeys = new Set([
+    ...Object.keys(effectiveBudgets),
+    ...Object.keys(combinedSpend),
+    ...Object.keys(exchangeFlows.outflows),
+    ...Object.keys(exchangeFlows.inflows),
+  ]);
+
+  return Array.from(currencyKeys)
+    .map<BudgetLedgerEntry>((currencyKey) => {
+      const starting = effectiveBudgets[currencyKey] ?? 0;
+      const spent = combinedSpend[currencyKey] ?? 0;
+      const exchangedOut = exchangeFlows.outflows[currencyKey] ?? 0;
+      const exchangedIn = exchangeFlows.inflows[currencyKey] ?? 0;
+
+      return {
+        currencyKey,
+        starting,
+        spent,
+        exchangedOut,
+        exchangedIn,
+        remaining: starting - spent - exchangedOut + exchangedIn,
+      };
+    })
+    .sort((left, right) => {
+      if (left.currencyKey === primaryCurrencyKey) {
+        return -1;
+      }
+
+      if (right.currencyKey === primaryCurrencyKey) {
+        return 1;
+      }
+
+      return formatCurrencyLabel(left.currencyKey, currencyDefinitions).localeCompare(
+        formatCurrencyLabel(right.currencyKey, currencyDefinitions),
+      );
+    });
 }
 
 function getInheritedBaseBudgets(
@@ -1145,6 +1384,163 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
   );
 }
 
+function CurrencyExchangeEditorSection(props: {
+  items: unknown[];
+  currencyDefinitions: Record<string, CurrencyDefinition>;
+  defaultCurrencyKey: string;
+  onChange: (nextItems: unknown[]) => void;
+}) {
+  const currencyKeys = Object.keys(props.currencyDefinitions);
+
+  return (
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <h4>Currency exchanges</h4>
+        <span className="pill">{props.items.length}</span>
+      </div>
+
+      {props.items.length === 0 ? (
+        <p className="editor-section__empty">No currency exchanges yet.</p>
+      ) : (
+        <div className="selection-editor-list">
+          {props.items.map((item, index) => {
+            const record = normalizeCurrencyExchangeForEdit(item, props.defaultCurrencyKey);
+            const availableFromCurrencies = Array.from(new Set([String(record.fromCurrency), ...currencyKeys]));
+            const availableToCurrencies = Array.from(new Set([String(record.toCurrency), ...currencyKeys]));
+
+            return (
+              <div className="selection-editor" key={`exchange-${index}`}>
+                <div className="selection-editor__header">
+                  <strong>
+                    {formatCurrencyLabel(String(record.fromCurrency), props.currencyDefinitions)} {'->'}{' '}
+                    {formatCurrencyLabel(String(record.toCurrency), props.currencyDefinitions)}
+                  </strong>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => props.onChange(props.items.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Spend from</span>
+                    <select
+                      value={String(record.fromCurrency)}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
+                            ...current,
+                            fromCurrency: event.target.value,
+                          })),
+                        )
+                      }
+                    >
+                      {availableFromCurrencies.map((currencyKey) => (
+                        <option key={`from-${currencyKey}`} value={currencyKey}>
+                          {formatCurrencyLabel(currencyKey, props.currencyDefinitions)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Gain in</span>
+                    <select
+                      value={String(record.toCurrency)}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
+                            ...current,
+                            toCurrency: event.target.value,
+                          })),
+                        )
+                      }
+                    >
+                      {availableToCurrencies.map((currencyKey) => (
+                        <option key={`to-${currencyKey}`} value={currencyKey}>
+                          {formatCurrencyLabel(currencyKey, props.currencyDefinitions)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Amount spent</span>
+                    <input
+                      type="number"
+                      value={getOptionalNumber(record.fromAmount) ?? 0}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
+                            ...current,
+                            fromAmount: Number(event.target.value),
+                          })),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Amount gained</span>
+                    <input
+                      type="number"
+                      value={getOptionalNumber(record.toAmount) ?? 0}
+                      onChange={(event) =>
+                        props.onChange(
+                          updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
+                            ...current,
+                            toAmount: Number(event.target.value),
+                          })),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>Notes</span>
+                  <textarea
+                    rows={3}
+                    value={typeof record.notes === 'string' ? record.notes : ''}
+                    onChange={(event) =>
+                      props.onChange(
+                        updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
+                          ...current,
+                          notes: event.target.value,
+                        })),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="actions">
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={() =>
+            props.onChange([
+              ...props.items,
+              normalizeCurrencyExchangeForEdit({}, props.defaultCurrencyKey),
+            ])
+          }
+        >
+          Add Exchange
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ParticipationEditorTabs(props: {
   tabs: Array<{ id: ParticipationTab; label: string; count?: number }>;
   activeTab: ParticipationTab;
@@ -1175,160 +1571,240 @@ function OriginEditorSection(props: {
   originCategories: Record<string, OriginCategoryDefinition>;
   onChange: (nextOrigins: Record<string, unknown>) => void;
 }) {
+  const populatedEntries = props.orderedOriginKeys
+    .map((originKey) => {
+      const record = asRecord(props.origins[originKey]);
+
+      return {
+        originKey,
+        record,
+        definition: props.originCategories[originKey],
+      };
+    })
+    .filter(({ originKey, record, definition }) => originKey in props.origins || Object.keys(record).length > 0 || Boolean(definition));
+  const assignedCoreKeys = new Set<string>();
+  const coreEntries = CORE_BEGINNING_SLOTS.map((slot) => {
+    const existingEntry = populatedEntries.find(({ originKey, record }) => {
+      if (assignedCoreKeys.has(originKey)) {
+        return false;
+      }
+
+      return inferBeginningSlotId(originKey, props.originCategories, record) === slot.id;
+    });
+
+    if (existingEntry) {
+      assignedCoreKeys.add(existingEntry.originKey);
+    }
+
+    return {
+      slot,
+      entry: existingEntry ?? null,
+    };
+  });
+  const otherEntries = populatedEntries.filter(({ originKey }) => !assignedCoreKeys.has(originKey) && originKey in props.origins);
+
+  function updateOrigin(originKey: string, updater: (record: Record<string, unknown>) => Record<string, unknown>) {
+    props.onChange({
+      ...props.origins,
+      [originKey]: updater(asRecord(props.origins[originKey])),
+    });
+  }
+
+  function renderBeginningEditor(
+    originKey: string,
+    label: string,
+    singleLine: boolean,
+    allowLabelEdit: boolean,
+    record: Record<string, unknown>,
+  ) {
+    const summary = typeof record.summary === 'string' ? record.summary : '';
+    const description = typeof record.description === 'string' ? record.description : '';
+    const cost = getOptionalNumber(record.cost) ?? 0;
+
+    return (
+      <div className="selection-editor" key={`origin-${originKey}`}>
+        <div className="selection-editor__header">
+          <strong>{label}</strong>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => {
+              const nextOrigins = { ...props.origins };
+              delete nextOrigins[originKey];
+              props.onChange(nextOrigins);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+
+        <div className="field-grid field-grid--two">
+          {allowLabelEdit ? (
+            <label className="field">
+              <span>Label</span>
+              <input
+                value={getOriginCustomLabel(record) ?? label}
+                onChange={(event) =>
+                  updateOrigin(originKey, (current) => ({
+                    ...current,
+                    label: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          ) : null}
+
+          <label className="field">
+            <span>Cost</span>
+            <input
+              type="number"
+              value={cost}
+              onChange={(event) =>
+                updateOrigin(originKey, (current) => ({
+                  ...current,
+                  cost: Number(event.target.value),
+                }))
+              }
+            />
+          </label>
+        </div>
+
+        <label className="field">
+          <span>Choice</span>
+          {singleLine ? (
+            <input
+              value={summary}
+              onChange={(event) =>
+                updateOrigin(originKey, (current) => ({
+                  ...current,
+                  summary: event.target.value,
+                }))
+              }
+            />
+          ) : (
+            <textarea
+              rows={3}
+              value={summary}
+              onChange={(event) =>
+                updateOrigin(originKey, (current) => ({
+                  ...current,
+                  summary: event.target.value,
+                }))
+              }
+            />
+          )}
+        </label>
+
+        <label className="field">
+          <span>Notes</span>
+          <textarea
+            rows={3}
+            value={description}
+            onChange={(event) =>
+              updateOrigin(originKey, (current) => ({
+                ...current,
+                description: event.target.value,
+              }))
+            }
+          />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <section className="editor-section">
       <div className="editor-section__header">
-        <div className="stack stack--compact">
-          <h4>Beginnings</h4>
-        </div>
-        <span className="pill">{props.orderedOriginKeys.length}</span>
+        <h4>Beginnings</h4>
+        <span className="pill">{Object.keys(props.origins).length}</span>
       </div>
 
-      {props.orderedOriginKeys.length === 0 ? (
-        <p className="editor-section__empty">No beginning fields are defined for this participation yet.</p>
+      {Object.keys(props.origins).length === 0 ? (
+        <p className="editor-section__empty">No beginnings yet.</p>
       ) : (
         <div className="selection-editor-list">
-          {props.orderedOriginKeys.map((originKey) => {
-            const definition = props.originCategories[originKey];
-            const record = asRecord(props.origins[originKey]);
-            const summary = typeof record.summary === 'string' ? record.summary : definition?.defaultValue ?? '';
-            const description = typeof record.description === 'string' ? record.description : '';
-            const cost = getOptionalNumber(record.cost);
-            const editableCategoryOptions = props.orderedOriginKeys.filter(
-              (candidateKey) => candidateKey === originKey || !(candidateKey in props.origins),
-            );
+          {coreEntries
+            .filter((entry) => entry.entry !== null)
+            .map(({ slot, entry }) =>
+              renderBeginningEditor(
+                entry!.originKey,
+                getOriginDisplayName(entry!.originKey, props.originCategories, entry!.record) || slot.label,
+                entry!.definition?.singleLine ?? slot.singleLine,
+                false,
+                entry!.record,
+              ),
+            )}
 
-            return (
-              <div className="selection-editor" key={`origin-${originKey}`}>
-                <div className="selection-editor__header">
-                  <div className="stack stack--compact">
-                    <strong>{definition?.name ?? `Field ${originKey}`}</strong>
-                    {definition?.defaultValue ? (
-                      <div className="inline-meta">
-                        <span className="pill">Default: {definition.defaultValue}</span>
-                      </div>
-                    ) : null}
-                  </div>
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => {
-                      const nextOrigins = { ...props.origins };
-                      delete nextOrigins[originKey];
-                      props.onChange(nextOrigins);
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div className="field-grid field-grid--two">
-                  <label className="field">
-                    <span>Field</span>
-                    <select
-                      value={originKey}
-                      onChange={(event) => props.onChange(renameRecordKey(props.origins, originKey, event.target.value))}
-                    >
-                      {editableCategoryOptions.map((candidateKey) => (
-                        <option key={candidateKey} value={candidateKey}>
-                          {props.originCategories[candidateKey]?.name ?? candidateKey}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="field">
-                    <span>Cost</span>
-                    <input
-                      type="number"
-                      value={cost ?? 0}
-                      onChange={(event) =>
-                        props.onChange({
-                          ...props.origins,
-                          [originKey]: {
-                            ...record,
-                            cost: Number(event.target.value),
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                </div>
-
-                <label className="field">
-                  <span>Selection</span>
-                  {definition?.singleLine ? (
-                    <input
-                      value={summary}
-                      onChange={(event) =>
-                        props.onChange({
-                          ...props.origins,
-                          [originKey]: {
-                            ...record,
-                            summary: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  ) : (
-                    <textarea
-                      rows={3}
-                      value={summary}
-                      onChange={(event) =>
-                        props.onChange({
-                          ...props.origins,
-                          [originKey]: {
-                            ...record,
-                            summary: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  )}
-                </label>
-
-                <label className="field">
-                  <span>Notes / description</span>
-                  <textarea
-                    rows={4}
-                    value={description}
-                    onChange={(event) =>
-                      props.onChange({
-                        ...props.origins,
-                        [originKey]: {
-                          ...record,
-                          description: event.target.value,
-                        },
-                      })
-                    }
-                  />
-                </label>
+          {otherEntries.length > 0 ? (
+            <section className="editor-section">
+              <div className="editor-section__header">
+                <h5>Other beginnings</h5>
+                <span className="pill">{otherEntries.length}</span>
               </div>
-            );
-          })}
+              <div className="selection-editor-list">
+                {otherEntries.map(({ originKey, record, definition }) =>
+                  renderBeginningEditor(
+                    originKey,
+                    getOriginDisplayName(originKey, props.originCategories, record),
+                    definition?.singleLine ?? true,
+                    true,
+                    record,
+                  ),
+                )}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
 
       <div className="actions">
+        {coreEntries
+          .filter(({ entry }) => entry === null)
+          .map(({ slot }) => (
+            <button
+              className="button button--secondary"
+              type="button"
+              key={`add-${slot.id}`}
+              onClick={() => {
+                const nextKey = getSuggestedOriginKeyForSlot(
+                  slot.id,
+                  props.orderedOriginKeys,
+                  props.originCategories,
+                  props.origins,
+                );
+                const definition = props.originCategories[nextKey];
+
+                props.onChange({
+                  ...props.origins,
+                  [nextKey]: {
+                    summary: definition?.defaultValue ?? '',
+                    description: '',
+                    cost: 0,
+                  },
+                });
+              }}
+            >
+              Add {slot.label}
+            </button>
+          ))}
         <button
           className="button button--secondary"
           type="button"
           onClick={() => {
-            const unusedKey = props.orderedOriginKeys.find((originKey) => !(originKey in props.origins));
-            const nextKey = unusedKey ?? getNextCustomKey(Object.keys(props.origins), 'origin-field');
-            const definition = props.originCategories[nextKey];
+            const nextKey = getNextCustomKey(Object.keys(props.origins), 'custom-beginning');
 
             props.onChange({
               ...props.origins,
               [nextKey]: {
-                summary: definition?.defaultValue ?? '',
+                label: 'Custom beginning',
+                summary: '',
                 description: '',
                 cost: 0,
               },
             });
           }}
         >
-          Add Beginning Field
+          Add Custom Beginning
         </button>
       </div>
     </section>
@@ -1388,6 +1864,7 @@ export function ParticipationEditorCard(props: {
   const showBudgetSummary = props.showBudgetSummary ?? true;
   const exchangeTokens = getCurrencyExchangeTokens(draftParticipation.currencyExchanges, currencyDefinitions);
   const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+  const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(currencyDefinitions)[0] ?? '0';
   const cpBudgetLabel = cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null;
   const cpBudgetValue = cpBudgetEntry?.[1] ?? null;
   const cpBaseValue = cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null;
@@ -1411,6 +1888,14 @@ export function ParticipationEditorCard(props: {
   const subsystemPurchases = filterPurchasesBySection(draftParticipation.purchases, 'subsystem', purchaseClassification);
   const itemPurchases = filterPurchasesBySection(draftParticipation.purchases, 'item', purchaseClassification);
   const otherPurchases = filterPurchasesBySection(draftParticipation.purchases, 'other', purchaseClassification);
+  const budgetLedgerEntries = getBudgetLedgerEntries(
+    effectiveBudgetState.effectiveBudgets,
+    draftParticipation.purchases,
+    draftParticipation.origins,
+    orderedOriginKeys,
+    draftParticipation.currencyExchanges,
+    currencyDefinitions,
+  );
 
   function updateParticipation(
     updater:
@@ -1455,7 +1940,7 @@ export function ParticipationEditorCard(props: {
             const visibleAmount = explicitAmount ?? effectiveBudgetState.baseBudgets[currencyKey] ?? 0;
             const inheritedAmount =
               currencyKey in inheritedBaseBudgets ? inheritedBaseBudgets[currencyKey] ?? null : null;
-            const isCustomCurrency = !(currencyKey in rawCurrencyDefinitions) && currencyKey !== '0';
+            const availableCurrencyKeys = Array.from(new Set([currencyKey, ...Object.keys(currencyDefinitions)]));
 
             return (
               <div className="selection-editor" key={`budget-${currencyKey}`}>
@@ -1463,9 +1948,8 @@ export function ParticipationEditorCard(props: {
                   <div className="stack stack--compact">
                     <strong>{formatCurrencyLabel(currencyKey, currencyDefinitions)}</strong>
                     <div className="inline-meta">
-                      <span className="pill">Key: {currencyKey}</span>
                       {inheritedAmount !== null ? (
-                        <span className="pill">Default: {formatNumericValue(inheritedAmount)}</span>
+                        <span className="pill">Default {formatNumericValue(inheritedAmount)}</span>
                       ) : null}
                       {explicitAmount !== undefined ? <span className="pill">Custom override</span> : null}
                     </div>
@@ -1492,28 +1976,27 @@ export function ParticipationEditorCard(props: {
                 </div>
 
                 <div className="field-grid field-grid--two">
-                  {isCustomCurrency ? (
-                    <label className="field">
-                      <span>Currency key</span>
-                      <input
-                        value={currencyKey}
-                        onChange={(event) =>
-                          updateParticipation((current) => ({
-                            ...current,
-                            budgets: renameRecordKey(current.budgets, currencyKey, event.target.value),
-                          }))
-                        }
-                      />
-                    </label>
-                  ) : (
-                    <label className="field">
-                      <span>Currency</span>
-                      <input value={formatCurrencyLabel(currencyKey, currencyDefinitions)} readOnly />
-                    </label>
-                  )}
+                  <label className="field">
+                    <span>Currency</span>
+                    <select
+                      value={currencyKey}
+                      onChange={(event) =>
+                        updateParticipation((current) => ({
+                          ...current,
+                          budgets: renameRecordKey(current.budgets, currencyKey, event.target.value),
+                        }))
+                      }
+                    >
+                      {availableCurrencyKeys.map((availableCurrencyKey) => (
+                        <option key={availableCurrencyKey} value={availableCurrencyKey}>
+                          {formatCurrencyLabel(availableCurrencyKey, currencyDefinitions)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
                   <label className="field">
-                    <span>Budget amount</span>
+                    <span>Starting amount</span>
                     <input
                       type="number"
                       value={visibleAmount}
@@ -1567,25 +2050,25 @@ export function ParticipationEditorCard(props: {
         </div>
 
         {rows.length === 0 ? (
-          <p className="editor-section__empty">No stipend rows are defined for this section yet.</p>
+          <p className="editor-section__empty">No stipend lines yet.</p>
         ) : (
           <div className="selection-editor-list">
             {rows.map((row) => {
               const subtypeDefinition = purchaseSubtypeDefinitions[row.subtypeKey];
               const rowKey = `${row.currencyKey}-${row.subtypeKey}`;
+              const availableCurrencyKeys = Array.from(new Set([row.currencyKey, ...Object.keys(currencyDefinitions)]));
+              const availableSubtypeKeys = Array.from(new Set([row.subtypeKey, ...Object.keys(purchaseSubtypeDefinitions)]));
 
               return (
                 <div className="selection-editor" key={`stipend-${rowKey}`}>
                   <div className="selection-editor__header">
                     <div className="stack stack--compact">
                       <strong>{formatPurchaseSubtypeLabel(row.subtypeKey, purchaseSubtypeDefinitions, currencyDefinitions)}</strong>
-                      <div className="inline-meta">
-                        <span className="pill">Currency key: {row.currencyKey}</span>
-                        <span className="pill">Subtype key: {row.subtypeKey}</span>
-                        {subtypeDefinition?.stipend !== null && subtypeDefinition?.stipend !== undefined ? (
-                          <span className="pill">Default stipend: {formatNumericValue(subtypeDefinition.stipend)}</span>
-                        ) : null}
-                      </div>
+                      {subtypeDefinition?.stipend !== null && subtypeDefinition?.stipend !== undefined ? (
+                        <div className="inline-meta">
+                          <span className="pill">Default {formatNumericValue(subtypeDefinition.stipend)}</span>
+                        </div>
+                      ) : null}
                     </div>
                     <button
                       className="button button--secondary"
@@ -1608,8 +2091,8 @@ export function ParticipationEditorCard(props: {
 
                   <div className="field-grid field-grid--three">
                     <label className="field">
-                      <span>Currency key</span>
-                      <input
+                      <span>Currency</span>
+                      <select
                         value={row.currencyKey}
                         onChange={(event) =>
                           updateParticipation((current) => {
@@ -1628,12 +2111,18 @@ export function ParticipationEditorCard(props: {
                             };
                           })
                         }
-                      />
+                      >
+                        {availableCurrencyKeys.map((currencyKey) => (
+                          <option key={`stipend-currency-${currencyKey}`} value={currencyKey}>
+                            {formatCurrencyLabel(currencyKey, currencyDefinitions)}
+                          </option>
+                        ))}
+                      </select>
                     </label>
 
                     <label className="field">
-                      <span>Subtype key</span>
-                      <input
+                      <span>Stipend type</span>
+                      <select
                         value={row.subtypeKey}
                         onChange={(event) =>
                           updateParticipation((current) => {
@@ -1652,7 +2141,13 @@ export function ParticipationEditorCard(props: {
                             };
                           })
                         }
-                      />
+                      >
+                        {availableSubtypeKeys.map((subtypeKey) => (
+                          <option key={`stipend-subtype-${subtypeKey}`} value={subtypeKey}>
+                            {formatPurchaseSubtypeLabel(subtypeKey, purchaseSubtypeDefinitions, currencyDefinitions)}
+                          </option>
+                        ))}
+                      </select>
                     </label>
 
                     <label className="field">
@@ -1902,14 +2397,18 @@ export function ParticipationEditorCard(props: {
 
           {showBudgetSummary ? (
             <SummarySection
-              title="Current budgets"
-              items={getBudgetTokens(
-                effectiveBudgetState.effectiveBudgets,
-                effectiveBudgetState.baseBudgets,
-                effectiveBudgetState.chainDrawbackBudgetGrants,
-                effectiveBudgetState.participationDrawbackBudgetGrants,
-                currencyDefinitions,
-              )}
+              title="Budget ledger"
+              items={budgetLedgerEntries.map((entry) => ({
+                label: `${formatCurrencyLabel(entry.currencyKey, currencyDefinitions)}: ${formatNumericValue(entry.remaining)} left`,
+                detail: [
+                  `${formatNumericValue(entry.starting)} start`,
+                  entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent` : null,
+                  entry.exchangedOut !== 0 ? `-${formatNumericValue(entry.exchangedOut)} exchanged out` : null,
+                  entry.exchangedIn !== 0 ? `+${formatNumericValue(entry.exchangedIn)} exchanged in` : null,
+                ]
+                  .filter((value): value is string => Boolean(value))
+                  .join(' - '),
+              }))}
               emptyMessage="No budgets yet."
             />
           ) : null}
@@ -2014,27 +2513,17 @@ export function ParticipationEditorCard(props: {
             showSubtypeSelector
           />
 
-          <SummarySection
-            title="Currency exchanges"
-            items={exchangeTokens}
-            emptyMessage="No currency exchanges yet."
+          <CurrencyExchangeEditorSection
+            items={draftParticipation.currencyExchanges}
+            currencyDefinitions={currencyDefinitions}
+            defaultCurrencyKey={primaryCurrencyKey}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                currencyExchanges: nextItems,
+              }))
+            }
           />
-
-          <section className="editor-section">
-            <div className="editor-section__header">
-              <h4>Currency exchange editor</h4>
-            </div>
-            <JsonEditorField
-              label="Currency exchanges (CP -> WP and similar)"
-              value={draftParticipation.currencyExchanges}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  currencyExchanges: Array.isArray(value) ? value : [],
-                }))
-              }
-            />
-          </section>
         </div>
       ) : null}
 
@@ -2276,6 +2765,7 @@ export function ParticipationBudgetInspector(props: {
   const stipendTokens = getStipendTokens(props.participation.stipends, purchaseSubtypeDefinitions, currencyDefinitions);
   const exchangeTokens = getCurrencyExchangeTokens(props.participation.currencyExchanges, currencyDefinitions);
   const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+  const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(currencyDefinitions)[0] ?? '0';
   const cpBudgetLabel = cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null;
   const cpBudgetValue = cpBudgetEntry?.[1] ?? null;
   const cpBaseValue = cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null;
@@ -2283,62 +2773,91 @@ export function ParticipationBudgetInspector(props: {
     cpBudgetEntry ? effectiveBudgetState.participationDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null;
   const cpChainDrawbackGrant =
     cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null;
+  const orderedOriginKeys = getOrderedOriginCategoryKeys(
+    props.participation.origins,
+    getOriginCategoryDefinitions(asRecord(props.participation.importSourceMetadata).originCategories),
+    getKeyList(asRecord(props.participation.importSourceMetadata).originCategoryList),
+  );
+  const budgetLedgerEntries = getBudgetLedgerEntries(
+    effectiveBudgetState.effectiveBudgets,
+    props.participation.purchases,
+    props.participation.origins,
+    orderedOriginKeys,
+    props.participation.currencyExchanges,
+    currencyDefinitions,
+  );
+  const primaryBudgetLedgerEntry =
+    budgetLedgerEntries.find((entry) => entry.currencyKey === primaryCurrencyKey) ?? budgetLedgerEntries[0] ?? null;
 
   return (
     <div className="stack stack--compact">
-      {cpBudgetLabel && cpBudgetValue !== null ? (
+      {primaryBudgetLedgerEntry ? (
         <div className="summary-panel stack stack--compact">
-          <h4>Current CP budget</h4>
+          <h4>Current budget</h4>
           <p>
-            <strong>{formatNumericValue(cpBudgetValue)}</strong> {cpBudgetLabel}
+            <strong>{formatNumericValue(primaryBudgetLedgerEntry.remaining)}</strong>{' '}
+            {formatCurrencyLabel(primaryBudgetLedgerEntry.currencyKey, currencyDefinitions)}
           </p>
           <p>
-            {formatNumericValue(cpBaseValue ?? 0)} base
-            {cpJumpDrawbackGrant ? ` | ${cpJumpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpJumpDrawbackGrant)} from jump drawbacks` : ''}
-            {cpChainDrawbackGrant ? ` | ${cpChainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpChainDrawbackGrant)} from chain drawbacks` : ''}
+            {formatNumericValue(primaryBudgetLedgerEntry.starting)} start
+            {primaryBudgetLedgerEntry.spent !== 0 ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.spent)} spent` : ''}
+            {primaryBudgetLedgerEntry.exchangedOut !== 0
+              ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.exchangedOut)} exchanged out`
+              : ''}
+            {primaryBudgetLedgerEntry.exchangedIn !== 0
+              ? ` | +${formatNumericValue(primaryBudgetLedgerEntry.exchangedIn)} exchanged in`
+              : ''}
           </p>
         </div>
       ) : null}
 
       <SummarySection
-        title="Effective budgets"
-        items={budgetTokens}
+        title="Budget ledger"
+        items={budgetLedgerEntries.map((entry) => ({
+          label: `${formatCurrencyLabel(entry.currencyKey, currencyDefinitions)}: ${formatNumericValue(entry.remaining)} left`,
+          detail: [
+            `${formatNumericValue(entry.starting)} start`,
+            entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent` : null,
+            entry.exchangedOut !== 0 ? `-${formatNumericValue(entry.exchangedOut)} exchanged out` : null,
+            entry.exchangedIn !== 0 ? `+${formatNumericValue(entry.exchangedIn)} exchanged in` : null,
+          ]
+            .filter((value): value is string => Boolean(value))
+            .join(' - '),
+        }))}
         emptyMessage="No budgets yet."
       />
 
-      <SummarySection
-        title="Jump drawback gains"
-        items={effectiveBudgetState.contributingParticipationDrawbacks.map((contribution) => ({
-          label: contribution.title,
-          detail: Object.entries(contribution.budgetGrants)
-            .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
-            .join(' - '),
-        }))}
-        emptyMessage="No jump drawback gains."
-      />
+      {effectiveBudgetState.contributingParticipationDrawbacks.length > 0 ? (
+        <SummarySection
+          title="Jump drawback gains"
+          items={effectiveBudgetState.contributingParticipationDrawbacks.map((contribution) => ({
+            label: contribution.title,
+            detail: Object.entries(contribution.budgetGrants)
+              .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
+              .join(' - '),
+          }))}
+          emptyMessage="No jump drawback gains."
+        />
+      ) : null}
 
-      <SummarySection
-        title="Stipends"
-        items={stipendTokens}
-        emptyMessage="No stipends yet."
-      />
+      {stipendTokens.length > 0 ? <SummarySection title="Stipends" items={stipendTokens} emptyMessage="No stipends yet." /> : null}
 
-      <SummarySection
-        title="Currency exchanges"
-        items={exchangeTokens}
-        emptyMessage="No currency exchanges yet."
-      />
+      {exchangeTokens.length > 0 ? (
+        <SummarySection title="Currency exchanges" items={exchangeTokens} emptyMessage="No currency exchanges yet." />
+      ) : null}
 
-      <SummarySection
-        title="Chain drawback gains"
-        items={effectiveBudgetState.contributingChainDrawbacks.map((contribution) => ({
-          label: contribution.effect.title,
-          detail: Object.entries(contribution.budgetGrants)
-            .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
-            .join(' - '),
-        }))}
-        emptyMessage="No chain drawback gains."
-      />
+      {effectiveBudgetState.contributingChainDrawbacks.length > 0 ? (
+        <SummarySection
+          title="Chain drawback gains"
+          items={effectiveBudgetState.contributingChainDrawbacks.map((contribution) => ({
+            label: contribution.effect.title,
+            detail: Object.entries(contribution.budgetGrants)
+              .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
+              .join(' - '),
+          }))}
+          emptyMessage="No chain drawback gains."
+        />
+      ) : null}
     </div>
   );
 }
