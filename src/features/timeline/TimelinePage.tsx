@@ -149,8 +149,8 @@ export function TimelinePage() {
                         <span className="pill">Optional</span>
                       </summary>
                       <div className="details-panel__body actions">
-                        <Link className="button button--secondary" to={`/chains/${chainId}/participation/${jump.id}`}>
-                          Participation
+                        <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}?panel=participation`}>
+                          Participation and Purchases
                         </Link>
                       </div>
                     </details>
@@ -160,8 +160,8 @@ export function TimelinePage() {
                     <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}`}>
                       Jump Detail
                     </Link>
-                    <Link className="button button--secondary" to={`/chains/${chainId}/participation/${jump.id}`}>
-                      Participation
+                    <Link className="button button--secondary" to={`/chains/${chainId}/jumps/${jump.id}?panel=participation`}>
+                      Participation and Purchases
                     </Link>
                   </div>
                 )}

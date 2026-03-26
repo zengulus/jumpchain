@@ -504,6 +504,7 @@ export function ParticipationEditorCard(props: {
   jump: ReturnType<typeof useChainWorkspace>['workspace']['jumps'][number];
   participation: ReturnType<typeof useChainWorkspace>['workspace']['participations'][number];
   workspace: ReturnType<typeof useChainWorkspace>['workspace'];
+  showBudgetSummary?: boolean;
 }) {
   const participationAutosave = useAutosaveRecord(props.participation, {
     onSave: async (nextValue) => {
@@ -523,6 +524,7 @@ export function ParticipationEditorCard(props: {
     'other purchase',
     'other purchases',
   )} are grouped below. Raw imported structures stay editable in Advanced JSON editors.`;
+  const showBudgetSummary = props.showBudgetSummary ?? true;
 
   function updateParticipation(
     updater:
@@ -787,24 +789,26 @@ export function ParticipationEditorCard(props: {
             items={getOriginTokens(draftParticipation.origins)}
             emptyMessage="No origin or background selections were imported."
           />
-          <SummarySection
-            title="Budgets and stipends"
-            description={
-              effectiveBudgetState.contributingChainDrawbacks.length > 0
-                ? 'Currency budgets, stipend allocations, and active chain drawback rewards for this jump.'
-                : 'Currency budgets and stipend allocations for the current jump.'
-            }
-            items={[
-              ...getBudgetTokens(
-                effectiveBudgetState.effectiveBudgets,
-                effectiveBudgetState.baseBudgets,
-                effectiveBudgetState.chainDrawbackBudgetGrants,
-                currencyDefinitions,
-              ),
-              ...getStipendTokens(draftParticipation.stipends),
-            ]}
-            emptyMessage="No budgets or stipends are defined for this participation."
-          />
+          {showBudgetSummary ? (
+            <SummarySection
+              title="Budgets and stipends"
+              description={
+                effectiveBudgetState.contributingChainDrawbacks.length > 0
+                  ? 'Currency budgets, stipend allocations, and active chain drawback rewards for this jump.'
+                  : 'Currency budgets and stipend allocations for the current jump.'
+              }
+              items={[
+                ...getBudgetTokens(
+                  effectiveBudgetState.effectiveBudgets,
+                  effectiveBudgetState.baseBudgets,
+                  effectiveBudgetState.chainDrawbackBudgetGrants,
+                  currencyDefinitions,
+                ),
+                ...getStipendTokens(draftParticipation.stipends),
+              ]}
+              emptyMessage="No budgets or stipends are defined for this participation."
+            />
+          ) : null}
           <SummarySection
             title="Structured imported blocks"
             description="Source-only structured data that still belongs to this participation but does not have a first-class editor yet."
@@ -973,6 +977,93 @@ export function ParticipationEditorCard(props: {
         </div>
       </details>
     </article>
+  );
+}
+
+function findPrimaryCpBudget(
+  effectiveBudgets: Record<string, number>,
+  currencyDefinitions: Record<string, unknown>,
+) {
+  return Object.entries(effectiveBudgets).find(([currencyKey]) => {
+    const definition = asRecord(currencyDefinitions[currencyKey]);
+    const name = typeof definition.name === 'string' ? definition.name : '';
+    const abbreviation = typeof definition.abbrev === 'string' ? definition.abbrev : '';
+    const combined = `${currencyKey} ${name} ${abbreviation}`.toLowerCase();
+
+    return combined.includes('choice point') || combined.includes('choice points') || abbreviation.toLowerCase() === 'cp' || combined === 'cp';
+  });
+}
+
+export function ParticipationBudgetInspector(props: {
+  jumper: ReturnType<typeof useChainWorkspace>['workspace']['jumpers'][number];
+  participation: ReturnType<typeof useChainWorkspace>['workspace']['participations'][number];
+  workspace: ReturnType<typeof useChainWorkspace>['workspace'];
+}) {
+  const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, props.participation);
+  const currencyDefinitions = getCurrencyDefinitions(asRecord(props.participation.importSourceMetadata).currencies);
+  const budgetTokens = getBudgetTokens(
+    effectiveBudgetState.effectiveBudgets,
+    effectiveBudgetState.baseBudgets,
+    effectiveBudgetState.chainDrawbackBudgetGrants,
+    currencyDefinitions,
+  );
+  const stipendTokens = getStipendTokens(props.participation.stipends);
+  const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+  const cpBudgetLabel = cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null;
+  const cpBudgetValue = cpBudgetEntry?.[1] ?? null;
+  const cpBaseValue = cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null;
+  const cpDrawbackGrant = cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null;
+
+  return (
+    <div className="stack stack--compact">
+      <div className="guidance-strip guidance-strip--accent">
+        <strong>{props.jumper.name}</strong>
+        <p>Current effective budgets for this jumper in the selected jump, including any active chain drawback grants.</p>
+      </div>
+
+      {cpBudgetLabel && cpBudgetValue !== null ? (
+        <div className="summary-panel stack stack--compact">
+          <h4>Current CP budget</h4>
+          <p>
+            <strong>{formatNumericValue(cpBudgetValue)}</strong> {cpBudgetLabel}
+          </p>
+          <p>
+            {formatNumericValue(cpBaseValue ?? 0)} base
+            {cpDrawbackGrant ? ` | ${cpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpDrawbackGrant)} from chain drawbacks` : ''}
+          </p>
+        </div>
+      ) : null}
+
+      <SummarySection
+        title="Effective budgets"
+        description={
+          effectiveBudgetState.contributingChainDrawbacks.length > 0
+            ? 'Base budgets plus any currently active chain drawback grants.'
+            : 'Current currency budgets for this participation.'
+        }
+        items={budgetTokens}
+        emptyMessage="No budgets are defined for this participation yet."
+      />
+
+      <SummarySection
+        title="Stipends"
+        description="Recurring or subtype-specific stipend allocations attached to this participation."
+        items={stipendTokens}
+        emptyMessage="No stipends are defined for this participation yet."
+      />
+
+      <SummarySection
+        title="Chain drawback grants"
+        description="Active chain drawbacks currently contributing extra budget."
+        items={effectiveBudgetState.contributingChainDrawbacks.map((contribution) => ({
+          label: contribution.effect.title,
+          detail: Object.entries(contribution.budgetGrants)
+            .map(([currencyKey, amount]) => `${amount > 0 ? '+' : ''}${formatNumericValue(amount)} ${formatCurrencyLabel(currencyKey, currencyDefinitions)}`)
+            .join(' - '),
+        }))}
+        emptyMessage="No active chain drawbacks are adding budget right now."
+      />
+    </div>
   );
 }
 

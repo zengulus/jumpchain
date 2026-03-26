@@ -1088,7 +1088,7 @@ export function PersonalRealityPage() {
         <details className="details-panel" open>
           <summary className="details-panel__summary">
             <span>{personalRealitySetupGuide.title}</span>
-            <span className="pill">Same guide as wizard</span>
+            <span className="pill">Simple page guide</span>
           </summary>
           <div className="details-panel__body stack stack--compact">
             <p>{personalRealitySetupGuide.summary}</p>

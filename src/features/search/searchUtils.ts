@@ -382,9 +382,10 @@ export function buildUniversalSearchResults(input: {
             participation.origins,
             participation.importSourceMetadata,
           ),
-          to: withSearchParams(`/chains/${bundle.chain.id}/participation/${participation.jumpId}`, {
+          to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${participation.jumpId}`, {
             jumper: participation.jumperId,
             search: query,
+            panel: 'participation',
           }),
           extraText: [
             jumper?.name,

@@ -242,7 +242,19 @@ export function ChainOverviewPage() {
       return `/chains/${chainId}/jumps`;
     }
 
-    return `/chains/${chainId}/participation/${currentJump.id}${buildSearch(nextJumperId)}`;
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (nextJumperId) {
+      nextSearchParams.set('jumper', nextJumperId);
+    } else {
+      nextSearchParams.delete('jumper');
+    }
+
+    nextSearchParams.set('panel', 'participation');
+    nextSearchParams.delete('jump');
+
+    const nextSearch = nextSearchParams.toString();
+    return `/chains/${chainId}/jumps/${currentJump.id}${nextSearch.length > 0 ? `?${nextSearch}` : ''}`;
   }
 
   function handleFocusedJumperChange(nextJumperId: string) {

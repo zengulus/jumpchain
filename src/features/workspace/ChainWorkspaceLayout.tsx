@@ -202,7 +202,18 @@ export function ChainWorkspaceLayout() {
       return `/chains/${resolvedChainId}/jumps`;
     }
 
-    return `/chains/${resolvedChainId}/participation/${currentJump.id}${buildSearch(nextJumperId)}`;
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (nextJumperId) {
+      nextSearchParams.set('jumper', nextJumperId);
+    } else {
+      nextSearchParams.delete('jumper');
+    }
+
+    nextSearchParams.set('panel', 'participation');
+    const nextSearch = nextSearchParams.toString();
+
+    return `/chains/${resolvedChainId}/jumps/${currentJump.id}${nextSearch.length > 0 ? `?${nextSearch}` : ''}`;
   }
 
   function getModulePath(moduleKey: ModuleKey) {

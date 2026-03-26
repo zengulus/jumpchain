@@ -91,7 +91,7 @@ export function BodymodPage() {
         <details className="details-panel" open>
           <summary className="details-panel__summary">
             <span>{iconicSetupGuide.title}</span>
-            <span className="pill">Same guide as wizard</span>
+            <span className="pill">Simple page guide</span>
           </summary>
           <div className="details-panel__body stack stack--compact">
             <p>{iconicSetupGuide.summary}</p>

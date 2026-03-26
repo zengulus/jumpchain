@@ -1463,6 +1463,19 @@ button {
   align-self: start;
 }
 
+.workspace-three-column {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(240px, 320px);
+  align-items: start;
+}
+
+.workspace-three-column > aside.card {
+  position: sticky;
+  top: 6.9rem;
+  align-self: start;
+}
+
 .selection-list {
   display: grid;
   gap: 0.7rem;
@@ -1519,11 +1532,13 @@ button {
 .page-shell[data-ui-mode='simple'] .entity-grid--two,
 .page-shell[data-ui-mode='simple'] .field-grid--two,
 .page-shell[data-ui-mode='simple'] .field-grid--three,
-.page-shell[data-ui-mode='simple'] .workspace-two-column {
+.page-shell[data-ui-mode='simple'] .workspace-two-column,
+.page-shell[data-ui-mode='simple'] .workspace-three-column {
   grid-template-columns: 1fr;
 }
 
-.page-shell[data-ui-mode='simple'] .workspace-two-column > aside.card {
+.page-shell[data-ui-mode='simple'] .workspace-two-column > aside.card,
+.page-shell[data-ui-mode='simple'] .workspace-three-column > aside.card {
   position: static;
 }
 
@@ -2724,6 +2739,7 @@ span {
 
   .workspace-frame,
   .workspace-two-column,
+  .workspace-three-column,
   .workspace-module-header,
   .workspace-hero__top {
     grid-template-columns: 1fr;
@@ -2731,6 +2747,7 @@ span {
 
   .workspace-sidebar,
   .workspace-two-column > aside.card,
+  .workspace-three-column > aside.card,
   .personal-reality-rail,
   .personal-reality-inspector {
     position: static;

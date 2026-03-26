@@ -4,7 +4,7 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import { ParticipationEditorCard } from '../participation/ParticipationPage';
+import { ParticipationBudgetInspector, ParticipationEditorCard } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
@@ -40,6 +40,7 @@ export function JumpsPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save jump changes.'),
   });
   const draftJump = jumpAutosave.draft ?? selectedJump;
+  const participationPanelRequested = searchParams.get('panel') === 'participation';
   const focusedJumper =
     focusedJumperId && workspace.jumpers.some((jumper) => jumper.id === focusedJumperId)
       ? workspace.jumpers.find((jumper) => jumper.id === focusedJumperId) ?? null
@@ -50,8 +51,27 @@ export function JumpsPage() {
       : draftJump
         ? workspace.jumpers.filter((jumper) => draftJump.participantJumperIds.includes(jumper.id))
         : [];
+  const focusedParticipation =
+    draftJump && focusedJumper
+      ? workspace.participations.find((participation) => participation.jumpId === draftJump.id && participation.jumperId === focusedJumper.id) ?? null
+      : null;
+  const soleVisibleJumper = !focusedJumper && visibleParticipationJumpers.length === 1 ? visibleParticipationJumpers[0] ?? null : null;
+  const soleVisibleParticipation =
+    draftJump && soleVisibleJumper
+      ? workspace.participations.find((participation) => participation.jumpId === draftJump.id && participation.jumperId === soleVisibleJumper.id) ?? null
+      : null;
+  const inspectedBudgetJumper = focusedParticipation ? focusedJumper : soleVisibleParticipation ? soleVisibleJumper : null;
+  const inspectedBudgetParticipation = focusedParticipation ?? soleVisibleParticipation;
 
-  function getParticipationPath(nextJumpId: string) {
+  function getJumpParticipationPath(nextJumpId: string) {
+    return withSearchParams(`/chains/${chainId}/jumps/${nextJumpId}`, {
+      search: searchQuery,
+      jumper: focusedJumperId,
+      panel: 'participation',
+    });
+  }
+
+  function getDedicatedParticipationPath(nextJumpId: string) {
     return withSearchParams(`/chains/${chainId}/participation/${nextJumpId}`, {
       search: searchQuery,
       jumper: focusedJumperId,
@@ -212,6 +232,7 @@ export function JumpsPage() {
                 jumper={jumper}
                 participation={participation}
                 workspace={workspace}
+                showBudgetSummary={simpleMode || !inspectedBudgetParticipation}
               />
             ) : (
               <article className="card editor-sheet stack" key={jumper.id}>
@@ -232,8 +253,8 @@ export function JumpsPage() {
           })
         )}
         <div className="actions">
-          <Link className="button button--secondary" to={getParticipationPath(draftJump.id)}>
-            Open Dedicated View
+          <Link className="button button--secondary" to={getDedicatedParticipationPath(draftJump.id)}>
+            Open Full-Screen View
           </Link>
         </div>
       </section>
@@ -275,7 +296,7 @@ export function JumpsPage() {
           }
         />
       ) : (
-        <section className="workspace-two-column">
+        <section className="workspace-three-column">
           <aside className="card stack">
             <div className="section-heading">
               <h3>Ordered jump list</h3>
@@ -344,7 +365,7 @@ export function JumpsPage() {
                         Make Current Jump
                       </button>
                     )}
-                    <Link className="button button--secondary" to={getParticipationPath(draftJump.id)}>
+                    <Link className="button button--secondary" to={getJumpParticipationPath(draftJump.id)}>
                       Open Participation and Purchases
                     </Link>
                   </div>
@@ -418,7 +439,7 @@ export function JumpsPage() {
                 </div>
 
                 {simpleMode ? (
-                  <details className="details-panel">
+                  <details className="details-panel" open={participationPanelRequested}>
                     <summary className="details-panel__summary">
                       <span>Jump details, participation, and purchases</span>
                       <span className="pill">Optional</span>
@@ -620,6 +641,35 @@ export function JumpsPage() {
               <p>No jumps match the current search.</p>
             )}
           </article>
+
+          <aside className="card stack">
+            <div className="section-heading">
+              <h3>Current Budget Details</h3>
+              <span className="pill">{inspectedBudgetJumper?.name ?? 'No jumper focus'}</span>
+            </div>
+            {draftJump ? (
+              inspectedBudgetJumper && inspectedBudgetParticipation ? (
+                <ParticipationBudgetInspector
+                  jumper={inspectedBudgetJumper}
+                  participation={inspectedBudgetParticipation}
+                  workspace={workspace}
+                />
+              ) : focusedJumper ? (
+                <p>
+                  {focusedJumper.name} is not participating in this jump yet, so there is no current participation budget to
+                  inspect.
+                </p>
+              ) : visibleParticipationJumpers.length > 1 ? (
+                <p>Choose a jumper focus above to inspect one participation budget at a time.</p>
+              ) : visibleParticipationJumpers.length === 0 ? (
+                <p>No participation budgets exist yet for this jump.</p>
+              ) : (
+                <p>The current participation budget will appear here once a record exists.</p>
+              )
+            ) : (
+              <p>Select a jump to inspect its current participation budget details.</p>
+            )}
+          </aside>
         </section>
       )}
     </div>
