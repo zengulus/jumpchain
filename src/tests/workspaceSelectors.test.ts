@@ -11,6 +11,14 @@ import { createDefaultRulesModuleSettings } from '../domain/rules/customization'
 import { validateNativeChainBundle } from '../schemas';
 
 describe('workspace selectors', () => {
+  function stripParticipationDrawbacks<T extends { drawbacks: unknown[]; retainedDrawbacks: unknown[] }>(participation: T): T {
+    return {
+      ...participation,
+      drawbacks: [],
+      retainedDrawbacks: [],
+    };
+  }
+
   it('resolves the active branch workspace and current jump from a native bundle', () => {
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const workspace = buildBranchWorkspace(session.bundle, session.bundle.chain.activeBranchId);
@@ -143,6 +151,7 @@ describe('workspace selectors', () => {
 
     const bundle = validateNativeChainBundle({
       ...session.bundle,
+      participations: session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
       effects: [
         ...session.bundle.effects,
         {
@@ -173,6 +182,59 @@ describe('workspace selectors', () => {
     expect(getActiveChainDrawbackBudgetContributions(workspace)).toHaveLength(1);
     expect(budgetState.chainDrawbackBudgetGrants).toEqual({ '0': 300 });
     expect(budgetState.effectiveBudgets['0']).toBe((baseParticipation.budgets['0'] ?? 0) + 300);
+  });
+
+  it('uses imported currency budgets when a participation has no explicit budget overrides', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      participations: [
+        stripParticipationDrawbacks({
+          ...baseParticipation,
+          budgets: {},
+        }),
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(budgetState.baseBudgets['0']).toBe(1000);
+    expect(budgetState.effectiveBudgets['0']).toBe(1000);
+  });
+
+  it('falls back to a default 1000 CP baseline for manual participations with no budget metadata yet', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      participations: [
+        stripParticipationDrawbacks({
+          ...baseParticipation,
+          budgets: {},
+          importSourceMetadata: {},
+        }),
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(budgetState.baseBudgets).toEqual({ '0': 1000 });
+    expect(budgetState.effectiveBudgets).toEqual({ '0': 1000 });
   });
 
   it('lets explicit drawback budget grants override imported fallback values', () => {
@@ -218,5 +280,41 @@ describe('workspace selectors', () => {
       '0': 125,
       bonus: 40,
     });
+  });
+
+  it('adds participation drawback value into the effective jump budget', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      participations: [
+        {
+          ...baseParticipation,
+          budgets: {
+            '0': 1000,
+          },
+          drawbacks: [
+            {
+              name: 'Budget Booster',
+              value: 300,
+              currency: 0,
+            },
+          ],
+          retainedDrawbacks: [],
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(budgetState.participationDrawbackBudgetGrants).toEqual({ '0': 300 });
+    expect(budgetState.effectiveBudgets['0']).toBe(1300);
   });
 });

@@ -63,11 +63,19 @@ export interface ChainDrawbackBudgetContribution {
   budgetGrants: Record<string, number>;
 }
 
+export interface ParticipationDrawbackBudgetContribution {
+  title: string;
+  kind: 'drawback' | 'retained-drawback';
+  budgetGrants: Record<string, number>;
+}
+
 export interface EffectiveParticipationBudgetState {
   baseBudgets: Record<string, number>;
   chainDrawbackBudgetGrants: Record<string, number>;
+  participationDrawbackBudgetGrants: Record<string, number>;
   effectiveBudgets: Record<string, number>;
   contributingChainDrawbacks: ChainDrawbackBudgetContribution[];
+  contributingParticipationDrawbacks: ParticipationDrawbackBudgetContribution[];
 }
 
 interface RuleEffectOverrides {
@@ -77,6 +85,12 @@ interface RuleEffectOverrides {
   itemAccess?: AccessMode;
   altFormAccess?: AccessMode;
   supplementAccess?: AccessMode;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function parseOptionalFiniteNumber(value: unknown) {
@@ -105,6 +119,32 @@ function sumBudgetRecords(records: Array<Record<string, number>>) {
   }
 
   return combined;
+}
+
+function getSelectionBudgetGrants(selection: unknown) {
+  const record = asRecord(selection);
+  const importedValue = parseOptionalFiniteNumber(record.value);
+
+  if (importedValue === null || record.free === true) {
+    return {};
+  }
+
+  return {
+    [String(parseOptionalFiniteNumber(record.currency) ?? 0)]: importedValue,
+  };
+}
+
+function getSelectionTitle(selection: unknown, fallbackLabel: string) {
+  const record = asRecord(selection);
+  const title = record.name ?? record.summary;
+
+  if (typeof title === 'string' && title.trim().length > 0) {
+    return title;
+  }
+
+  const sourcePurchaseId = parseOptionalFiniteNumber(record.sourcePurchaseId);
+
+  return sourcePurchaseId !== null ? `${fallbackLabel} #${sourcePurchaseId}` : fallbackLabel;
 }
 
 function sortJumps(jumps: Jump[]) {
@@ -243,26 +283,67 @@ export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorks
 
 export function getEffectiveParticipationBudgetState(
   workspace: BranchWorkspace,
-  participation: Pick<JumperParticipation, 'budgets'> | null,
+  participation: Pick<JumperParticipation, 'budgets' | 'importSourceMetadata' | 'drawbacks' | 'retainedDrawbacks'> | null,
 ): EffectiveParticipationBudgetState {
-  const baseBudgets = participation?.budgets ?? {};
+  const importedCurrencyDefinitions = asRecord(asRecord(participation?.importSourceMetadata).currencies);
+  const importedBaseBudgets = Object.fromEntries(
+    Object.entries(importedCurrencyDefinitions)
+      .map(([currencyKey, value]) => [currencyKey, parseOptionalFiniteNumber(asRecord(value).budget)])
+      .filter((entry): entry is [string, number] => entry[1] !== null),
+  );
+  const fallbackBaseBudgets: Record<string, number> =
+    participation && Object.keys(importedBaseBudgets).length === 0 && Object.keys(participation.budgets).length === 0
+      ? { '0': 1000 }
+      : {};
+  const baseBudgets = participation
+    ? {
+        ...fallbackBaseBudgets,
+        ...importedBaseBudgets,
+        ...participation.budgets,
+      }
+    : {};
   const contributingChainDrawbacks = getActiveChainDrawbackBudgetContributions(workspace);
+  const contributingParticipationDrawbacks = participation
+    ? [
+        ...participation.drawbacks.map((selection, index) => ({
+          title: getSelectionTitle(selection, `Drawback ${index + 1}`),
+          kind: 'drawback' as const,
+          budgetGrants: getSelectionBudgetGrants(selection),
+        })),
+        ...participation.retainedDrawbacks.map((selection, index) => ({
+          title: getSelectionTitle(selection, `Retained drawback ${index + 1}`),
+          kind: 'retained-drawback' as const,
+          budgetGrants: getSelectionBudgetGrants(selection),
+        })),
+      ].filter(({ budgetGrants }) => Object.keys(budgetGrants).length > 0)
+    : [];
   const chainDrawbackBudgetGrants = sumBudgetRecords(
     contributingChainDrawbacks.map((contribution) => contribution.budgetGrants),
   );
-  const currencyKeys = new Set([...Object.keys(baseBudgets), ...Object.keys(chainDrawbackBudgetGrants)]);
+  const participationDrawbackBudgetGrants = sumBudgetRecords(
+    contributingParticipationDrawbacks.map((contribution) => contribution.budgetGrants),
+  );
+  const currencyKeys = new Set([
+    ...Object.keys(baseBudgets),
+    ...Object.keys(chainDrawbackBudgetGrants),
+    ...Object.keys(participationDrawbackBudgetGrants),
+  ]);
   const effectiveBudgets = Object.fromEntries(
     Array.from(currencyKeys).map((currencyKey) => [
       currencyKey,
-      (baseBudgets[currencyKey] ?? 0) + (chainDrawbackBudgetGrants[currencyKey] ?? 0),
+      (baseBudgets[currencyKey] ?? 0) +
+        (chainDrawbackBudgetGrants[currencyKey] ?? 0) +
+        (participationDrawbackBudgetGrants[currencyKey] ?? 0),
     ]),
   );
 
   return {
     baseBudgets,
     chainDrawbackBudgetGrants,
+    participationDrawbackBudgetGrants,
     effectiveBudgets,
     contributingChainDrawbacks,
+    contributingParticipationDrawbacks,
   };
 }
 
