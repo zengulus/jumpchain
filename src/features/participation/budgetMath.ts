@@ -1,6 +1,5 @@
 export interface PurchaseSpendInput {
-  currencyKey: string;
-  subtypeKey: string | null;
+  sectionKey: string;
   grossAmount: number;
 }
 
@@ -9,7 +8,7 @@ export interface PurchaseSpendBreakdown extends PurchaseSpendInput {
   netAmount: number;
 }
 
-export type StipendMap = Record<string, Record<string, number>>;
+export type StipendMap = Record<string, number>;
 
 function normalizeAmount(value: number) {
   return Number.isFinite(value) ? value : 0;
@@ -17,15 +16,10 @@ function normalizeAmount(value: number) {
 
 function clonePositiveStipends(stipends: StipendMap): StipendMap {
   return Object.fromEntries(
-    Object.entries(stipends).map(([currencyKey, subtypeEntries]) => [
-      currencyKey,
-      Object.fromEntries(
-        Object.entries(subtypeEntries).flatMap(([subtypeKey, amount]) => {
-          const normalizedAmount = Math.max(0, normalizeAmount(amount));
-          return normalizedAmount > 0 ? [[subtypeKey, normalizedAmount]] : [];
-        }),
-      ),
-    ]),
+    Object.entries(stipends).flatMap(([sectionKey, amount]) => {
+      const normalizedAmount = Math.max(0, normalizeAmount(amount));
+      return normalizedAmount > 0 ? [[sectionKey, normalizedAmount]] : [];
+    }),
   );
 }
 
@@ -37,21 +31,16 @@ export function applyPurchaseStipends(
 
   return purchases.map((purchase) => {
     const grossAmount = normalizeAmount(purchase.grossAmount);
-    const subtypeKey = purchase.subtypeKey?.trim() ? purchase.subtypeKey : null;
-    const availableStipend =
-      grossAmount > 0 && subtypeKey ? remainingStipends[purchase.currencyKey]?.[subtypeKey] ?? 0 : 0;
+    const sectionKey = purchase.sectionKey.trim();
+    const availableStipend = grossAmount > 0 && sectionKey ? remainingStipends[sectionKey] ?? 0 : 0;
     const stipendApplied = Math.min(grossAmount, availableStipend);
 
-    if (stipendApplied > 0 && subtypeKey) {
-      remainingStipends[purchase.currencyKey] = {
-        ...(remainingStipends[purchase.currencyKey] ?? {}),
-        [subtypeKey]: availableStipend - stipendApplied,
-      };
+    if (stipendApplied > 0 && sectionKey) {
+      remainingStipends[sectionKey] = availableStipend - stipendApplied;
     }
 
     return {
-      currencyKey: purchase.currencyKey,
-      subtypeKey,
+      sectionKey,
       grossAmount,
       stipendApplied,
       netAmount: grossAmount - stipendApplied,

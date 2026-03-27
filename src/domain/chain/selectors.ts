@@ -87,6 +87,15 @@ interface RuleEffectOverrides {
   supplementAccess?: AccessMode;
 }
 
+const branchWorkspaceCache = new WeakMap<NativeChainBundle, Map<string, BranchWorkspace>>();
+const activeChainDrawbackBudgetContributionsCache = new WeakMap<BranchWorkspace, ChainDrawbackBudgetContribution[]>();
+const effectiveCurrentJumpStateCache = new WeakMap<BranchWorkspace, EffectiveCurrentJumpState>();
+const effectiveParticipationBudgetStateCache = new WeakMap<
+  BranchWorkspace,
+  WeakMap<object, EffectiveParticipationBudgetState>
+>();
+const nullParticipationBudgetStateCache = new WeakMap<BranchWorkspace, EffectiveParticipationBudgetState>();
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -215,8 +224,98 @@ export function getCurrentJump(chain: Chain, branchJumps: Jump[]): Jump | null {
 export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: string): BranchWorkspace {
   const activeBranch = bundle.branches.find((branch) => branch.id === activeBranchId) ?? getActiveBranch(bundle.chain, bundle.branches);
   const branchId = activeBranch?.id ?? activeBranchId;
+  const cachedWorkspace = branchWorkspaceCache.get(bundle)?.get(branchId);
 
-  const jumps = sortJumps(bundle.jumps.filter((jump) => jump.branchId === branchId));
+  if (cachedWorkspace) {
+    return cachedWorkspace;
+  }
+
+  const jumpers: Jumper[] = [];
+  const companions: Companion[] = [];
+  const branchJumps: Jump[] = [];
+  const participations: JumperParticipation[] = [];
+  const effects: Effect[] = [];
+  const bodymodProfiles: BodymodProfile[] = [];
+  const jumpRulesContexts: JumpRulesContext[] = [];
+  const houseRuleProfiles: HouseRuleProfile[] = [];
+  const presetProfiles: PresetProfile[] = [];
+  const snapshots: Snapshot[] = [];
+  const notes: Note[] = [];
+  const attachments: AttachmentRef[] = [];
+
+  for (const jumper of bundle.jumpers) {
+    if (jumper.branchId === branchId) {
+      jumpers.push(jumper);
+    }
+  }
+
+  for (const companion of bundle.companions) {
+    if (companion.branchId === branchId) {
+      companions.push(companion);
+    }
+  }
+
+  for (const jump of bundle.jumps) {
+    if (jump.branchId === branchId) {
+      branchJumps.push(jump);
+    }
+  }
+
+  for (const participation of bundle.participations) {
+    if (participation.branchId === branchId) {
+      participations.push(participation);
+    }
+  }
+
+  for (const effect of bundle.effects) {
+    if (effect.branchId === branchId) {
+      effects.push(effect);
+    }
+  }
+
+  for (const profile of bundle.bodymodProfiles) {
+    if (profile.branchId === branchId) {
+      bodymodProfiles.push(profile);
+    }
+  }
+
+  for (const context of bundle.jumpRulesContexts) {
+    if (context.branchId === branchId) {
+      jumpRulesContexts.push(context);
+    }
+  }
+
+  for (const profile of bundle.houseRuleProfiles) {
+    if (profile.branchId === branchId) {
+      houseRuleProfiles.push(profile);
+    }
+  }
+
+  for (const profile of bundle.presetProfiles) {
+    if (profile.branchId === branchId) {
+      presetProfiles.push(profile);
+    }
+  }
+
+  for (const snapshot of bundle.snapshots) {
+    if (snapshot.branchId === branchId) {
+      snapshots.push(snapshot);
+    }
+  }
+
+  for (const note of bundle.notes) {
+    if (note.branchId === branchId) {
+      notes.push(note);
+    }
+  }
+
+  for (const attachment of bundle.attachments) {
+    if (attachment.branchId === branchId) {
+      attachments.push(attachment);
+    }
+  }
+
+  const jumps = sortJumps(branchJumps);
   const currentJump = getCurrentJump(
     {
       ...bundle.chain,
@@ -225,25 +324,31 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
     jumps,
   );
 
-  return {
+  const workspace: BranchWorkspace = {
     chain: bundle.chain,
     branches: bundle.branches,
     activeBranch: activeBranch ?? null,
     currentJump,
-    jumpers: bundle.jumpers.filter((jumper) => jumper.branchId === branchId),
-    companions: bundle.companions.filter((companion) => companion.branchId === branchId),
+    jumpers,
+    companions,
     jumps,
-    participations: bundle.participations.filter((participation) => participation.branchId === branchId),
-    effects: bundle.effects.filter((effect) => effect.branchId === branchId),
-    bodymodProfiles: bundle.bodymodProfiles.filter((profile) => profile.branchId === branchId),
-    jumpRulesContexts: bundle.jumpRulesContexts.filter((context) => context.branchId === branchId),
-    houseRuleProfiles: bundle.houseRuleProfiles.filter((profile) => profile.branchId === branchId),
-    presetProfiles: bundle.presetProfiles.filter((profile) => profile.branchId === branchId),
-    snapshots: bundle.snapshots.filter((snapshot) => snapshot.branchId === branchId),
-    notes: bundle.notes.filter((note) => note.branchId === branchId),
-    attachments: bundle.attachments.filter((attachment) => attachment.branchId === branchId),
+    participations,
+    effects,
+    bodymodProfiles,
+    jumpRulesContexts,
+    houseRuleProfiles,
+    presetProfiles,
+    snapshots,
+    notes,
+    attachments,
     importReports: bundle.importReports,
   };
+
+  const cacheForBundle = branchWorkspaceCache.get(bundle) ?? new Map<string, BranchWorkspace>();
+  cacheForBundle.set(branchId, workspace);
+  branchWorkspaceCache.set(bundle, cacheForBundle);
+
+  return workspace;
 }
 
 function extractRuleEffectOverrides(effect: Effect): RuleEffectOverrides {
@@ -308,26 +413,57 @@ export function getChainDrawbackBudgetGrants(effect: Effect): Record<string, num
 }
 
 export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorkspace): ChainDrawbackBudgetContribution[] {
-  return workspace.effects
-    .filter(
-      (effect) =>
-        effect.state === 'active' &&
-        effect.category === 'drawback' &&
-        effect.scopeType === 'chain' &&
-        effect.ownerEntityType === 'chain' &&
-        effect.ownerEntityId === workspace.chain.id,
-    )
-    .map((effect) => ({
-      effect,
-      budgetGrants: getChainDrawbackBudgetGrants(effect),
-    }))
-    .filter(({ budgetGrants }) => Object.keys(budgetGrants).length > 0);
+  const cachedContributions = activeChainDrawbackBudgetContributionsCache.get(workspace);
+
+  if (cachedContributions) {
+    return cachedContributions;
+  }
+
+  const contributions: ChainDrawbackBudgetContribution[] = [];
+
+  for (const effect of workspace.effects) {
+    if (
+      effect.state !== 'active' ||
+      effect.category !== 'drawback' ||
+      effect.scopeType !== 'chain' ||
+      effect.ownerEntityType !== 'chain' ||
+      effect.ownerEntityId !== workspace.chain.id
+    ) {
+      continue;
+    }
+
+    const budgetGrants = getChainDrawbackBudgetGrants(effect);
+
+    if (Object.keys(budgetGrants).length > 0) {
+      contributions.push({
+        effect,
+        budgetGrants,
+      });
+    }
+  }
+
+  activeChainDrawbackBudgetContributionsCache.set(workspace, contributions);
+  return contributions;
 }
 
 export function getEffectiveParticipationBudgetState(
   workspace: BranchWorkspace,
   participation: Pick<JumperParticipation, 'budgets' | 'importSourceMetadata' | 'drawbacks' | 'retainedDrawbacks' | 'jumperId'> | null,
 ): EffectiveParticipationBudgetState {
+  if (participation === null) {
+    const cachedState = nullParticipationBudgetStateCache.get(workspace);
+
+    if (cachedState) {
+      return cachedState;
+    }
+  } else {
+    const cachedState = effectiveParticipationBudgetStateCache.get(workspace)?.get(participation as object);
+
+    if (cachedState) {
+      return cachedState;
+    }
+  }
+
   const importedCurrencyDefinitions = asRecord(asRecord(participation?.importSourceMetadata).currencies);
   const importedBaseBudgets = Object.fromEntries(
     Object.entries(importedCurrencyDefinitions)
@@ -398,7 +534,7 @@ export function getEffectiveParticipationBudgetState(
     ]),
   );
 
-  return {
+  const state: EffectiveParticipationBudgetState = {
     baseBudgets,
     chainDrawbackBudgetGrants,
     participationDrawbackBudgetGrants,
@@ -406,9 +542,26 @@ export function getEffectiveParticipationBudgetState(
     contributingChainDrawbacks,
     contributingParticipationDrawbacks,
   };
+
+  if (participation === null) {
+    nullParticipationBudgetStateCache.set(workspace, state);
+  } else {
+    const cacheForWorkspace =
+      effectiveParticipationBudgetStateCache.get(workspace) ?? new WeakMap<object, EffectiveParticipationBudgetState>();
+    cacheForWorkspace.set(participation as object, state);
+    effectiveParticipationBudgetStateCache.set(workspace, cacheForWorkspace);
+  }
+
+  return state;
 }
 
 export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): EffectiveCurrentJumpState {
+  const cachedState = effectiveCurrentJumpStateCache.get(workspace);
+
+  if (cachedState) {
+    return cachedState;
+  }
+
   const currentJump = workspace.currentJump;
   const currentRulesContext =
     workspace.jumpRulesContexts.find((context) => context.jumpId === currentJump?.id) ?? null;
@@ -457,7 +610,7 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
     effectiveAccessModes.supplementAccess = overrides.supplementAccess ?? effectiveAccessModes.supplementAccess;
   }
 
-  return {
+  const state: EffectiveCurrentJumpState = {
     selectedJumpId: currentJump?.id ?? null,
     selectedBranchId: workspace.activeBranch?.id ?? null,
     gauntlet,
@@ -469,4 +622,7 @@ export function getEffectiveCurrentJumpState(workspace: BranchWorkspace): Effect
     currentJump,
     contributingEffects,
   };
+
+  effectiveCurrentJumpStateCache.set(workspace, state);
+  return state;
 }

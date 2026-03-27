@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
@@ -193,7 +193,17 @@ export function ChainWorkspaceLayout() {
   }
 
   const resolvedChainId = chainId;
+  const bundle = state.bundle as NativeChainBundle;
   const workspace = state.workspace;
+  const outletContext = useMemo(
+    () =>
+      ({
+        chainId: resolvedChainId,
+        bundle,
+        workspace,
+      }) satisfies ChainWorkspaceOutletContext,
+    [bundle, resolvedChainId, workspace],
+  );
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
   const selectedJumper =
@@ -926,13 +936,7 @@ export function ChainWorkspaceLayout() {
         <div className="workspace-frame">
           {headerAttachment ? <section className="workspace-header-attachment">{headerAttachment}</section> : null}
           <section className="workspace-content">
-            <Outlet
-              context={{
-                chainId: resolvedChainId,
-                bundle: state.bundle,
-                workspace,
-              } satisfies ChainWorkspaceOutletContext}
-            />
+            <Outlet context={outletContext} />
           </section>
         </div>
       </div>

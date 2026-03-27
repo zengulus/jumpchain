@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
@@ -187,6 +187,7 @@ export function JumpsPage() {
     liveParticipationDraft && activeParticipation && liveParticipationDraft.id === activeParticipation.id
       ? liveParticipationDraft
       : activeParticipation;
+  const deferredVisibleParticipation = useDeferredValue(visibleParticipation);
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
@@ -200,7 +201,7 @@ export function JumpsPage() {
     participationPanelRequested,
   });
   const purchaseBudgetAttachment = useMemo(() => {
-    if (activeTab !== 'purchases' || !draftJump || !activeParticipationParticipant || !visibleParticipation) {
+    if (activeTab !== 'purchases' || !draftJump || !activeParticipationParticipant || !deferredVisibleParticipation) {
       return null;
     }
 
@@ -208,11 +209,11 @@ export function JumpsPage() {
       <ParticipationBudgetShellAttachment
         jump={draftJump}
         participant={activeParticipationParticipant}
-        participation={visibleParticipation}
+        participation={deferredVisibleParticipation}
         workspace={workspace}
       />
     );
-  }, [activeParticipationParticipant, activeTab, draftJump, visibleParticipation, workspace]);
+  }, [activeParticipationParticipant, activeTab, deferredVisibleParticipation, draftJump, workspace]);
 
   useWorkspaceHeaderAttachment(purchaseBudgetAttachment);
 

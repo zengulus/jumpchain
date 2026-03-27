@@ -92,6 +92,6 @@ describe('participation budget inspector', () => {
     );
 
     expect(screen.getByText(/Stipends apply before the main budget:/)).toBeTruthy();
-    expect(screen.getByText(/Item: 100 Choice Points \(CP\)/)).toBeTruthy();
+    expect(screen.getByText(/Items stipend: 100 Choice Points \(CP\)/)).toBeTruthy();
   });
 });
