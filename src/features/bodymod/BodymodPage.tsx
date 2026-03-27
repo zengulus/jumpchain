@@ -11,6 +11,8 @@ import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records
 import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
+  PlainLanguageHint,
+  ReadinessPill,
   SimpleModeAffirmation,
   StatusNoticeBanner,
   type StatusNotice,
@@ -41,6 +43,7 @@ export function BodymodPage() {
   });
   const draftProfile = profileAutosave.draft ?? profile;
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
+  const iconicStartedForSelectedJumper = Boolean(draftProfile);
 
   useEffect(() => {
     clearAffirmation();
@@ -85,7 +88,9 @@ export function BodymodPage() {
         title="Iconic"
         description={
           simpleMode
-            ? 'Set the jumper-tied Iconic profile without losing sight of the core concept.'
+            ? iconicStartedForSelectedJumper
+              ? 'Optional continuity workspace in progress for this jumper. Keep shaping the signature package here whenever you want.'
+              : 'Optional continuity workspace. You can skip Iconic until you want a stable signature package through harsh resets or restrictions.'
             : 'Structured Iconic bodymod replacer profiles with tier-based packages, concept notes, and preserved imported forms.'
         }
         badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}
@@ -103,12 +108,19 @@ export function BodymodPage() {
       <SimpleModeAffirmation message={simpleAffirmation} />
 
       {simpleMode ? (
-        <details className="details-panel" open>
+        <details className="details-panel" open={iconicStartedForSelectedJumper}>
           <summary className="details-panel__summary">
             <span>{iconicSetupGuide.title}</span>
-            <span className="pill">Simple page guide</span>
+            <div className="inline-meta">
+              <ReadinessPill tone="optional" label={iconicStartedForSelectedJumper ? 'In progress' : 'Optional later'} />
+              <span className="pill">Simple page guide</span>
+            </div>
           </summary>
           <div className="details-panel__body stack stack--compact">
+            <PlainLanguageHint
+              term="Iconic"
+              meaning="an optional continuity profile that helps a jumper stay recognizable through harsh resets or restrictions."
+            />
             <p>{iconicSetupGuide.summary}</p>
             <SetupGuidePanels guide={iconicSetupGuide} />
           </div>
@@ -164,7 +176,10 @@ export function BodymodPage() {
               </div>
 
               {!draftProfile ? (
-                <p>No Iconic profile exists for this jumper yet.</p>
+                <p>
+                  No Iconic profile exists for this jumper yet.
+                  {simpleMode ? ' That is fine if you are still working through the core chain flow.' : ''}
+                </p>
               ) : (
                 <IconicEditor
                   profile={draftProfile}

@@ -25,8 +25,10 @@ import { SearchHighlight } from '../search/SearchHighlight';
 import { SetupGuidePanels, personalRealitySetupGuide } from '../supplement-guides/SetupGuidePanels';
 import {
   AssistiveHint,
-  EmptyWorkspaceCard,
   AutosaveStatusIndicator,
+  EmptyWorkspaceCard,
+  PlainLanguageHint,
+  ReadinessPill,
   SimpleModeAffirmation,
   TooltipFrame,
   WorkspaceModuleHeader,
@@ -1254,6 +1256,21 @@ export function PersonalRealityPage() {
   const isOverBudget = summary.remainingWp < 0;
   const overBudgetAmount = Math.abs(summary.remainingWp);
   const showBudgetEditor = currentPage.number === 2 || currentPage.number === 3;
+  const hasPersonalRealityStarted =
+    Boolean(state.coreModeId) ||
+    state.extraModeIds.length > 0 ||
+    summary.selectedOptionCount > 0 ||
+    state.notes.trim().length > 0 ||
+    Object.values(state.pageNotes).some((note) => note.trim().length > 0) ||
+    state.budget.completedJumpCountOverride !== null ||
+    state.budget.patientJumperDelayedJumps > 0 ||
+    state.budget.swapOutExperiencedJumps > 0 ||
+    state.budget.crossroadsTriggeredJumps > 0 ||
+    state.budget.generalCpToWpPurchases > 0 ||
+    state.budget.unlimitedTransferredWp > 0 ||
+    state.budget.udsWarehouseWp !== 0 ||
+    state.budget.manualWpAdjustment !== 0 ||
+    state.budget.manualWpAdjustmentReason.trim().length > 0;
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
 
   if (!workspace.activeBranch) {
@@ -1344,7 +1361,9 @@ export function PersonalRealityPage() {
         title="Personal Reality"
         description={
           simpleMode
-            ? 'Work through the supplement one page at a time without losing track of the budget model.'
+            ? hasPersonalRealityStarted
+              ? 'Optional supplement workspace in progress. Work through it one page at a time without losing track of the budget model.'
+              : 'Optional supplement workspace. You can leave it alone until you want to plan warehouse-style housing, facilities, or long-term chain infrastructure.'
             : 'A denser supplement workbench for planning the full Personal Reality build page by page.'
         }
         badge={workspace.activeBranch.title}
@@ -1361,12 +1380,19 @@ export function PersonalRealityPage() {
       />
 
       {simpleMode ? (
-        <details className="details-panel" open>
+        <details className="details-panel" open={hasPersonalRealityStarted}>
           <summary className="details-panel__summary">
             <span>{personalRealitySetupGuide.title}</span>
-            <span className="pill">Simple page guide</span>
+            <div className="inline-meta">
+              <ReadinessPill tone="optional" label={hasPersonalRealityStarted ? 'In progress' : 'Optional later'} />
+              <span className="pill">Simple page guide</span>
+            </div>
           </summary>
           <div className="details-panel__body stack stack--compact">
+            <PlainLanguageHint
+              term="Personal Reality"
+              meaning="an optional warehouse-style supplement workspace for long-term housing, facilities, and budget planning."
+            />
             <p>{personalRealitySetupGuide.summary}</p>
             <SetupGuidePanels guide={personalRealitySetupGuide} />
           </div>

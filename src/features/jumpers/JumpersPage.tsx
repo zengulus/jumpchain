@@ -10,6 +10,7 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  PlainLanguageHint,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
@@ -111,7 +112,12 @@ export function JumpersPage() {
               <h3>Roster</h3>
               <span className="pill">{workspace.activeBranch.title}</span>
             </div>
-            {simpleMode ? <p>Choose who you want to work on, then start with name, age, and notes.</p> : null}
+            {simpleMode ? (
+              <>
+                <p>Choose who you want to work on, then start with name, age, and notes.</p>
+                <PlainLanguageHint term="Jumper" meaning="the character record this chain follows." />
+              </>
+            ) : null}
             <label className="field">
               <span>Search roster</span>
               <input
@@ -176,7 +182,7 @@ export function JumpersPage() {
                     <SearchHighlight text={draftJumper.name} query={searchQuery} />
                   </h3>
                   <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
-                    Open Iconic
+                    {simpleMode ? 'Open Iconic (optional)' : 'Open Iconic'}
                   </Link>
                 </div>
                 {simpleMode ? <p>Start with identity and notes. Optional holds personality, background, and import cleanup.</p> : null}

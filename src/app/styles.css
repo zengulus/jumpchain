@@ -438,6 +438,7 @@ button {
 .page-shell__mode-toggle:focus-visible,
 .workspace-subnav a:focus-visible,
 .assistive-hint__trigger:focus-visible,
+.plain-language-hint__trigger:focus-visible,
 .field input:focus-visible,
 .field textarea:focus-visible,
 .field select:focus-visible {
@@ -502,6 +503,10 @@ button {
   font-size: 0.9rem;
 }
 
+.plain-language-hint {
+  color: rgba(238, 246, 250, 0.72);
+}
+
 .field-hint--error {
   color: var(--color-warning);
 }
@@ -520,6 +525,29 @@ button {
 }
 
 .assistive-hint__trigger:hover {
+  border-color: rgba(105, 210, 180, 0.24);
+  background: rgba(105, 210, 180, 0.08);
+  color: var(--color-text);
+}
+
+.plain-language-hint__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 1px solid rgba(159, 196, 220, 0.16);
+  border-radius: 999px;
+  background: rgba(12, 25, 35, 0.82);
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.plain-language-hint__trigger:hover {
   border-color: rgba(105, 210, 180, 0.24);
   background: rgba(105, 210, 180, 0.08);
   color: var(--color-text);

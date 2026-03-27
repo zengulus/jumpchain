@@ -13,6 +13,7 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  PlainLanguageHint,
   SimpleModeAffirmation,
   StatusNoticeBanner,
   type StatusNotice,
@@ -309,17 +310,24 @@ export function JumpsPage() {
   }
 
   async function toggleParticipant(jumperId: string) {
-    if (!selectedJump) {
+    const targetJump = draftJump ?? selectedJump;
+
+    if (!targetJump) {
       return;
     }
 
-    const alreadyParticipating = selectedJump.participantJumperIds.includes(jumperId);
+    const alreadyParticipating = targetJump.participantJumperIds.includes(jumperId);
     const nextParticipantIds = alreadyParticipating
-      ? selectedJump.participantJumperIds.filter((id) => id !== jumperId)
-      : Array.from(new Set([...selectedJump.participantJumperIds, jumperId]));
+      ? targetJump.participantJumperIds.filter((id) => id !== jumperId)
+      : Array.from(new Set([...targetJump.participantJumperIds, jumperId]));
+
+    jumpAutosave.updateDraft({
+      ...targetJump,
+      participantJumperIds: nextParticipantIds,
+    });
 
     try {
-      await syncJumpParticipantMembership(chainId, selectedJump, jumperId, !alreadyParticipating);
+      await syncJumpParticipantMembership(chainId, targetJump, jumperId, !alreadyParticipating);
 
       if (alreadyParticipating && focusedJumperId === jumperId) {
         setFocusedParticipant(nextParticipantIds[0] ?? null);
@@ -348,12 +356,14 @@ export function JumpsPage() {
   }
 
   async function ensureParticipation(jumperId: string) {
-    if (!workspace.activeBranch || !selectedJump) {
+    const targetJump = draftJump ?? selectedJump;
+
+    if (!workspace.activeBranch || !targetJump) {
       return;
     }
 
     const existing = workspace.participations.find(
-      (participation) => participation.jumpId === selectedJump.id && participation.jumperId === jumperId,
+      (participation) => participation.jumpId === targetJump.id && participation.jumperId === jumperId,
     );
 
     if (existing) {
@@ -365,12 +375,19 @@ export function JumpsPage() {
     }
 
     try {
-      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, selectedJump.id, jumperId));
+      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, targetJump.id, jumperId));
 
-      if (!selectedJump.participantJumperIds.includes(jumperId)) {
+      if (!targetJump.participantJumperIds.includes(jumperId)) {
+        const nextParticipantIds = [...targetJump.participantJumperIds, jumperId];
+
+        jumpAutosave.updateDraft({
+          ...targetJump,
+          participantJumperIds: nextParticipantIds,
+        });
+
         await saveChainRecord(db.jumps, {
-          ...selectedJump,
-          participantJumperIds: [...selectedJump.participantJumperIds, jumperId],
+          ...targetJump,
+          participantJumperIds: nextParticipantIds,
         });
       }
 
@@ -399,7 +416,10 @@ export function JumpsPage() {
       <div className="stack stack--compact">
         <section className="editor-section">
           <div className="editor-section__header">
-            <h4>Jump basics</h4>
+            <div className="stack stack--compact">
+              <h4>Jump basics</h4>
+              <PlainLanguageHint term="Jump" meaning="one world or segment in the chain." />
+            </div>
           </div>
           <div className="field-grid field-grid--two">
             <label className="field">
@@ -551,7 +571,10 @@ export function JumpsPage() {
       <div className="stack stack--compact">
         <section className="editor-section">
           <div className="editor-section__header">
-            <h4>Jumpers in this jump</h4>
+            <div className="stack stack--compact">
+              <h4>Jumpers in this jump</h4>
+              <PlainLanguageHint term="Party" meaning="the jumpers who are taking part in this jump." />
+            </div>
             <span className="pill">{draftJump.participantJumperIds.length}</span>
           </div>
 
@@ -628,7 +651,10 @@ export function JumpsPage() {
       <div className="stack stack--compact">
         <section className="section-surface stack stack--compact">
           <div className="section-heading">
-            <h4>Editing focus</h4>
+            <div className="stack stack--compact">
+              <h4>Editing focus</h4>
+              <PlainLanguageHint term="Purchases" meaning="the choices and costs each participating jumper takes in this jump." />
+            </div>
             <span className="pill">{jumpParticipantJumpers.length} participating</span>
           </div>
           <div className="chip-grid">

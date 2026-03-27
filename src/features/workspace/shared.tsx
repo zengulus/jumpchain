@@ -213,6 +213,32 @@ export function AssistiveHint(props: {
   );
 }
 
+export function PlainLanguageHint(props: {
+  term: string;
+  meaning: string;
+  placement?: 'top' | 'right' | 'bottom' | 'left';
+  className?: string;
+}) {
+  const { simpleMode } = useUiPreferences();
+  const text = `${props.term} = ${props.meaning}`;
+
+  if (simpleMode) {
+    return <small className={['field-hint', 'plain-language-hint', props.className].filter(Boolean).join(' ')}>{text}</small>;
+  }
+
+  return (
+    <TooltipFrame inline tooltip={text} placement={props.placement ?? 'top'}>
+      <button
+        className={['plain-language-hint__trigger', props.className].filter(Boolean).join(' ')}
+        type="button"
+        aria-label={`Explain ${props.term}`}
+      >
+        ?
+      </button>
+    </TooltipFrame>
+  );
+}
+
 export function AdvancedJsonDetails(props: {
   summary?: string;
   badge?: string;
