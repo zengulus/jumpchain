@@ -8,6 +8,15 @@ export interface StatusNotice {
   message: string;
 }
 
+export type ReadinessTone = 'start' | 'core' | 'optional' | 'advanced';
+
+const READINESS_LABELS: Record<ReadinessTone, string> = {
+  start: 'Start here',
+  core: 'Core setup',
+  optional: 'Optional later',
+  advanced: 'Advanced rules',
+};
+
 export function WorkspaceModuleHeader(props: {
   title: string;
   description: string;
@@ -44,6 +53,14 @@ export function StatusNoticeBanner({ notice }: { notice: StatusNotice | null }) 
   }
 
   return <div className={`status status--${notice.tone}`}>{notice.message}</div>;
+}
+
+export function ReadinessPill(props: { tone: ReadinessTone; label?: string; className?: string }) {
+  return (
+    <span className={['readiness-pill', `readiness-pill--${props.tone}`, props.className].filter(Boolean).join(' ')}>
+      {props.label ?? READINESS_LABELS[props.tone]}
+    </span>
+  );
 }
 
 export function SimpleModeAffirmation(props: { message: string | null; className?: string }) {

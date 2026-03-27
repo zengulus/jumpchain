@@ -59,7 +59,7 @@ const APP_NAV_ITEMS: AppNavItem[] = [
   },
 ] as const;
 
-function AppNavigationLinks({ onNavigate }: { onNavigate: () => void }) {
+function AppNavigationLinks({ onNavigate, simpleMode }: { onNavigate: () => void; simpleMode: boolean }) {
   return (
     <nav className="workspace-menu-list" aria-label="App">
       {APP_NAV_ITEMS.map((item) => (
@@ -71,7 +71,15 @@ function AppNavigationLinks({ onNavigate }: { onNavigate: () => void }) {
           onClick={onNavigate}
         >
           <strong>{item.label}</strong>
-          <span>{item.description}</span>
+          <span>
+            {simpleMode
+              ? item.to === '/'
+                ? 'Start, reopen, or resume guided setup for a chain.'
+                : item.to === '/search'
+                  ? 'Find something you already created.'
+                  : 'Review outside JSON before it becomes part of the app.'
+              : item.description}
+          </span>
         </NavLink>
       ))}
     </nav>
@@ -153,7 +161,7 @@ function PageShellContent() {
               <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
               <p className="page-shell__subtitle">
                 {simpleMode
-                  ? 'Calmer continuity tracking for complicated chains.'
+                  ? 'Calmer continuity tracking with guided setup kept close.'
                   : 'Local-first continuity, imports, snapshots, and supplement planning.'}
               </p>
             </div>
@@ -179,7 +187,7 @@ function PageShellContent() {
                       <h3>App</h3>
                       <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
                     </div>
-                    <AppNavigationLinks onNavigate={closeNav} />
+                    <AppNavigationLinks onNavigate={closeNav} simpleMode={simpleMode} />
                   </section>
                 </aside>
             </>

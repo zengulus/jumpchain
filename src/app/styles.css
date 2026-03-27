@@ -195,6 +195,10 @@ button {
   min-height: 2.8rem;
 }
 
+.page-shell__search.is-simple .page-shell__search-label {
+  color: rgba(238, 246, 250, 0.58);
+}
+
 .page-shell__search-panel {
   position: absolute;
   top: calc(100% + 0.65rem);
@@ -1110,6 +1114,10 @@ button {
   font-size: 0.92rem;
 }
 
+.workspace-hero__actions {
+  margin-top: 0.2rem;
+}
+
 .workspace-utility-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1139,6 +1147,14 @@ button {
   background: rgba(8, 18, 27, 0.68);
   color: inherit;
   text-align: left;
+}
+
+.workspace-action-card__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
 }
 
 .workspace-action-card strong {
@@ -2089,6 +2105,17 @@ button {
   gap: 1rem;
 }
 
+.home-chain-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.home-chain-copy {
+  margin-top: -0.25rem;
+  color: var(--color-text-muted);
+}
+
 .details-panel {
   border: 1px solid var(--color-border);
   border-radius: 1rem;
@@ -2527,6 +2554,43 @@ body::before {
   letter-spacing: 0.04em;
 }
 
+.readiness-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.56rem;
+  border-radius: 999px;
+  border: 1px solid rgba(159, 196, 220, 0.16);
+  background: rgba(159, 196, 220, 0.08);
+  color: var(--color-text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.readiness-pill--start {
+  border-color: rgba(105, 210, 180, 0.2);
+  background: rgba(105, 210, 180, 0.12);
+  color: #d9fff1;
+}
+
+.readiness-pill--core {
+  border-color: rgba(255, 191, 125, 0.18);
+  background: rgba(255, 191, 125, 0.1);
+  color: #ffe0b3;
+}
+
+.readiness-pill--optional {
+  border-color: rgba(159, 196, 220, 0.16);
+  background: rgba(159, 196, 220, 0.08);
+  color: rgba(238, 246, 250, 0.9);
+}
+
+.readiness-pill--advanced {
+  border-color: rgba(255, 143, 143, 0.2);
+  background: rgba(255, 143, 143, 0.12);
+  color: #ffd4d4;
+}
+
 .status {
   padding: 0.82rem 0.9rem;
   border-radius: 0.8rem;
@@ -2898,6 +2962,11 @@ body::before {
 .page-shell[data-ui-mode='simple'] .hero,
 .page-shell[data-ui-mode='simple'] .workspace-hero {
   padding: 1rem 1.05rem;
+}
+
+.page-shell[data-ui-mode='simple'] .workspace-hero__stats {
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  justify-content: start;
 }
 
 .page-shell[data-ui-mode='simple'] .workspace-content {

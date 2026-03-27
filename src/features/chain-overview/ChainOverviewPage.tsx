@@ -24,6 +24,7 @@ import {
 import {
   AssistiveHint,
   AutosaveStatusIndicator,
+  ReadinessPill,
   SimpleModeAffirmation,
   StatusNoticeBanner,
   TooltipFrame,
@@ -446,7 +447,7 @@ export function ChainOverviewPage() {
       ...current,
       jumperWizardCompleted: true,
     }));
-    showAffirmation('The jumper setup is grounded now. Next is building the jump framework around them.');
+    showAffirmation('The jumper basics are in place. Next, build the first jump so the rest of the chain has somewhere to attach.');
     setSimpleWizardStepId(null);
   }
 
@@ -455,7 +456,7 @@ export function ChainOverviewPage() {
       ...current,
       guidedJumpCount: Math.max(current.guidedJumpCount, workspace.jumps.length),
     }));
-    showAffirmation('The jump framework is in place. The rest of the walkthrough is lighter from here.');
+    showAffirmation('The first jump is in place. Next, you can keep the wizard moving or branch into later modules when you want.');
     setSimpleWizardStepId(null);
   }
 
@@ -490,8 +491,8 @@ export function ChainOverviewPage() {
     }));
     showAffirmation(
       feature === 'iconic'
-        ? 'Iconic is in a workable place. You can keep the rest of the chain moving now.'
-        : 'Personal Reality is parked in a workable state. The rest of the workspace should feel lighter again.',
+        ? 'Iconic has a workable foundation. Next, return to the main chain flow or refine it later.'
+        : 'Personal Reality has a workable foundation. Next, return to the main chain flow or keep building it later.',
     );
     setSimpleWizardStepId(null);
   }
@@ -940,7 +941,11 @@ export function ChainOverviewPage() {
     <div className="stack">
       <WorkspaceModuleHeader
         title="Chain Overview"
-        description="Setup dashboard for branch focus, current jump control, and the next chain actions that still matter."
+        description={
+          simpleMode
+            ? 'Recommended home for guided setup, branch focus, and the next core chain steps.'
+            : 'Setup dashboard for branch focus, current jump control, and the next chain actions that still matter.'
+        }
         badge={`${readyStepCount}/${setupSteps.length} setup steps ready`}
         actions={
           <>
@@ -960,22 +965,25 @@ export function ChainOverviewPage() {
         <section className="card stack">
           <div className="section-heading">
             <h3>Guided Setup</h3>
-            <span className="pill">
-              {showWizardWalkthroughPopover
-                ? 'Wizard open'
-                : wizardNeedsAttention
-                  ? simpleModeWizardState.wizardPromptState === 'dismissed'
-                    ? 'Paused'
-                    : 'Ready'
-                  : 'Caught up'}
-            </span>
+            <ReadinessPill
+              tone={wizardNeedsAttention ? 'start' : 'core'}
+              label={
+                showWizardWalkthroughPopover
+                  ? 'Wizard open'
+                  : wizardNeedsAttention
+                    ? simpleModeWizardState.wizardPromptState === 'dismissed'
+                      ? 'Paused'
+                      : 'Start here'
+                    : 'Ready to work'
+              }
+            />
           </div>
           <p>
             {simpleModeWizardState.wizardPromptState === 'dismissed'
-              ? 'The guided setup popover is hidden right now, but your progress is still there if you want it back.'
+              ? 'Guided setup is paused right now, but your progress is still here when you want the calmest route back in.'
               : wizardNeedsAttention
-                ? 'The setup wizard can walk you through the next fields and systems in a popover without leaving Overview.'
-                : 'The guided setup is caught up. It will be ready again when a new jump needs walkthrough help.'}
+                ? 'Overview is the recommended place to start while you are still learning the core flow. The wizard can walk you through the next meaningful step without leaving this page.'
+                : 'The guided setup is caught up. Come back here any time you want the calmest overview of what matters next.'}
           </p>
           <div className="actions">
             {wizardNeedsAttention ? (
@@ -984,12 +992,12 @@ export function ChainOverviewPage() {
                 type="button"
                 onClick={() => setWizardPromptState(isFreshChainStart ? 'pending' : 'accepted')}
               >
-                {simpleModeWizardState.wizardPromptState === 'dismissed' ? 'Resume Wizard' : 'Open Wizard'}
+                {simpleModeWizardState.wizardPromptState === 'dismissed' ? 'Resume Guided Setup' : 'Open Guided Setup'}
               </button>
             ) : null}
             {simpleModeWizardState.wizardPromptState !== 'dismissed' ? (
               <button className="button button--secondary" type="button" onClick={() => setWizardPromptState('dismissed')}>
-                Hide Wizard
+                Pause Guided Setup
               </button>
             ) : null}
           </div>

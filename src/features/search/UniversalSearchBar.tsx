@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
 import { buildUniversalSearchResults, readRouteSearchValue, withSearchParams } from './searchUtils';
 
 export function UniversalSearchBar() {
+  const { simpleMode } = useUiPreferences();
   const location = useLocation();
   const navigate = useNavigate();
   const searchData = useUniversalSearchData();
@@ -31,6 +33,12 @@ export function UniversalSearchBar() {
     q: trimmedQuery,
     chain: preferredChainId,
   });
+  const searchLabel = simpleMode ? 'Search existing records' : 'Search everything';
+  const searchPlaceholder = simpleMode
+    ? 'Find a chain, jumper, or jump you already made...'
+    : 'Search chains, jumpers, jumps, effects, notes...';
+  const searchPanelTitle = simpleMode ? 'Search results' : 'Universal Search';
+  const submitLabel = simpleMode ? 'Find' : 'Search';
 
   useEffect(() => {
     setDraftQuery(readRouteSearchValue(location.search));
@@ -64,15 +72,15 @@ export function UniversalSearchBar() {
   }
 
   return (
-    <div className="page-shell__search" ref={containerRef}>
+    <div className={`page-shell__search${simpleMode ? ' is-simple' : ''}`} ref={containerRef}>
       <form className="page-shell__search-form" onSubmit={handleSubmit}>
         <label className="page-shell__search-field" htmlFor="site-search">
-          <span className="page-shell__search-label">Search everything</span>
+          <span className="page-shell__search-label">{searchLabel}</span>
           <input
             id="site-search"
             type="search"
             value={draftQuery}
-            placeholder="Search chains, jumpers, jumps, effects, notes..."
+            placeholder={searchPlaceholder}
             onChange={(event) => {
               setDraftQuery(event.target.value);
               setIsOpen(true);
@@ -86,19 +94,23 @@ export function UniversalSearchBar() {
           />
         </label>
         <button className="button button--secondary page-shell__search-submit" type="submit">
-          Search
+          {submitLabel}
         </button>
       </form>
 
       {isOpen && trimmedQuery.length > 0 ? (
         <div className="page-shell__search-panel">
           <div className="page-shell__search-panel-header">
-            <strong>Universal Search</strong>
+            <strong>{searchPanelTitle}</strong>
             <span>{searchData ? `${results.length} matches` : 'Building index...'}</span>
           </div>
 
           {trimmedQuery.length < 2 ? (
-            <div className="page-shell__search-empty">Type at least two characters to search across stored data and module pages.</div>
+            <div className="page-shell__search-empty">
+              {simpleMode
+                ? 'Type at least two characters to search through things you have already stored here.'
+                : 'Type at least two characters to search across stored data and module pages.'}
+            </div>
           ) : !searchData ? (
             <div className="page-shell__search-empty">Loading the current search index from IndexedDB...</div>
           ) : previewResults.length === 0 ? (

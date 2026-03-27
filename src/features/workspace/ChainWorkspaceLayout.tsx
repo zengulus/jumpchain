@@ -7,7 +7,7 @@ import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import { getChainBundle, switchActiveJump } from '../../db/persistence';
-import { AssistiveHint, TooltipFrame } from './shared';
+import { AssistiveHint, ReadinessPill, TooltipFrame, type ReadinessTone } from './shared';
 
 export interface ChainWorkspaceOutletContext {
   chainId: string;
@@ -40,6 +40,8 @@ interface WorkspaceModuleMenuItem {
   key: ModuleKey;
   label: string;
   to: string | null;
+  description?: string;
+  readiness?: ReadinessTone;
 }
 
 interface WorkspaceQuickAction {
@@ -48,6 +50,7 @@ interface WorkspaceQuickAction {
   description: string;
   to: string;
   tone?: 'accent' | 'default';
+  readiness?: ReadinessTone;
 }
 
 const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
@@ -71,6 +74,13 @@ export function useWorkspaceHeaderAttachment(attachment: ReactNode | null) {
 function formatCount(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`;
 }
+
+const READINESS_OPTION_LABELS: Record<ReadinessTone, string> = {
+  start: 'Start here',
+  core: 'Core setup',
+  optional: 'Optional later',
+  advanced: 'Advanced rules',
+};
 
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
@@ -196,6 +206,8 @@ export function ChainWorkspaceLayout() {
     : null;
   const hasJumpers = workspace.jumpers.length > 0;
   const hasJumps = workspace.jumps.length > 0;
+  const coreSetupReady = hasJumpers && hasJumps;
+  const showGuidedSetup = simpleMode && !coreSetupReady;
 
   function buildSearch(nextJumperId: string) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -343,6 +355,7 @@ export function ChainWorkspaceLayout() {
           description: 'Start here. Iconic, jump participation and purchases, and most character-focused modules hang off a jumper.',
           to: `/chains/${resolvedChainId}/jumpers`,
           tone: 'accent',
+          readiness: 'start',
         }
       : {
           id: 'open-selected-jumper',
@@ -350,6 +363,7 @@ export function ChainWorkspaceLayout() {
           description: 'Identity, background, notes, and setup live here.',
           to: `/chains/${resolvedChainId}/jumpers${buildSearch(selectedJumperId)}`,
           tone: 'accent',
+          readiness: 'core',
         },
     !hasJumps
       ? {
@@ -358,12 +372,14 @@ export function ChainWorkspaceLayout() {
           description: 'Participation and purchases, current-jump rules, and timeline become meaningful once a jump exists.',
           to: `/chains/${resolvedChainId}/jumps`,
           tone: 'accent',
+          readiness: 'core',
         }
       : {
           id: 'open-current-jump',
           title: `Open ${currentJump?.title ?? 'Current Jump'}`,
           description: 'Edit status, ordering, duration, and participant membership.',
           to: getJumpEditorPath(),
+          readiness: 'core',
         },
     hasJumpers
       ? {
@@ -373,12 +389,14 @@ export function ChainWorkspaceLayout() {
             ? 'Open the jumper-tied Iconic profile that belongs to the current jumper focus.'
             : 'No Iconic profile exists for this jumper yet. Start it here.',
           to: getBodymodPath(),
+          readiness: 'optional',
         }
       : {
           id: 'chain-notes',
           title: 'Open Chain Notes',
           description: 'Capture setup decisions while you scaffold the chain.',
           to: `/chains/${resolvedChainId}/notes`,
+          readiness: 'optional',
         },
     hasJumpers && hasJumps
       ? {
@@ -386,16 +404,33 @@ export function ChainWorkspaceLayout() {
           title: `Participation & Purchases: ${selectedJumper?.name ?? 'Selected Jumper'}`,
           description: `Open ${currentJump?.title ?? 'the current jump'} and work on ${selectedJumper?.name ?? 'the jumper'} inside it.`,
           to: `${getJumpEditorPath()}${buildSearch(selectedJumperId)}`,
+          readiness: 'core',
         }
       : {
           id: 'overview',
           title: 'Open Overview',
           description: 'Use the overview to see what the active branch already has and what is still missing.',
           to: `/chains/${resolvedChainId}/overview`,
+          readiness: 'core',
         },
   ];
-  const primaryQuickAction = quickActions[0];
-  const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
+  const nextCoreAction = quickActions[0];
+  const guidedSetupAction: WorkspaceQuickAction | null = showGuidedSetup
+    ? {
+        id: 'guided-setup',
+        title: 'Open Guided Setup',
+        description: 'Overview is still the recommended path while this chain is missing its first jumper or jump.',
+        to: `/chains/${resolvedChainId}/overview`,
+        tone: 'accent',
+        readiness: 'start',
+      }
+    : null;
+  const primaryQuickAction = guidedSetupAction ?? quickActions[0];
+  const visibleQuickActions = simpleMode
+    ? guidedSetupAction
+      ? [guidedSetupAction, ...quickActions.slice(0, 2)]
+      : quickActions.slice(0, 3)
+    : quickActions;
 
   const moduleGroups: Array<{
     id: string;
@@ -404,83 +439,115 @@ export function ChainWorkspaceLayout() {
   }> = [
     {
       id: 'core',
-      title: 'Core Flow',
+      title: simpleMode ? 'Core setup' : 'Core Flow',
       items: [
         {
           key: 'overview',
           label: 'Overview',
           to: getModulePath('overview'),
+          description: 'Return here for guided setup, setup status, and branch-wide orientation.',
+          readiness: showGuidedSetup ? 'start' : 'core',
         },
         {
           key: 'jumpers',
           label: 'Jumpers',
           to: getModulePath('jumpers'),
+          description: 'Create and edit the character records this chain follows.',
+          readiness: hasJumpers ? 'core' : 'start',
         },
         {
           key: 'companions',
           label: 'Companions',
           to: getModulePath('companions'),
+          description: 'Track companion records once the core jumper setup exists.',
+          readiness: 'optional',
         },
         {
           key: 'jumps',
           label: 'Jumps',
           to: getModulePath('jumps'),
+          description: 'Create and edit the jumps this branch will move through.',
+          readiness: 'core',
         },
       ],
     },
     {
-      id: 'systems',
-      title: 'Systems',
+      id: 'optional',
+      title: simpleMode ? 'Optional later' : 'Systems',
       items: [
-        {
-          key: 'effects',
-          label: 'Effects',
-          to: getModulePath('effects'),
-        },
-        {
-          key: 'chainwide-rules',
-          label: 'Chainwide Rules',
-          to: getModulePath('chainwide-rules'),
-        },
-        {
-          key: 'current-jump-rules',
-          label: 'Current Jump Rules',
-          to: getModulePath('current-jump-rules'),
-        },
         {
           key: 'bodymod',
           label: 'Iconic',
           to: getModulePath('bodymod'),
+          description: 'Optional jumper continuity support for harsh resets and restrictions.',
+          readiness: 'optional',
         },
         {
           key: 'personal-reality',
           label: 'Personal Reality',
           to: getModulePath('personal-reality'),
+          description: 'Optional supplement planning for warehouse-style infrastructure and budgets.',
+          readiness: 'optional',
         },
-      ],
-    },
-    {
-      id: 'history',
-      title: 'History & Recovery',
-      items: [
         {
           key: 'timeline',
           label: 'Timeline',
           to: getModulePath('timeline'),
+          description: 'Review the long-running chain history once the core flow exists.',
+          readiness: 'optional',
         },
         {
           key: 'notes',
           label: 'Notes',
           to: getModulePath('notes'),
+          description: 'Capture supporting reminders and rulings when you need them.',
+          readiness: 'optional',
         },
         {
           key: 'backups',
           label: 'Backups',
           to: getModulePath('backups'),
+          description: 'Export, restore, or branch the chain when you want safety tooling.',
+          readiness: 'optional',
+        },
+      ],
+    },
+    {
+      id: 'rules',
+      title: simpleMode ? 'Advanced rules' : 'Rules & Systems',
+      items: [
+        {
+          key: 'effects',
+          label: 'Effects',
+          to: getModulePath('effects'),
+          description: 'Custom effect records for chain, jump, and jumper logic.',
+          readiness: 'advanced',
+        },
+        {
+          key: 'chainwide-rules',
+          label: 'Chainwide Rules',
+          to: getModulePath('chainwide-rules'),
+          description: 'Chain-level rule flags, drawbacks, and always-on rule entries.',
+          readiness: 'advanced',
+        },
+        {
+          key: 'current-jump-rules',
+          label: 'Current Jump Rules',
+          to: getModulePath('current-jump-rules'),
+          description: 'Jump-specific overrides and effective rule-state inspection.',
+          readiness: 'advanced',
         },
       ],
     },
   ];
+
+  function formatModuleOptionLabel(item: WorkspaceModuleMenuItem) {
+    if (!simpleMode || !item.readiness) {
+      return item.label;
+    }
+
+    return `${READINESS_OPTION_LABELS[item.readiness]} - ${item.label}`;
+  }
   return (
     <WorkspaceHeaderAttachmentContext.Provider value={setHeaderAttachment}>
       <div className="workspace-shell stack">
@@ -489,7 +556,7 @@ export function ChainWorkspaceLayout() {
             <div className="stack stack--compact workspace-hero__leading">
               <div className="workspace-hero__toolbar">
                 <div className="inline-meta">
-                  <span className="pill">Active workspace</span>
+                  {simpleMode ? null : <span className="pill">Active workspace</span>}
                   <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
                   <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
                 </div>
@@ -497,9 +564,21 @@ export function ChainWorkspaceLayout() {
               <h2>{state.bundle.chain.title}</h2>
               <p className="workspace-hero__summary">
                 {simpleMode
-                  ? `${primaryQuickAction.title} is the safest next step if you are still getting this chain set up.`
+                  ? showGuidedSetup
+                    ? `Guided setup is still the recommended path. ${nextCoreAction.title} is the next core step it will point you toward.`
+                    : 'Core setup is in place. You can keep using Overview for orientation or jump straight into the module you want.'
                   : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
               </p>
+              {showGuidedSetup ? (
+                <div className="actions workspace-hero__actions">
+                  <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
+                    Open Guided Setup
+                  </button>
+                  <button className="button button--secondary" type="button" onClick={() => navigate(nextCoreAction.to)}>
+                    Go to {nextCoreAction.title}
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div className="workspace-hero__stats">
               {simpleMode ? (
@@ -555,18 +634,40 @@ export function ChainWorkspaceLayout() {
             <nav className="workspace-menu-list" aria-label="App pages">
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/" end onClick={closeNav}>
                 <strong>Home</strong>
-                <span>Chains, creation, imports, and exports.</span>
+                <span>{simpleMode ? 'Start, reopen, or resume guided setup for a chain.' : 'Chains, creation, imports, and exports.'}</span>
               </NavLink>
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/search" onClick={closeNav}>
                 <strong>Search</strong>
-                <span>Find records across chains and modules.</span>
+                <span>{simpleMode ? 'Find something you already created.' : 'Find records across chains and modules.'}</span>
               </NavLink>
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
                 <strong>Import Review</strong>
-                <span>Review and convert external jump data.</span>
+                <span>{simpleMode ? 'Review outside JSON before it becomes part of the app.' : 'Review and convert external jump data.'}</span>
               </NavLink>
             </nav>
           </section>
+
+          {showGuidedSetup ? (
+            <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+              <div className="section-heading">
+                <h3>Guided setup</h3>
+                <ReadinessPill tone="start" />
+              </div>
+              <p className="workspace-sidebar-copy">
+                Overview is still the recommended path while this chain is missing its first jumper or jump.
+              </p>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  closeNav();
+                  navigate(`/chains/${resolvedChainId}/overview`);
+                }}
+              >
+                Open Guided Setup
+              </button>
+            </section>
+          ) : null}
 
           <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
             <div className="section-heading">
@@ -591,9 +692,11 @@ export function ChainWorkspaceLayout() {
 
             {simpleMode ? (
               <div className="section-surface stack stack--compact">
-                <strong>Start here</strong>
+                <strong>{showGuidedSetup ? 'Recommended next move' : 'Quickest route back in'}</strong>
                 <p className="workspace-sidebar-copy">
-                  The quickest safe next step is <strong>{primaryQuickAction.title}</strong>. Once you have the basics in place, open the navigation controls below.
+                  {showGuidedSetup
+                    ? `Use Guided Setup when you want the calmest route. ${nextCoreAction.title} is the next core task if you would rather jump there directly.`
+                    : `${primaryQuickAction.title} is the fastest way back into the active branch from here.`}
                 </p>
                 <button
                   className="button"
@@ -629,7 +732,7 @@ export function ChainWorkspaceLayout() {
                         <optgroup key={group.id} label={group.title}>
                           {group.items.map((item) => (
                             <option key={item.key} value={item.key} disabled={!item.to}>
-                              {item.label}
+                              {formatModuleOptionLabel(item)}
                             </option>
                           ))}
                         </optgroup>
@@ -702,91 +805,91 @@ export function ChainWorkspaceLayout() {
               </details>
             ) : (
               <>
-              <label className="field">
-                <span className="field-label-row">
-                  <span>Go to module</span>
-                  <AssistiveHint
-                    placement="right"
-                    text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
-                    triggerLabel="Explain module routing"
-                  />
-                </span>
-                <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
-                  {moduleGroups.map((group) => (
-                    <optgroup key={group.id} label={group.title}>
-                      {group.items.map((item) => (
-                        <option key={item.key} value={item.key} disabled={!item.to}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-
-              <div className="workspace-switch-grid">
                 <label className="field">
                   <span className="field-label-row">
-                    <span>Jumper focus</span>
+                    <span>Go to module</span>
                     <AssistiveHint
                       placement="right"
-                      text={
-                        selectedJumper
-                          ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
-                          : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
-                      }
-                      triggerLabel="Explain jumper focus"
+                      text="Setup-aware defaults are applied here. Missing prerequisites route you to the screen where you can create them."
+                      triggerLabel="Explain module routing"
                     />
                   </span>
-                  <select
-                    value={selectedJumperId}
-                    onChange={(event) => handleQuickJumperChange(event.target.value)}
-                    disabled={workspace.jumpers.length === 0}
-                  >
-                    {workspace.jumpers.length === 0 ? (
-                      <option value="">Create a jumper first</option>
-                    ) : (
-                      workspace.jumpers.map((jumper) => (
-                        <option key={jumper.id} value={jumper.id}>
-                          {jumper.name}
-                        </option>
-                      ))
-                    )}
+                  <select value={activeModuleKey} onChange={(event) => handleModuleMenuChange(event.target.value)}>
+                    {moduleGroups.map((group) => (
+                      <optgroup key={group.id} label={group.title}>
+                        {group.items.map((item) => (
+                          <option key={item.key} value={item.key} disabled={!item.to}>
+                            {formatModuleOptionLabel(item)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </label>
 
-                <label className="field">
-                  <span className="field-label-row">
-                    <span>Jump</span>
-                    <AssistiveHint
-                      placement="right"
-                      text={
-                        currentJump
-                          ? `Current jump context is ${currentJump.title}.`
-                          : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
-                      }
-                      triggerLabel="Explain jump focus"
-                    />
-                  </span>
-                  <select
-                    value={currentJump?.id ?? ''}
-                    onChange={(event) => void handleQuickJumpChange(event.target.value)}
-                    disabled={workspace.jumps.length === 0}
-                  >
-                    {workspace.jumps.length === 0 ? (
-                      <option value="">Create a jump first</option>
-                    ) : (
-                      workspace.jumps.map((jump) => (
-                        <option key={jump.id} value={jump.id}>
-                          {jump.orderIndex + 1}. {jump.title}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-              </div>
-            </>
-          )}
+                <div className="workspace-switch-grid">
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Jumper focus</span>
+                      <AssistiveHint
+                        placement="right"
+                        text={
+                          selectedJumper
+                            ? `Iconic and jumper-specific routes now stay tied to ${selectedJumper.name}.`
+                            : 'Create the first jumper to unlock Iconic and jumper-specific participation and purchases routes.'
+                        }
+                        triggerLabel="Explain jumper focus"
+                      />
+                    </span>
+                    <select
+                      value={selectedJumperId}
+                      onChange={(event) => handleQuickJumperChange(event.target.value)}
+                      disabled={workspace.jumpers.length === 0}
+                    >
+                      {workspace.jumpers.length === 0 ? (
+                        <option value="">Create a jumper first</option>
+                      ) : (
+                        workspace.jumpers.map((jumper) => (
+                          <option key={jumper.id} value={jumper.id}>
+                            {jumper.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span className="field-label-row">
+                      <span>Jump</span>
+                      <AssistiveHint
+                        placement="right"
+                        text={
+                          currentJump
+                            ? `Current jump context is ${currentJump.title}.`
+                            : 'Create the first jump to unlock participation and purchases plus current-jump rules.'
+                        }
+                        triggerLabel="Explain jump focus"
+                      />
+                    </span>
+                    <select
+                      value={currentJump?.id ?? ''}
+                      onChange={(event) => void handleQuickJumpChange(event.target.value)}
+                      disabled={workspace.jumps.length === 0}
+                    >
+                      {workspace.jumps.length === 0 ? (
+                        <option value="">Create a jump first</option>
+                      ) : (
+                        workspace.jumps.map((jump) => (
+                          <option key={jump.id} value={jump.id}>
+                            {jump.orderIndex + 1}. {jump.title}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                </div>
+              </>
+            )}
 
           <div className="section-heading">
             <h4>{simpleMode ? 'Next steps' : 'Suggested Next Steps'}</h4>
@@ -808,7 +911,10 @@ export function ChainWorkspaceLayout() {
                     navigate(action.to);
                   }}
                 >
-                  <strong>{action.title}</strong>
+                  <div className="workspace-action-card__top">
+                    <strong>{action.title}</strong>
+                    {simpleMode && action.readiness ? <ReadinessPill tone={action.readiness} /> : null}
+                  </div>
                   {simpleMode ? <span>{action.description}</span> : null}
                 </button>
               </TooltipFrame>
