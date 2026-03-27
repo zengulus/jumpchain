@@ -28,7 +28,7 @@ export function SearchResultsPage() {
         <p>
           {simpleMode
             ? 'Search everything from one place, then jump straight to the matching page.'
-            : 'Search chains, active-branch records, notes, effects, participation data, backups, and the Personal Reality builder from one place.'}
+            : 'Search chains, active-branch records, notes, effects, participation data, backups, and the Cosmic Backpack planner from one place.'}
         </p>
         <div className="inline-meta">
           <span className="pill">{normalizedQuery.length > 0 ? `Query: ${query}` : 'Enter a query in the header'}</span>

@@ -30,7 +30,7 @@ import {
   saveChainRecord,
 } from '../features/workspace/records';
 import { validateNativeChainBundle } from '../schemas';
-import { createDefaultPersonalRealityState } from '../features/personal-reality/model';
+import { createDefaultCosmicBackpackState } from '../features/cosmic-backpack/model';
 
 async function resetDatabase() {
   db.close();
@@ -230,37 +230,30 @@ describe('native persistence and round-trip safety', () => {
     ).toBe(true);
   });
 
-  it('persists Personal Reality supplement state inside chain metadata across reload', async () => {
+  it('persists Cosmic Backpack supplement state inside chain metadata across reload', async () => {
     await resetDatabase();
-    const createdBundle = await createBlankChain('Personal Reality Reload');
-    const personalRealityState = createDefaultPersonalRealityState();
-    personalRealityState.coreModeId = 'upfront';
-    personalRealityState.discountedGroupIds = ['medical-suite'];
-    personalRealityState.notes = 'Warehouse village build with a medical core.';
-    personalRealityState.selections['medical-bay'] = {
-      units: 1,
-      cpUnits: 0,
-      variantId: '',
-      limitationStatus: 'active',
-    };
+    const createdBundle = await createBlankChain('Cosmic Backpack Reload');
+    const cosmicBackpackState = createDefaultCosmicBackpackState();
+    cosmicBackpackState.selectedOptionIds = ['hammerspace', 'magic-tent', 'crafting-tools'];
+    cosmicBackpackState.appearanceNotes = 'Weathered expedition pack with brass buckles.';
+    cosmicBackpackState.notes = 'Portable camp-and-workshop package.';
 
     await saveChainEntity({
       ...createdBundle.chain,
       importSourceMetadata: {
         ...createdBundle.chain.importSourceMetadata,
-        personalReality: personalRealityState,
+        cosmicBackpack: cosmicBackpackState,
       },
     });
 
     const reloadedBundle = await getChainBundle(createdBundle.chain.id);
-    const reloadedPersonalReality = reloadedBundle?.chain.importSourceMetadata.personalReality as
-      | { coreModeId?: string; notes?: string; discountedGroupIds?: string[]; selections?: Record<string, { units?: number }> }
+    const reloadedCosmicBackpack = reloadedBundle?.chain.importSourceMetadata.cosmicBackpack as
+      | { appearanceNotes?: string; notes?: string; selectedOptionIds?: string[] }
       | undefined;
 
-    expect(reloadedPersonalReality?.coreModeId).toBe('upfront');
-    expect(reloadedPersonalReality?.notes).toContain('medical core');
-    expect(reloadedPersonalReality?.discountedGroupIds?.[0]).toBe('medical-suite');
-    expect(reloadedPersonalReality?.selections?.['medical-bay']?.units).toBe(1);
+    expect(reloadedCosmicBackpack?.appearanceNotes).toContain('brass buckles');
+    expect(reloadedCosmicBackpack?.notes).toContain('Portable camp');
+    expect(reloadedCosmicBackpack?.selectedOptionIds).toContain('hammerspace');
   });
 
   it('deletes a chain and cascades its chain-owned records out of IndexedDB', async () => {

@@ -74,6 +74,38 @@ export const personalRealitySetupGuide: SetupGuide = {
   ],
 };
 
+export const cosmicBackpackSetupGuide: SetupGuide = {
+  title: 'Cosmic Backpack walkthrough',
+  summary:
+    'Use Cosmic Backpack when you want a warehouse alternative that stays portable, short, and easy to reason about.',
+  steps: [
+    {
+      title: 'Start with the free bag',
+      description:
+        'The base bag is already useful. Treat it as your default storage and only add upgrades when they solve a real problem for the chain.',
+      note: 'You do not need to spend the full 1000 BP for the supplement to be worth taking.',
+    },
+    {
+      title: 'Pick the conveniences you will actually use',
+      description:
+        'Core upgrades like Hammerspace, Stasis, or Adaptive Storage matter most when they remove friction from normal play.',
+      note: 'If a feature sounds neat but would not come up often, it can wait.',
+    },
+    {
+      title: 'Add attachments like a portable base camp',
+      description:
+        'Shelter, utilities, and support tools are easier to judge when you ask what you would want on hand every jump.',
+      note: 'Magic Tent, Plumbing, Food Supply, and Crafting Tools make a strong low-complexity package.',
+    },
+    {
+      title: 'Treat the warehouse-compression modifiers as built in',
+      description:
+        'Everything’s an Item and If You Can’t Hold It are assumed on this workspace so warehouse add-ons from any supplement can collapse into portable forms and be bought with Backpack BP.',
+      note: 'That keeps cross-supplement warehouse purchases on one BP budget instead of splitting them across separate planners.',
+    },
+  ],
+};
+
 export function SetupGuidePanels(props: { guide: SetupGuide }) {
   return (
     <div className="selection-editor-list">

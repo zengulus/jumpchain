@@ -15,7 +15,7 @@ import { BodymodPage } from '../features/bodymod/BodymodPage';
 import { TimelinePage } from '../features/timeline/TimelinePage';
 import { NotesPage } from '../features/notes/NotesPage';
 import { ChainWorkspaceLayout } from '../features/workspace/ChainWorkspaceLayout';
-import { PersonalRealityPage } from '../features/personal-reality/PersonalRealityPage';
+import { CosmicBackpackPage } from '../features/cosmic-backpack/CosmicBackpackPage';
 import { SearchResultsPage } from '../features/search/SearchResultsPage';
 
 export const appRouter = createHashRouter([
@@ -84,8 +84,12 @@ export const appRouter = createHashRouter([
             element: <BodymodPage />,
           },
           {
+            path: 'cosmic-backpack',
+            element: <CosmicBackpackPage />,
+          },
+          {
             path: 'personal-reality',
-            element: <PersonalRealityPage />,
+            element: <Navigate to="../cosmic-backpack" replace />,
           },
           {
             path: 'timeline',

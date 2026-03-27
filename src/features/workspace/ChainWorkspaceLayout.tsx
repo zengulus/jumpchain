@@ -31,7 +31,7 @@ type ModuleKey =
   | 'chainwide-rules'
   | 'current-jump-rules'
   | 'bodymod'
-  | 'personal-reality'
+  | 'cosmic-backpack'
   | 'timeline'
   | 'notes'
   | 'backups';
@@ -115,8 +115,8 @@ function getActiveModuleKey(pathname: string): ModuleKey {
     return 'bodymod';
   }
 
-  if (pathname.includes('/personal-reality')) {
-    return 'personal-reality';
+  if (pathname.includes('/cosmic-backpack') || pathname.includes('/personal-reality')) {
+    return 'cosmic-backpack';
   }
 
   if (pathname.includes('/timeline')) {
@@ -283,8 +283,8 @@ export function ChainWorkspaceLayout() {
         return hasJumps ? `/chains/${resolvedChainId}/current-jump-rules` : `/chains/${resolvedChainId}/jumps`;
       case 'bodymod':
         return getBodymodPath();
-      case 'personal-reality':
-        return `/chains/${resolvedChainId}/personal-reality`;
+      case 'cosmic-backpack':
+        return `/chains/${resolvedChainId}/cosmic-backpack`;
       case 'timeline':
         return `/chains/${resolvedChainId}/timeline`;
       case 'notes':
@@ -483,10 +483,10 @@ export function ChainWorkspaceLayout() {
           readiness: 'optional',
         },
         {
-          key: 'personal-reality',
-          label: 'Personal Reality',
-          to: getModulePath('personal-reality'),
-          description: 'Optional supplement planning for warehouse-style infrastructure and budgets.',
+          key: 'cosmic-backpack',
+          label: 'Cosmic Backpack',
+          to: getModulePath('cosmic-backpack'),
+          description: 'Optional warehouse alternative built around one portable bag and a short upgrade list.',
           readiness: 'optional',
         },
         {

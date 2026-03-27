@@ -11,6 +11,7 @@ import {
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
+import { COSMIC_BACKPACK_BP_CURRENCY_KEY } from '../cosmic-backpack/model';
 
 type Workspace = ReturnType<typeof useChainWorkspace>['workspace'];
 type WorkspaceJumper = Workspace['jumpers'][number];
@@ -28,7 +29,6 @@ const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }
   { level: 1, label: 'Discounted', factor: 0.5 },
   { level: 2, label: 'Double discounted', factor: 0.25 },
 ];
-const PERSONAL_REALITY_WP_CURRENCY_KEY = 'personal-reality-wp';
 
 interface SummaryToken {
   label: string;
@@ -112,9 +112,9 @@ const DEFAULT_CURRENCY_DEFINITIONS: Record<string, CurrencyDefinition> = {
     budget: 1000,
     essential: true,
   },
-  [PERSONAL_REALITY_WP_CURRENCY_KEY]: {
-    name: 'Personal Reality WP',
-    abbrev: 'WP',
+  [COSMIC_BACKPACK_BP_CURRENCY_KEY]: {
+    name: 'Cosmic Backpack BP',
+    abbrev: 'BP',
     budget: null,
     essential: false,
   },
@@ -685,8 +685,8 @@ function formatCurrencyLabel(currencyKey: string, definitions: Record<string, Cu
     definition?.name ??
     (currencyKey === '0'
       ? 'Choice Points'
-      : currencyKey === PERSONAL_REALITY_WP_CURRENCY_KEY
-        ? 'Personal Reality WP'
+      : currencyKey === COSMIC_BACKPACK_BP_CURRENCY_KEY
+        ? 'Cosmic Backpack BP'
       : currencyKey.startsWith('custom-currency')
         ? 'Custom currency'
         : titleCaseIdentifier(currencyKey) || 'Custom currency');
@@ -1537,6 +1537,10 @@ function CurrencyExchangeEditorSection(props: {
         <span className="pill">{props.items.length}</span>
       </div>
 
+      <p className="editor-section__copy">
+        Warehouse add-ons from any supplement can be bought with Cosmic Backpack BP. Use exchanges here when you want CP from this jump to fund Backpack-side warehouse purchases.
+      </p>
+
       {props.items.length === 0 ? (
         <p className="editor-section__empty">No currency exchanges yet.</p>
       ) : (
@@ -1671,7 +1675,7 @@ function CurrencyExchangeEditorSection(props: {
               normalizeCurrencyExchangeForEdit(
                 {
                   fromCurrency: props.defaultCurrencyKey,
-                  toCurrency: PERSONAL_REALITY_WP_CURRENCY_KEY,
+                  toCurrency: COSMIC_BACKPACK_BP_CURRENCY_KEY,
                   fromAmount: 0,
                   toAmount: 0,
                   notes: '',
@@ -1681,7 +1685,7 @@ function CurrencyExchangeEditorSection(props: {
             ])
           }
         >
-          Add Personal Reality Transfer
+          Add Cosmic Backpack Transfer
         </button>
         <button
           className="button button--secondary"
@@ -1713,11 +1717,11 @@ function CurrencyDefinitionEditorSection(props: {
       return 1;
     }
 
-    if (left === PERSONAL_REALITY_WP_CURRENCY_KEY) {
+    if (left === COSMIC_BACKPACK_BP_CURRENCY_KEY) {
       return -1;
     }
 
-    if (right === PERSONAL_REALITY_WP_CURRENCY_KEY) {
+    if (right === COSMIC_BACKPACK_BP_CURRENCY_KEY) {
       return 1;
     }
 
@@ -1734,7 +1738,7 @@ function CurrencyDefinitionEditorSection(props: {
       <div className="selection-editor-list">
         {definitionKeys.map((currencyKey) => {
           const definition = props.definitions[currencyKey];
-          const canRemove = currencyKey !== '0' && currencyKey !== PERSONAL_REALITY_WP_CURRENCY_KEY;
+          const canRemove = currencyKey !== '0' && currencyKey !== COSMIC_BACKPACK_BP_CURRENCY_KEY;
 
           return (
             <div className="selection-editor" key={`currency-definition-${currencyKey}`}>
@@ -2262,7 +2266,6 @@ export function ParticipationEditorCard(props: {
   const stipendRows = flattenStipends(draftParticipation.stipends);
   const provisionalCurrencyKeys = Array.from(
     new Set([
-      PERSONAL_REALITY_WP_CURRENCY_KEY,
       ...Object.keys(rawCurrencyDefinitions),
       ...Object.keys(effectiveBudgetState.baseBudgets),
       ...Object.keys(draftParticipation.budgets),
@@ -3301,7 +3304,6 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
     rawCurrencyDefinitions,
     Array.from(
       new Set([
-        PERSONAL_REALITY_WP_CURRENCY_KEY,
         ...Object.keys(rawCurrencyDefinitions),
         ...Object.keys(effectiveBudgetState.baseBudgets),
         ...Object.keys(participation.budgets),
@@ -3428,7 +3430,6 @@ export function ParticipationBudgetInspector(props: {
     rawCurrencyDefinitions,
     Array.from(
       new Set([
-        PERSONAL_REALITY_WP_CURRENCY_KEY,
         ...Object.keys(rawCurrencyDefinitions),
         ...Object.keys(effectiveBudgetState.baseBudgets),
         ...Object.keys(props.participation.budgets),

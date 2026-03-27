@@ -6,13 +6,13 @@ import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { getEffectiveCurrentJumpState } from '../../domain/chain/selectors';
 import { switchActiveBranch, switchActiveJump } from '../../db/persistence';
 import { IconicEditor } from '../bodymod/IconicEditor';
-import { personalRealityCoreModes, personalRealityExtraModes, type PersonalRealityExtraModeId } from '../personal-reality/catalog';
 import {
-  createDefaultPersonalRealityState,
-  readPersonalRealityState,
-  writePersonalRealityState,
-  type PersonalRealityState,
-} from '../personal-reality/model';
+  createDefaultCosmicBackpackState,
+  readCosmicBackpackState,
+  setCosmicBackpackOptionSelected,
+  writeCosmicBackpackState,
+  type CosmicBackpackState,
+} from '../cosmic-backpack/model';
 import {
   createBlankBodymodProfile,
   createBlankJump,
@@ -65,9 +65,9 @@ type SimpleSetupWizardStepId =
   | 'jump-type'
   | 'jump-duration'
   | 'iconic-prompt'
-  | 'personal-reality-prompt'
+  | 'cosmic-backpack-prompt'
   | 'iconic-setup'
-  | 'personal-reality-setup'
+  | 'cosmic-backpack-setup'
   | 'complete';
 
 interface SimpleSetupWizardStep {
@@ -141,7 +141,6 @@ export function ChainOverviewPage() {
   const hasJumpers = workspace.jumpers.length > 0;
   const hasJumps = workspace.jumps.length > 0;
   const currentJump = workspace.currentJump;
-  const completedJumpCountFromChain = workspace.jumps.filter((jump) => jump.status === 'completed').length;
   const selectedJumper =
     workspace.jumpers.find((jumper) => jumper.id === searchParams.get('jumper')) ??
     workspace.jumpers[0] ??
@@ -179,7 +178,7 @@ export function ChainOverviewPage() {
     onSave: async (nextValue) => {
       await saveChainEntity(nextValue);
     },
-    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode Personal Reality changes.'),
+    getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save simple-mode Cosmic Backpack changes.'),
   });
   const jumpAutosave = useAutosaveRecord(wizardJump, {
     onSave: async (nextValue) => {
@@ -190,7 +189,7 @@ export function ChainOverviewPage() {
   const draftJumper = jumperAutosave.draft ?? selectedJumper;
   const draftIconicProfile = iconicAutosave.draft ?? selectedIconicProfile;
   const draftChain = chainAutosave.draft ?? workspace.chain;
-  const personalRealityState = draftChain ? readPersonalRealityState(draftChain) : createDefaultPersonalRealityState();
+  const cosmicBackpackState = draftChain ? readCosmicBackpackState(draftChain) : createDefaultCosmicBackpackState();
   const draftWizardJump = jumpAutosave.draft ?? wizardJump;
   const simpleWizardAutosaveStatus = mergeAutosaveStatuses([
     jumperAutosave.status,
@@ -266,6 +265,10 @@ export function ChainOverviewPage() {
 
     const nextSearch = nextSearchParams.toString();
     return `/chains/${chainId}/jumps/${currentJump.id}${nextSearch.length > 0 ? `?${nextSearch}` : ''}`;
+  }
+
+  function getCosmicBackpackPath() {
+    return `/chains/${chainId}/cosmic-backpack`;
   }
 
   function handleFocusedJumperChange(nextJumperId: string) {
@@ -388,29 +391,24 @@ export function ChainOverviewPage() {
     }
   }
 
-  function updatePersonalRealityState(updater: (currentState: PersonalRealityState) => PersonalRealityState) {
+  function updateCosmicBackpackState(updater: (currentState: CosmicBackpackState) => CosmicBackpackState) {
     chainAutosave.updateDraft((currentChain) => {
       if (!currentChain) {
         return currentChain;
       }
 
-      return writePersonalRealityState(currentChain, updater(readPersonalRealityState(currentChain)));
+      return writeCosmicBackpackState(currentChain, updater(readCosmicBackpackState(currentChain)));
     });
   }
 
-  function togglePersonalRealityExtraMode(extraModeId: PersonalRealityExtraModeId, checked: boolean) {
-    updatePersonalRealityState((currentState) => ({
-      ...currentState,
-      extraModeIds: checked
-        ? Array.from(new Set([...currentState.extraModeIds, extraModeId]))
-        : currentState.extraModeIds.filter((entry) => entry !== extraModeId),
-    }));
+  function toggleCosmicBackpackOption(optionId: string, checked: boolean) {
+    updateCosmicBackpackState((currentState) => setCosmicBackpackOptionSelected(currentState, optionId, checked));
   }
 
   useEffect(() => {
     if (
       simpleModeWizardState.iconicDecision !== 'not-now' ||
-      simpleModeWizardState.personalRealityDecision !== 'not-now' ||
+      simpleModeWizardState.cosmicBackpackDecision !== 'not-now' ||
       workspace.jumps.length <= simpleModeWizardState.lastSupplementPromptJumpCount
     ) {
       return;
@@ -419,7 +417,7 @@ export function ChainOverviewPage() {
     updateSimpleModeWizardState(simpleModeWizardKey, (current) => {
       if (
         current.iconicDecision !== 'not-now' ||
-        current.personalRealityDecision !== 'not-now' ||
+        current.cosmicBackpackDecision !== 'not-now' ||
         workspace.jumps.length <= current.lastSupplementPromptJumpCount
       ) {
         return current;
@@ -428,16 +426,16 @@ export function ChainOverviewPage() {
       return {
         ...current,
         iconicDecision: 'undecided',
-        personalRealityDecision: 'undecided',
+        cosmicBackpackDecision: 'undecided',
         iconicGuideCompleted: false,
-        personalRealityGuideCompleted: false,
+        cosmicBackpackGuideCompleted: false,
       };
     });
   }, [
     simpleModeWizardKey,
     simpleModeWizardState.iconicDecision,
     simpleModeWizardState.lastSupplementPromptJumpCount,
-    simpleModeWizardState.personalRealityDecision,
+    simpleModeWizardState.cosmicBackpackDecision,
     updateSimpleModeWizardState,
     workspace.jumps.length,
   ]);
@@ -460,18 +458,18 @@ export function ChainOverviewPage() {
     setSimpleWizardStepId(null);
   }
 
-  function updateSupplementDecision(feature: 'iconic' | 'personalReality', decision: 'yes' | 'not-now' | 'skip-future') {
+  function updateSupplementDecision(feature: 'iconic' | 'cosmicBackpack', decision: 'yes' | 'not-now' | 'skip-future') {
     updateSimpleModeWizardState(simpleModeWizardKey, (current) => {
       const nextState = {
         ...current,
         iconicDecision: feature === 'iconic' ? decision : current.iconicDecision,
-        personalRealityDecision: feature === 'personalReality' ? decision : current.personalRealityDecision,
+        cosmicBackpackDecision: feature === 'cosmicBackpack' ? decision : current.cosmicBackpackDecision,
         iconicGuideCompleted: feature === 'iconic' && decision === 'yes' ? false : current.iconicGuideCompleted,
-        personalRealityGuideCompleted:
-          feature === 'personalReality' && decision === 'yes' ? false : current.personalRealityGuideCompleted,
+        cosmicBackpackGuideCompleted:
+          feature === 'cosmicBackpack' && decision === 'yes' ? false : current.cosmicBackpackGuideCompleted,
       };
 
-      if (nextState.iconicDecision === 'not-now' && nextState.personalRealityDecision === 'not-now') {
+      if (nextState.iconicDecision === 'not-now' && nextState.cosmicBackpackDecision === 'not-now') {
         return {
           ...nextState,
           lastSupplementPromptJumpCount: workspace.jumps.length,
@@ -483,16 +481,16 @@ export function ChainOverviewPage() {
     setSimpleWizardStepId(null);
   }
 
-  function markSupplementGuideComplete(feature: 'iconic' | 'personalReality') {
+  function markSupplementGuideComplete(feature: 'iconic' | 'cosmicBackpack') {
     updateSimpleModeWizardState(simpleModeWizardKey, (current) => ({
       ...current,
       iconicGuideCompleted: feature === 'iconic' ? true : current.iconicGuideCompleted,
-      personalRealityGuideCompleted: feature === 'personalReality' ? true : current.personalRealityGuideCompleted,
+      cosmicBackpackGuideCompleted: feature === 'cosmicBackpack' ? true : current.cosmicBackpackGuideCompleted,
     }));
     showAffirmation(
       feature === 'iconic'
         ? 'Iconic has a workable foundation. Next, return to the main chain flow or refine it later.'
-        : 'Personal Reality has a workable foundation. Next, return to the main chain flow or keep building it later.',
+        : 'Cosmic Backpack has a workable foundation. Next, return to the main chain flow or keep building it later.',
     );
     setSimpleWizardStepId(null);
   }
@@ -578,11 +576,11 @@ export function ChainOverviewPage() {
     });
   }
 
-  if (hasJumps && simpleModeWizardState.personalRealityDecision === 'undecided') {
+  if (hasJumps && simpleModeWizardState.cosmicBackpackDecision === 'undecided') {
     simpleSetupWizardSteps.push({
-      id: 'personal-reality-prompt',
-      title: 'Decide on Personal Reality',
-      description: 'Personal Reality is the warehouse-style supplement builder for long-term housing, utilities, and infrastructure.',
+      id: 'cosmic-backpack-prompt',
+      title: 'Decide on Cosmic Backpack',
+      description: 'Cosmic Backpack is a compact warehouse alternative built around one indestructible bag and a short upgrade list.',
     });
   }
 
@@ -594,11 +592,11 @@ export function ChainOverviewPage() {
     });
   }
 
-  if (hasJumps && simpleModeWizardState.personalRealityDecision === 'yes' && !simpleModeWizardState.personalRealityGuideCompleted) {
+  if (hasJumps && simpleModeWizardState.cosmicBackpackDecision === 'yes' && !simpleModeWizardState.cosmicBackpackGuideCompleted) {
     simpleSetupWizardSteps.push({
-      id: 'personal-reality-setup',
-      title: 'Set up Personal Reality',
-      description: 'You can make the first real Personal Reality setup decisions right here in the wizard.',
+      id: 'cosmic-backpack-setup',
+      title: 'Set up Cosmic Backpack',
+      description: 'You can set the first Backpack notes and free configuration options here without opening a heavier builder.',
     });
   }
 
@@ -607,7 +605,7 @@ export function ChainOverviewPage() {
       id: 'complete',
       title: 'Simple setup is in good shape',
       description:
-        simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.personalRealityDecision === 'not-now'
+        simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.cosmicBackpackDecision === 'not-now'
           ? 'You passed on both supplements for now. If you add another jump later, simple mode will check back in.'
           : 'The main simple-mode setup steps are done. You can keep working from the cards below whenever you want.',
     });
@@ -871,11 +869,11 @@ export function ChainOverviewPage() {
       to: getParticipationPath(),
     },
     {
-      id: 'personal-reality',
-      title: 'Personal Reality',
-      description: 'Supplement builder.',
-      hint: 'Supplement budgeting, page-by-page purchases, and warehouse continuity.',
-      to: `/chains/${chainId}/personal-reality`,
+      id: 'cosmic-backpack',
+      title: 'Cosmic Backpack',
+      description: 'Compact supplement planner.',
+      hint: 'Portable storage, attachments, and warehouse-alternative planning.',
+      to: getCosmicBackpackPath(),
     },
     {
       id: 'rules',
@@ -902,7 +900,7 @@ export function ChainOverviewPage() {
     },
   ];
   const visibleWorkSurfaceCards = simpleMode
-    ? simpleModeWizardState.personalRealityDecision === 'yes'
+    ? simpleModeWizardState.cosmicBackpackDecision === 'yes'
       ? [workSurfaceCards[0], workSurfaceCards[1], workSurfaceCards[2], workSurfaceCards[4]]
       : workSurfaceCards.slice(0, 3)
     : workSurfaceCards;
@@ -1180,7 +1178,7 @@ export function ChainOverviewPage() {
                   <p>Do you want to use the wizard to set things up easily?</p>
                 </div>
                 <p>
-                  It will walk you through your jumper, your jump, and the optional Iconic and Personal Reality systems one
+                  It will walk you through your jumper, your jump, and the optional Iconic and Cosmic Backpack systems one
                   step at a time.
                 </p>
                 <div className="actions">
@@ -1584,11 +1582,11 @@ export function ChainOverviewPage() {
             </div>
           ) : null}
 
-          {activeSimpleWizardStep.id === 'personal-reality-prompt' ? (
+          {activeSimpleWizardStep.id === 'cosmic-backpack-prompt' ? (
             <div className="selection-editor">
               <p>
-                Personal Reality is the supplement builder for warehouse-like space, facilities, budgets, and long-term chain
-                infrastructure. Use it when you want to plan the reality itself, not just the jumper.
+                Cosmic Backpack is a much smaller warehouse alternative centered on one bag, a short upgrade list, and a
+                handful of optional modifiers. Use it when you want portable utility without a large infrastructure planner.
               </p>
               <div className="actions">
                 {hasPreviousSimpleWizardStep ? (
@@ -1596,20 +1594,20 @@ export function ChainOverviewPage() {
                     Back
                   </button>
                 ) : null}
-                <button className="button" type="button" onClick={() => updateSupplementDecision('personalReality', 'yes')}>
+                <button className="button" type="button" onClick={() => updateSupplementDecision('cosmicBackpack', 'yes')}>
                   Yes, Show Me
                 </button>
                 <button
                   className="button button--secondary"
                   type="button"
-                  onClick={() => updateSupplementDecision('personalReality', 'not-now')}
+                  onClick={() => updateSupplementDecision('cosmicBackpack', 'not-now')}
                 >
                   Not This Jump
                 </button>
                 <button
                   className="button button--secondary"
                   type="button"
-                  onClick={() => updateSupplementDecision('personalReality', 'skip-future')}
+                  onClick={() => updateSupplementDecision('cosmicBackpack', 'skip-future')}
                 >
                   Stop Asking
                 </button>
@@ -1656,171 +1654,60 @@ export function ChainOverviewPage() {
             </div>
           ) : null}
 
-          {activeSimpleWizardStep.id === 'personal-reality-setup' ? (
+          {activeSimpleWizardStep.id === 'cosmic-backpack-setup' ? (
             <div className="selection-editor">
               <p>
-                This part stays in the wizard too. You can make the first Personal Reality decisions here, then use the full
-                worksheet later for the page-by-page build.
+                This stays in the wizard too. Cosmic Backpack is light enough that you can capture the first notes and free
+                options here, then open the full workspace later if you want to spend BP on upgrades.
               </p>
 
-              <label className="field">
-                <span>Core mode</span>
-                <select
-                  value={personalRealityState.coreModeId}
-                  onChange={(event) =>
-                    updatePersonalRealityState((currentState) => ({
-                      ...currentState,
-                      coreModeId: event.target.value as PersonalRealityState['coreModeId'],
-                      discountedGroupIds: event.target.value === 'upfront' ? currentState.discountedGroupIds.slice(0, 3) : [],
-                    }))
-                  }
-                >
-                  <option value="">Select a core mode</option>
-                  {personalRealityCoreModes.map((coreMode) => (
-                    <option key={coreMode.id} value={coreMode.id}>
-                      {coreMode.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="guidance-strip">
+                <strong>Always included for cross-supplement warehouse add-ons</strong>
+                <p>
+                  Everything&apos;s an Item and If You Can&apos;t Hold It are built in here on purpose, so warehouse add-ons from
+                  any supplement can be represented as items and bought with Backpack BP later.
+                </p>
+              </div>
 
-              {personalRealityState.coreModeId ? (
-                <div className="guidance-strip">
-                  <strong>{personalRealityCoreModes.find((coreMode) => coreMode.id === personalRealityState.coreModeId)?.title}</strong>
-                  <p>{personalRealityCoreModes.find((coreMode) => coreMode.id === personalRealityState.coreModeId)?.summary}</p>
-                </div>
+              <div className="checkbox-list">
+                {[
+                  ['custom-appearance', 'Take Custom Appearance (free)'],
+                  ['access-control', 'Take Access Control (free)'],
+                ].map(([optionId, label]) => (
+                  <label className="checkbox-row" key={optionId}>
+                    <input
+                      type="checkbox"
+                      checked={cosmicBackpackState.selectedOptionIds.includes(optionId)}
+                      onChange={(event) => toggleCosmicBackpackOption(optionId, event.target.checked)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+
+              {cosmicBackpackState.selectedOptionIds.includes('custom-appearance') ? (
+                <label className="field">
+                  <span>Appearance notes</span>
+                  <textarea
+                    rows={3}
+                    value={cosmicBackpackState.appearanceNotes}
+                    onChange={(event) =>
+                      updateCosmicBackpackState((currentState) => ({
+                        ...currentState,
+                        appearanceNotes: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
               ) : null}
 
-              <div className="field-grid field-grid--two">
-                <label className="field">
-                  <span>Completed jumps override</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={personalRealityState.budget.completedJumpCountOverride ?? ''}
-                    placeholder={String(completedJumpCountFromChain)}
-                    onChange={(event) =>
-                      updatePersonalRealityState((currentState) => ({
-                        ...currentState,
-                        budget: {
-                          ...currentState.budget,
-                          completedJumpCountOverride: event.target.value === '' ? null : Math.max(0, Number(event.target.value)),
-                        },
-                      }))
-                    }
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Unlimited transferred WP</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={personalRealityState.budget.unlimitedTransferredWp}
-                    onChange={(event) =>
-                      updatePersonalRealityState((currentState) => ({
-                        ...currentState,
-                        budget: {
-                          ...currentState.budget,
-                          unlimitedTransferredWp: Math.max(0, Number(event.target.value) || 0),
-                        },
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-
-              <div className="field">
-                <span>Extra modes</span>
-                <div className="checkbox-list">
-                  {personalRealityExtraModes.map((extraMode) => {
-                    const checked = personalRealityState.extraModeIds.includes(extraMode.id);
-
-                    return (
-                      <label className="checkbox-row" key={extraMode.id}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => togglePersonalRealityExtraMode(extraMode.id, event.target.checked)}
-                        />
-                        <span>
-                          <strong>{extraMode.title}</strong> | {extraMode.summary}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="field-grid field-grid--three">
-                {personalRealityState.extraModeIds.includes('patient-jumper') ? (
-                  <label className="field">
-                    <span>Delayed jumps</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={personalRealityState.budget.patientJumperDelayedJumps}
-                      onChange={(event) =>
-                        updatePersonalRealityState((currentState) => ({
-                          ...currentState,
-                          budget: {
-                            ...currentState.budget,
-                            patientJumperDelayedJumps: Math.max(0, Number(event.target.value) || 0),
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ) : null}
-
-                {personalRealityState.extraModeIds.includes('swap-out') ? (
-                  <label className="field">
-                    <span>Experienced jumps</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={personalRealityState.budget.swapOutExperiencedJumps}
-                      onChange={(event) =>
-                        updatePersonalRealityState((currentState) => ({
-                          ...currentState,
-                          budget: {
-                            ...currentState.budget,
-                            swapOutExperiencedJumps: Math.max(0, Number(event.target.value) || 0),
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ) : null}
-
-                {personalRealityState.extraModeIds.includes('cross-roads') ? (
-                  <label className="field">
-                    <span>Triggered jumps</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={personalRealityState.budget.crossroadsTriggeredJumps}
-                      onChange={(event) =>
-                        updatePersonalRealityState((currentState) => ({
-                          ...currentState,
-                          budget: {
-                            ...currentState.budget,
-                            crossroadsTriggeredJumps: Math.max(0, Number(event.target.value) || 0),
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ) : null}
-              </div>
-
               <label className="field">
-                <span>Personal Reality notes</span>
+                <span>Cosmic Backpack notes</span>
                 <textarea
                   rows={4}
-                  value={personalRealityState.notes}
+                  value={cosmicBackpackState.notes}
                   onChange={(event) =>
-                    updatePersonalRealityState((currentState) => ({
+                    updateCosmicBackpackState((currentState) => ({
                       ...currentState,
                       notes: event.target.value,
                     }))
@@ -1837,12 +1724,12 @@ export function ChainOverviewPage() {
                 <button
                   className="button"
                   type="button"
-                  onClick={() => markSupplementGuideComplete('personalReality')}
+                  onClick={() => markSupplementGuideComplete('cosmicBackpack')}
                 >
                   Continue Wizard
                 </button>
-                <Link className="button button--secondary" to={`/chains/${chainId}/personal-reality`}>
-                  Open Personal Reality Workspace
+                <Link className="button button--secondary" to={getCosmicBackpackPath()}>
+                  Open Cosmic Backpack Workspace
                 </Link>
               </div>
             </div>
@@ -1851,7 +1738,7 @@ export function ChainOverviewPage() {
           {activeSimpleWizardStep.id === 'complete' ? (
             <div className="selection-editor">
               <p>
-                {simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.personalRealityDecision === 'not-now'
+                {simpleModeWizardState.iconicDecision === 'not-now' && simpleModeWizardState.cosmicBackpackDecision === 'not-now'
                   ? 'Both supplements are parked for now. Add another jump later if you want simple mode to bring them up again.'
                   : 'The guided setup pass is finished. From here you can keep editing normally or jump into the deeper modules when you want them.'}
               </p>

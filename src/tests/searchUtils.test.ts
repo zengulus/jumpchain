@@ -29,11 +29,9 @@ function createChain(id: string, title: string): Chain {
       interestRate: 0,
     },
     importSourceMetadata: {
-      personalReality: {
-        notes: 'Garage wing retrofit and warehouse staging.',
-        pageNotes: {
-          '24': 'Medical bay adjacency and garage access.',
-        },
+      cosmicBackpack: {
+        notes: 'Garage-ready loadout with a mobile workshop and shelter.',
+        appearanceNotes: 'Dark canvas backpack with archive pins.',
       },
     },
   };
@@ -242,15 +240,15 @@ describe('search utilities', () => {
 
     expect(results.some((result) => result.kind === 'snapshot' && result.to.includes('/backups?snapshot='))).toBe(true);
     expect(results.some((result) => result.kind === 'note' && result.to.includes('/notes?note='))).toBe(true);
-    expect(results.some((result) => result.kind === 'personal-reality' && result.to.includes('/personal-reality?page='))).toBe(true);
+    expect(results.some((result) => result.kind === 'cosmic-backpack' && result.to.includes('/cosmic-backpack'))).toBe(true);
   });
 
-  it('only adds static personal reality catalog results for the preferred chain', () => {
+  it('only adds static cosmic backpack catalog results for the preferred chain', () => {
     const alpha = createBundle('chain-alpha', 'Alpha Chain');
     const beta = createBundle('chain-beta', 'Beta Chain');
 
     const withoutPreference = buildUniversalSearchResults({
-      query: 'medical',
+      query: 'hammerspace',
       overviews: [
         {
           chainId: alpha.chain.id,
@@ -275,7 +273,7 @@ describe('search utilities', () => {
     });
 
     const withPreference = buildUniversalSearchResults({
-      query: 'medical',
+      query: 'hammerspace',
       overviews: [
         {
           chainId: alpha.chain.id,
@@ -300,7 +298,7 @@ describe('search utilities', () => {
       preferredChainId: alpha.chain.id,
     });
 
-    expect(withoutPreference.some((result) => result.kind === 'personal-reality' && result.title.toLowerCase().includes('medical'))).toBe(false);
-    expect(withPreference.some((result) => result.kind === 'personal-reality' && result.title.toLowerCase().includes('medical'))).toBe(true);
+    expect(withoutPreference.some((result) => result.kind === 'cosmic-backpack' && result.title.toLowerCase().includes('hammerspace'))).toBe(false);
+    expect(withPreference.some((result) => result.kind === 'cosmic-backpack' && result.title.toLowerCase().includes('hammerspace'))).toBe(true);
   });
 });

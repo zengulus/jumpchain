@@ -1,8 +1,8 @@
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import type { ChainOverview } from '../../db/persistence';
-import { personalRealityOptionCatalog, personalRealityPages } from '../personal-reality/catalog';
-import { readPersonalRealityState } from '../personal-reality/model';
+import { cosmicBackpackOptionCatalog } from '../cosmic-backpack/catalog';
+import { readCosmicBackpackState } from '../cosmic-backpack/model';
 
 export type UniversalSearchResultKind =
   | 'chain'
@@ -14,7 +14,7 @@ export type UniversalSearchResultKind =
   | 'effect'
   | 'note'
   | 'snapshot'
-  | 'personal-reality';
+  | 'cosmic-backpack';
 
 export interface UniversalSearchResult {
   id: string;
@@ -39,7 +39,7 @@ const kindLabels: Record<UniversalSearchResultKind, string> = {
   effect: 'Effect',
   note: 'Note',
   snapshot: 'Snapshot',
-  'personal-reality': 'Personal Reality',
+  'cosmic-backpack': 'Cosmic Backpack',
 };
 
 const kindPriority: Record<UniversalSearchResultKind, number> = {
@@ -52,7 +52,7 @@ const kindPriority: Record<UniversalSearchResultKind, number> = {
   effect: 22,
   note: 21,
   snapshot: 18,
-  'personal-reality': 16,
+  'cosmic-backpack': 16,
 };
 
 function escapeRegExp(value: string) {
@@ -490,70 +490,41 @@ export function buildUniversalSearchResults(input: {
       );
     }
 
-    const personalRealityState = readPersonalRealityState(bundle.chain);
+    const cosmicBackpackState = readCosmicBackpackState(bundle.chain);
 
     pushResult(
       results,
       {
-        kind: 'personal-reality',
+        kind: 'cosmic-backpack',
         chainId: bundle.chain.id,
         chainTitle,
-        title: 'Personal Reality build notes',
-        subtitle: `Personal Reality | ${chainTitle}`,
-        snippet: buildSearchSnippet(query, personalRealityState.notes),
-        to: withSearchParams(`/chains/${bundle.chain.id}/personal-reality`, {
-          page: '2',
+        title: 'Cosmic Backpack plan notes',
+        subtitle: `Cosmic Backpack | ${chainTitle}`,
+        snippet: buildSearchSnippet(query, cosmicBackpackState.notes, cosmicBackpackState.appearanceNotes, cosmicBackpackState.containerForm),
+        to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
           highlight: query,
         }),
-        extraText: [personalRealityState.notes],
+        extraText: [cosmicBackpackState.notes, cosmicBackpackState.appearanceNotes, cosmicBackpackState.containerForm],
       },
       query,
       input.preferredChainId,
     );
 
-    for (const [pageNumber, pageNote] of Object.entries(personalRealityState.pageNotes)) {
-      if (!pageNote || pageNote.trim().length === 0) {
-        continue;
-      }
-
-      const page = personalRealityPages.find((entry) => String(entry.number) === pageNumber);
-
-      pushResult(
-        results,
-        {
-          kind: 'personal-reality',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: page ? `Personal Reality Page ${page.number}: ${page.title}` : `Personal Reality Page ${pageNumber}`,
-          subtitle: `Personal Reality notes | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, pageNote),
-          to: withSearchParams(`/chains/${bundle.chain.id}/personal-reality`, {
-            page: pageNumber,
-            highlight: query,
-          }),
-          extraText: [pageNote],
-        },
-        query,
-        input.preferredChainId,
-      );
-    }
-
     if (input.preferredChainId === bundle.chain.id) {
-      for (const option of personalRealityOptionCatalog) {
+      for (const option of cosmicBackpackOptionCatalog) {
         pushResult(
           results,
           {
-            kind: 'personal-reality',
+            kind: 'cosmic-backpack',
             chainId: bundle.chain.id,
             chainTitle,
             title: option.title,
-            subtitle: `Personal Reality | Page ${option.page} | ${chainTitle}`,
-            snippet: buildSearchSnippet(query, option.description, option.costText, option.requirementsText),
-            to: withSearchParams(`/chains/${bundle.chain.id}/personal-reality`, {
-              page: String(option.page),
+            subtitle: `Cosmic Backpack | ${chainTitle}`,
+            snippet: buildSearchSnippet(query, option.description, option.note, option.costBp === 0 ? 'Free' : `${option.costBp} BP`),
+            to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
               highlight: query,
             }),
-            extraText: [option.description, option.costText, option.requirementsText],
+            extraText: [option.description, option.note, option.costBp],
           },
           query,
           input.preferredChainId,

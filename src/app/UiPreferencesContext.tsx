@@ -11,9 +11,9 @@ export interface SimpleModeWizardState {
   guidedJumpCount: number;
   lastSupplementPromptJumpCount: number;
   iconicDecision: SimpleModeSupplementDecision;
-  personalRealityDecision: SimpleModeSupplementDecision;
+  cosmicBackpackDecision: SimpleModeSupplementDecision;
   iconicGuideCompleted: boolean;
-  personalRealityGuideCompleted: boolean;
+  cosmicBackpackGuideCompleted: boolean;
 }
 
 interface StoredUiPreferences {
@@ -49,9 +49,9 @@ function createDefaultSimpleModeWizardState(): SimpleModeWizardState {
     guidedJumpCount: 0,
     lastSupplementPromptJumpCount: 0,
     iconicDecision: 'undecided',
-    personalRealityDecision: 'undecided',
+    cosmicBackpackDecision: 'undecided',
     iconicGuideCompleted: false,
-    personalRealityGuideCompleted: false,
+    cosmicBackpackGuideCompleted: false,
   };
 }
 
@@ -80,9 +80,9 @@ function readSimpleModeWizardState(value: unknown): SimpleModeWizardState {
         ? Math.max(0, Math.trunc(value.lastSupplementPromptJumpCount))
         : 0,
     iconicDecision: readSimpleModeDecision(value.iconicDecision),
-    personalRealityDecision: readSimpleModeDecision(value.personalRealityDecision),
+    cosmicBackpackDecision: readSimpleModeDecision(value.cosmicBackpackDecision ?? value.personalRealityDecision),
     iconicGuideCompleted: value.iconicGuideCompleted === true,
-    personalRealityGuideCompleted: value.personalRealityGuideCompleted === true,
+    cosmicBackpackGuideCompleted: value.cosmicBackpackGuideCompleted === true || value.personalRealityGuideCompleted === true,
   };
 }
 
