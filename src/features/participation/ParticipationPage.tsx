@@ -1028,6 +1028,19 @@ function getOriginSpendAmounts(
   );
 }
 
+function getBankDepositSpendAmounts(bankDeposit: number, primaryCurrencyKey: string) {
+  return sumCurrencyAmounts(
+    Number.isFinite(bankDeposit) && bankDeposit !== 0
+      ? [
+          {
+            currencyKey: primaryCurrencyKey,
+            amount: bankDeposit,
+          },
+        ]
+      : [],
+  );
+}
+
 function getCurrencyExchangeFlows(
   exchanges: unknown[],
   defaultCurrencyKey: string,
@@ -1059,6 +1072,7 @@ function getBudgetLedgerEntries(
   purchases: unknown[],
   origins: Record<string, unknown>,
   orderedOriginKeys: string[],
+  bankDeposit: number,
   currencyExchanges: unknown[],
   currencyDefinitions: Record<string, CurrencyDefinition>,
 ) {
@@ -1070,8 +1084,11 @@ function getBudgetLedgerEntries(
     })),
   );
   const originSpend = getOriginSpendAmounts(origins, orderedOriginKeys, primaryCurrencyKey);
+  const bankDepositSpend = getBankDepositSpendAmounts(bankDeposit, primaryCurrencyKey);
   const combinedSpend = sumCurrencyAmounts(
-    [...Object.entries(purchaseSpend), ...Object.entries(originSpend)].map(([currencyKey, amount]) => ({ currencyKey, amount })),
+    [...Object.entries(purchaseSpend), ...Object.entries(originSpend), ...Object.entries(bankDepositSpend)].map(
+      ([currencyKey, amount]) => ({ currencyKey, amount }),
+    ),
   );
   const exchangeFlows = getCurrencyExchangeFlows(currencyExchanges, primaryCurrencyKey);
   const currencyKeys = new Set([
@@ -2317,6 +2334,7 @@ export function ParticipationEditorCard(props: {
     draftParticipation.purchases,
     draftParticipation.origins,
     orderedOriginKeys,
+    draftParticipation.bankDeposit,
     draftParticipation.currencyExchanges,
     currencyDefinitions,
   );
@@ -3310,6 +3328,7 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
     participation.purchases,
     participation.origins,
     orderedOriginKeys,
+    participation.bankDeposit,
     participation.currencyExchanges,
     currencyDefinitions,
   );
@@ -3465,6 +3484,7 @@ export function ParticipationBudgetInspector(props: {
     props.participation.purchases,
     props.participation.origins,
     orderedOriginKeys,
+    props.participation.bankDeposit,
     props.participation.currencyExchanges,
     currencyDefinitions,
   );

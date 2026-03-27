@@ -654,37 +654,34 @@ export function JumpsPage() {
 
     return (
       <div className="stack stack--compact">
-        <section className="section-surface stack stack--compact">
-          <div className="section-heading">
-            <div className="stack stack--compact">
-              <h4>Editing focus</h4>
-              <PlainLanguageHint term="Purchases" meaning="the choices and costs each participating jumper takes in this jump." />
-            </div>
-            <span className="pill">{jumpParticipantJumpers.length} participating</span>
-          </div>
-          <div className="chip-grid">
-            {jumpParticipantJumpers.map((jumper) => (
-              <button
-                className={`choice-chip${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
-                type="button"
-                key={jumper.id}
-                onClick={() => setFocusedParticipant(jumper.id)}
-              >
-                <span>{jumper.name}</span>
-              </button>
-            ))}
-          </div>
-          {pendingFocusedJumper ? (
-            <div className="jump-focus-callout">
-              <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
-              <div className="actions">
-                <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
-                  Add {pendingFocusedJumper.name} To This Jump
-                </button>
+        {jumpParticipantJumpers.length > 1 || pendingFocusedJumper ? (
+          <section className="section-surface stack stack--compact">
+            {jumpParticipantJumpers.length > 1 ? (
+              <div className="chip-grid">
+                {jumpParticipantJumpers.map((jumper) => (
+                  <button
+                    className={`choice-chip${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
+                    type="button"
+                    key={jumper.id}
+                    onClick={() => setFocusedParticipant(jumper.id)}
+                  >
+                    <span>{jumper.name}</span>
+                  </button>
+                ))}
               </div>
-            </div>
-          ) : null}
-        </section>
+            ) : null}
+            {pendingFocusedJumper ? (
+              <div className="jump-focus-callout">
+                <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
+                <div className="actions">
+                  <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
+                    Add {pendingFocusedJumper.name} To This Jump
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {activeParticipationJumper && activeParticipation ? (
           <>
