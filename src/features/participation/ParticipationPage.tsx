@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
 import { db } from '../../db/database';
@@ -8,7 +9,22 @@ import {
   AssistiveHint,
   AutosaveStatusIndicator,
   JsonEditorField,
+  SimpleModeGuideFrame,
 } from '../workspace/shared';
+import {
+  createBranchGuideScopeKey,
+  createParticipationGuideKey,
+  createSimpleModePageGuideState,
+  getFirstIncompleteGuideStep,
+  isParticipationGuideStepComplete,
+  markGuideStepAcknowledged,
+  readGuideRequested,
+  setGuideCurrentStep,
+  setGuideDismissed,
+  updateGuideSearchParams,
+  type ParticipationGuideStepId,
+  type SimpleModePageGuideState,
+} from '../workspace/simpleModeGuides';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { COSMIC_BACKPACK_BP_CURRENCY_KEY } from '../cosmic-backpack/model';
@@ -33,6 +49,7 @@ type PurchaseSubtypeSectionId = 'perks' | 'subsystems' | 'items' | 'other';
 type SectionStipendMap = Record<PurchaseSectionKey, number>;
 
 const participationTabs: ParticipationTab[] = ['beginnings', 'perks', 'subsystems', 'items', 'other', 'stipends', 'drawbacks', 'alt-forms', 'notes'];
+const participationPurchaseTabs: ParticipationTab[] = ['perks', 'subsystems', 'items', 'other', 'stipends', 'drawbacks', 'alt-forms'];
 
 const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }> = [
   { level: 0, label: 'Full price', factor: 1 },
@@ -2312,6 +2329,7 @@ function OriginEditorSection(props: {
     };
   });
   const otherEntries = populatedEntries.filter(({ originKey }) => !assignedCoreKeys.has(originKey) && originKey in props.origins);
+  const originEntry = coreEntries.find(({ slot }) => slot.id === 'origin')?.entry ?? null;
 
   function updateOrigin(originKey: string, updater: (record: Record<string, unknown>) => Record<string, unknown>) {
     props.onChange({
@@ -2429,8 +2447,14 @@ function OriginEditorSection(props: {
         <span className="pill">{Object.keys(props.origins).length}</span>
       </div>
 
+      {originEntry === null ? (
+        <p className="editor-section__copy">
+          Start with an origin. Background, race, and age can stay optional unless this jump actually uses them.
+        </p>
+      ) : null}
+
       {Object.keys(props.origins).length === 0 ? (
-        <p className="editor-section__empty">No beginnings yet.</p>
+        <p className="editor-section__empty">No beginnings yet. Add an origin first, then fill in any other starting choices you want to track.</p>
       ) : (
         <div className="selection-editor-list">
           {coreEntries
@@ -2472,7 +2496,7 @@ function OriginEditorSection(props: {
           .filter(({ entry }) => entry === null)
           .map(({ slot }) => (
             <button
-              className="button button--secondary"
+              className={slot.id === 'origin' ? 'button' : 'button button--secondary'}
               type="button"
               key={`add-${slot.id}`}
               onClick={() => {
@@ -2514,7 +2538,7 @@ function OriginEditorSection(props: {
             });
           }}
         >
-          Add Beginning
+            Add Custom Beginning
         </button>
       </div>
     </section>
@@ -2551,6 +2575,8 @@ export function ParticipationEditorCard(props: {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save participation changes.'),
   });
   const draftParticipation = participationAutosave.draft ?? props.participation;
+  const { chainId } = useChainWorkspace();
+  const { simpleMode, getBranchGuideState, updateBranchGuideState, updateOverviewGuideState } = useUiPreferences();
   useEffect(() => {
     props.onDraftChange?.(draftParticipation);
   }, [draftParticipation, props.onDraftChange]);
@@ -2658,9 +2684,43 @@ export function ParticipationEditorCard(props: {
   const showBudgetSummary = props.showBudgetSummary ?? true;
   const showBudgetHeader = props.showBudgetHeader ?? true;
   const [searchParams, setSearchParams] = useSearchParams();
+  const guideRequested = simpleMode && readGuideRequested(searchParams);
   const requestedTab = isParticipationTab(searchParams.get('participationTab'))
     ? (searchParams.get('participationTab') as ParticipationTab)
     : null;
+  const branchGuideScopeKey = props.workspace.activeBranch ? createBranchGuideScopeKey(chainId, props.workspace.activeBranch.id) : null;
+  const participationGuideKey = createParticipationGuideKey(props.participation.jumpId, props.participation.jumperId);
+  const participationGuideState =
+    branchGuideScopeKey
+      ? getBranchGuideState(branchGuideScopeKey, 'participation', participationGuideKey)
+      : createSimpleModePageGuideState('beginnings');
+  const participationGuideSteps: Array<{ id: ParticipationGuideStepId; label: string; description: string }> = [
+    {
+      id: 'beginnings',
+      label: 'Beginnings',
+      description: 'Capture the origin, background, or starting state before you start spending the budget.',
+    },
+    {
+      id: 'purchases',
+      label: 'Purchases',
+      description: 'Work through perks, items, stipends, drawbacks, and alt-forms for this participant.',
+    },
+    {
+      id: 'wrap-up',
+      label: 'Wrap Up',
+      description: 'Leave a few notes so the next revisit has context instead of starting cold.',
+    },
+  ];
+  const currentGuideStepId = getFirstIncompleteGuideStep(
+    participationGuideSteps.map((step) => step.id),
+    participationGuideState,
+    (stepId) =>
+      isParticipationGuideStepComplete(
+        draftParticipation,
+        participationGuideState,
+        stepId as ParticipationGuideStepId,
+      ),
+  ) as ParticipationGuideStepId | null;
   const cpBudgetEntry = useMemo(
     () => findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions),
     [currencyDefinitions, effectiveBudgetState.effectiveBudgets],
@@ -2728,6 +2788,30 @@ export function ParticipationEditorCard(props: {
     }
   }, [activeTab, requestedTab]);
 
+  useEffect(() => {
+    if (!guideRequested || !currentGuideStepId) {
+      return;
+    }
+
+    if (currentGuideStepId === 'beginnings') {
+      if (activeTab !== 'beginnings') {
+        handleParticipationTabChange('beginnings');
+      }
+      return;
+    }
+
+    if (currentGuideStepId === 'wrap-up') {
+      if (activeTab !== 'notes') {
+        handleParticipationTabChange('notes');
+      }
+      return;
+    }
+
+    if (!participationPurchaseTabs.includes(activeTab)) {
+      handleParticipationTabChange('perks');
+    }
+  }, [activeTab, currentGuideStepId, guideRequested]);
+
   function updateParticipation(
     updater:
       | typeof draftParticipation
@@ -2793,6 +2877,87 @@ export function ParticipationEditorCard(props: {
 
       return nextParams;
     });
+  }
+
+  function updateSelectedParticipationGuideState(
+    updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState,
+  ) {
+    if (!branchGuideScopeKey) {
+      return;
+    }
+
+    updateBranchGuideState(branchGuideScopeKey, 'participation', participationGuideKey, updater);
+  }
+
+  function markOverviewParticipationComplete() {
+    if (!branchGuideScopeKey) {
+      return;
+    }
+
+    updateOverviewGuideState(branchGuideScopeKey, (current) =>
+      setGuideCurrentStep(markGuideStepAcknowledged(setGuideDismissed(current, false), 'participation'), null),
+    );
+  }
+
+  function setGuideRequestedState(requested: boolean) {
+    setSearchParams((currentParams) => updateGuideSearchParams(currentParams, requested));
+  }
+
+  function handleGuideStepChange(nextStepId: ParticipationGuideStepId) {
+    updateSelectedParticipationGuideState((current) => setGuideCurrentStep(current, nextStepId));
+
+    if (nextStepId === 'beginnings') {
+      handleParticipationTabChange('beginnings');
+      return;
+    }
+
+    if (nextStepId === 'wrap-up') {
+      handleParticipationTabChange('notes');
+      return;
+    }
+
+    if (!participationPurchaseTabs.includes(activeTab)) {
+      handleParticipationTabChange('perks');
+    }
+  }
+
+  function handleGuideDismiss() {
+    updateSelectedParticipationGuideState((current) => setGuideDismissed(current, true));
+    setGuideRequestedState(false);
+  }
+
+  function handleReopenGuide() {
+    const stepId = currentGuideStepId ?? 'wrap-up';
+    updateSelectedParticipationGuideState((current) => setGuideCurrentStep(setGuideDismissed(current, false), stepId));
+    setGuideRequestedState(true);
+  }
+
+  function handleGuideContinue() {
+    if (!currentGuideStepId) {
+      return;
+    }
+
+    if (currentGuideStepId === 'beginnings') {
+      updateSelectedParticipationGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'beginnings'), 'purchases'),
+      );
+      handleParticipationTabChange('perks');
+      return;
+    }
+
+    if (currentGuideStepId === 'purchases') {
+      updateSelectedParticipationGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'purchases'), 'wrap-up'),
+      );
+      handleParticipationTabChange('notes');
+      return;
+    }
+
+    updateSelectedParticipationGuideState((current) =>
+      setGuideDismissed(setGuideCurrentStep(markGuideStepAcknowledged(current, 'wrap-up'), 'wrap-up'), true),
+    );
+    markOverviewParticipationComplete();
+    setGuideRequestedState(false);
   }
 
   function renderBudgetLinesSection() {
@@ -3002,10 +3167,45 @@ export function ParticipationEditorCard(props: {
           <h3>{props.participant.name}</h3>
           <span className="pill pill--soft">{props.participant.kind}</span>
         </div>
-        <span className="pill">{draftParticipation.status}</span>
+        <div className="actions">
+          {simpleMode ? (
+            <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+              {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+            </button>
+          ) : null}
+          <span className="pill">{draftParticipation.status}</span>
+        </div>
       </div>
 
       <AutosaveStatusIndicator status={participationAutosave.status} />
+
+      {simpleMode && guideRequested && currentGuideStepId && !participationGuideState.dismissed ? (
+        <SimpleModeGuideFrame
+          title={`${props.participant.name} setup`}
+          steps={participationGuideSteps}
+          currentStepId={currentGuideStepId}
+          acknowledgedStepIds={participationGuideState.acknowledgedStepIds}
+          onStepChange={(stepId) => handleGuideStepChange(stepId as ParticipationGuideStepId)}
+          onDismiss={handleGuideDismiss}
+        >
+          <div className="actions">
+            {currentGuideStepId !== 'beginnings' ? (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() =>
+                  handleGuideStepChange(currentGuideStepId === 'wrap-up' ? 'purchases' : 'beginnings')
+                }
+              >
+                Back
+              </button>
+            ) : null}
+            <button className="button" type="button" onClick={handleGuideContinue}>
+              {currentGuideStepId === 'wrap-up' ? 'Finish Participation Setup' : 'Continue'}
+            </button>
+          </div>
+        </SimpleModeGuideFrame>
+      ) : null}
 
       {showBudgetHeader ? (
         <ParticipationBudgetSummaryGrid
@@ -3096,10 +3296,21 @@ export function ParticipationEditorCard(props: {
 
           {renderBudgetLinesSection()}
 
-          <CurrencyDefinitionEditorSection
-            definitions={currencyDefinitions}
-            onChange={updateCurrencyDefinitions}
-          />
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional currency labels</span>
+              <span className="pill">{Object.keys(currencyDefinitions).length}</span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <p className="editor-section__copy">
+                Only open this if you need to rename currencies or add a special one for this jump.
+              </p>
+              <CurrencyDefinitionEditorSection
+                definitions={currencyDefinitions}
+                onChange={updateCurrencyDefinitions}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 

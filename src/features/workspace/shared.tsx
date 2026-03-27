@@ -75,6 +75,83 @@ export function SimpleModeAffirmation(props: { message: string | null; className
   );
 }
 
+export interface SimpleModeGuideStep {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export function SimpleModeGuideFrame(props: {
+  title: string;
+  steps: SimpleModeGuideStep[];
+  currentStepId: string;
+  acknowledgedStepIds: string[];
+  onStepChange: (stepId: string) => void;
+  onDismiss: () => void;
+  children: ReactNode;
+}) {
+  const currentStep = props.steps.find((step) => step.id === props.currentStepId) ?? props.steps[0];
+
+  function getStatusLabel(stepId: string) {
+    if (props.acknowledgedStepIds.includes(stepId)) {
+      return 'Reviewed';
+    }
+
+    if (props.currentStepId === stepId) {
+      return 'Current';
+    }
+
+    return 'Next';
+  }
+
+  if (!currentStep) {
+    return null;
+  }
+
+  return (
+    <section className="jump-guided-flow stack stack--compact">
+      <div className="jump-guided-flow__header">
+        <div className="stack stack--compact">
+          <h4>{props.title}</h4>
+          <p className="editor-section__copy">{currentStep.description}</p>
+        </div>
+        <div className="actions">
+          <span className="pill">Guided</span>
+          <button className="button button--secondary" type="button" onClick={props.onDismiss}>
+            Dismiss Setup
+          </button>
+        </div>
+      </div>
+
+      <div className="guided-stepper" role="tablist" aria-label={props.title}>
+        {props.steps.map((step, index) => {
+          const isComplete = props.acknowledgedStepIds.includes(step.id);
+          const isCurrent = props.currentStepId === step.id;
+
+          return (
+            <button
+              key={step.id}
+              className={`guided-stepper__item${isCurrent ? ' is-current' : ''}${isComplete ? ' is-complete' : ''}`}
+              type="button"
+              role="tab"
+              aria-selected={isCurrent}
+              onClick={() => props.onStepChange(step.id)}
+            >
+              <span className="guided-stepper__item-index">{index + 1}</span>
+              <span className="guided-stepper__item-copy">
+                <strong>{step.label}</strong>
+                <span>{getStatusLabel(step.id)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="selection-editor">{props.children}</div>
+    </section>
+  );
+}
+
 export function useSimpleModeAffirmation() {
   const { simpleMode } = useUiPreferences();
   const [message, setMessage] = useState<string | null>(null);

@@ -15,6 +15,7 @@ import {
   JsonEditorField,
   PlainLanguageHint,
   SimpleModeAffirmation,
+  SimpleModeGuideFrame,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
@@ -23,6 +24,19 @@ import {
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useWorkspaceHeaderAttachment } from '../workspace/ChainWorkspaceLayout';
+import {
+  createBranchGuideScopeKey,
+  createParticipationGuideKey,
+  createSimpleModePageGuideState,
+  getFirstIncompleteGuideStep,
+  isJumpGuideStepComplete,
+  markGuideStepAcknowledged,
+  readGuideRequested,
+  setGuideCurrentStep,
+  setGuideDismissed,
+  updateGuideSearchParams,
+  type SimpleModePageGuideState,
+} from '../workspace/simpleModeGuides';
 
 type JumpWorkspaceTab = 'basics' | 'party' | 'purchases' | 'advanced';
 type JumpGuidedStage = Extract<JumpWorkspaceTab, 'basics' | 'party' | 'purchases'>;
@@ -71,67 +85,17 @@ function JumpWorkspaceTabs(props: {
   );
 }
 
-function JumpGuidedStepper(props: {
-  activeTab: JumpWorkspaceTab;
-  reviewState: Partial<Record<JumpGuidedStage, true>>;
-  onChange: (nextTab: JumpGuidedStage) => void;
-}) {
-  function getStatusLabel(stageId: JumpGuidedStage) {
-    if (props.reviewState[stageId]) {
-      return 'Reviewed';
-    }
-
-    if (props.activeTab === stageId) {
-      return 'Current';
-    }
-
-    return 'Next';
-  }
-
-  return (
-    <section className="jump-guided-flow stack stack--compact">
-      <div className="jump-guided-flow__header">
-        <h4>Required steps</h4>
-        <span className="pill">Guided</span>
-      </div>
-      <div className="guided-stepper" role="tablist" aria-label="Required jump steps">
-        {JUMP_GUIDED_STAGES.map((stage, index) => {
-          const isComplete = props.reviewState[stage.id] === true;
-          const isCurrent = props.activeTab === stage.id;
-
-          return (
-            <button
-              key={stage.id}
-              className={`guided-stepper__item${isCurrent ? ' is-current' : ''}${isComplete ? ' is-complete' : ''}`}
-              type="button"
-              role="tab"
-              aria-selected={isCurrent}
-              onClick={() => props.onChange(stage.id)}
-            >
-              <span className="guided-stepper__item-index">{index + 1}</span>
-              <span className="guided-stepper__item-copy">
-                <strong>{stage.label}</strong>
-                <span>{getStatusLabel(stage.id)}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 export function JumpsPage() {
   const navigate = useNavigate();
   const { jumpId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, getBranchGuideState, updateBranchGuideState, updateOverviewGuideState } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const [simpleReviewByJump, setSimpleReviewByJump] = useState<Record<string, Partial<Record<JumpGuidedStage, true>>>>({});
   const searchQuery = searchParams.get('search') ?? '';
   const focusedParticipantId = searchParams.get('participant') ?? searchParams.get('jumper');
   const participationPanelRequested = searchParams.get('panel') === 'participation';
+  const guideRequested = simpleMode && readGuideRequested(searchParams);
   const filteredJumps = workspace.jumps.filter((jump) =>
     matchesSearchQuery(searchQuery, jump.title, jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata),
   );
@@ -190,7 +154,23 @@ export function JumpsPage() {
   const deferredVisibleParticipation = useDeferredValue(visibleParticipation);
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
-  const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
+  const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
+  const selectedJumpGuideState =
+    branchGuideScopeKey && selectedJump
+      ? getBranchGuideState(branchGuideScopeKey, 'jumps', selectedJump.id)
+      : createSimpleModePageGuideState('basics');
+  const selectedJumpReviewState = Object.fromEntries(
+    selectedJumpGuideState.acknowledgedStepIds
+      .filter((stepId): stepId is JumpGuidedStage => JUMP_GUIDED_STAGES.some((stage) => stage.id === stepId))
+      .map((stepId) => [stepId, true]),
+  ) as Partial<Record<JumpGuidedStage, true>>;
+  const currentJumpGuideStep = selectedJump
+    ? (getFirstIncompleteGuideStep(
+        JUMP_GUIDED_STAGES.map((stage) => stage.id),
+        selectedJumpGuideState,
+        (stepId) => isJumpGuideStepComplete(selectedJump, selectedJumpGuideState, stepId as JumpGuidedStage),
+      ) as JumpGuidedStage | null)
+    : null;
   const previousTabContextRef = useRef<{
     jumpId: string | undefined;
     simpleMode: boolean;
@@ -221,6 +201,48 @@ export function JumpsPage() {
     return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
   }
 
+  function updateSelectedJumpGuideState(
+    updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState,
+  ) {
+    if (!branchGuideScopeKey || !selectedJump) {
+      return;
+    }
+
+    updateBranchGuideState(branchGuideScopeKey, 'jumps', selectedJump.id, updater);
+  }
+
+  function markOverviewStepComplete(stepId: 'jumper' | 'jump' | 'participation', nextStepId: 'jump' | 'participation' | null) {
+    if (!branchGuideScopeKey) {
+      return;
+    }
+
+    updateOverviewGuideState(branchGuideScopeKey, (current) =>
+      setGuideCurrentStep(markGuideStepAcknowledged(setGuideDismissed(current, false), stepId), nextStepId),
+    );
+  }
+
+  function setGuideRequested(requested: boolean) {
+    setSearchParams((currentParams) => updateGuideSearchParams(currentParams, requested));
+  }
+
+  function handleJumpGuideStepChange(nextStepId: JumpGuidedStage) {
+    updateSelectedJumpGuideState((current) => setGuideCurrentStep(current, nextStepId));
+    handleTabChange(nextStepId, { preserveAffirmation: true });
+  }
+
+  function ensureParticipationGuideState(nextJumpId: string, participantId: string) {
+    if (!branchGuideScopeKey) {
+      return;
+    }
+
+    updateBranchGuideState(
+      branchGuideScopeKey,
+      'participation',
+      createParticipationGuideKey(nextJumpId, participantId),
+      (current) => (current.updatedAt ? current : createSimpleModePageGuideState('beginnings')),
+    );
+  }
+
   useEffect(() => {
     const previousContext = previousTabContextRef.current;
     const jumpChanged = previousContext.jumpId !== selectedJump?.id;
@@ -230,7 +252,7 @@ export function JumpsPage() {
     if (jumpChanged || modeChanged) {
       if (simpleMode) {
         setActiveTab(
-          participationPanelRequested ? 'purchases' : getFirstIncompleteStage(selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {}),
+          participationPanelRequested ? 'purchases' : getFirstIncompleteStage(selectedJumpReviewState),
         );
       } else {
         setActiveTab(participationPanelRequested ? 'purchases' : 'basics');
@@ -244,7 +266,7 @@ export function JumpsPage() {
       simpleMode,
       participationPanelRequested,
     };
-  }, [selectedJump?.id, participationPanelRequested, simpleMode, simpleReviewByJump]);
+  }, [selectedJump?.id, participationPanelRequested, selectedJumpReviewState, simpleMode]);
 
   useEffect(() => {
     clearAffirmation();
@@ -278,13 +300,15 @@ export function JumpsPage() {
       return;
     }
 
-    setSimpleReviewByJump((current) => ({
-      ...current,
-      [selectedJump.id]: {
-        ...(current[selectedJump.id] ?? {}),
-        [stage]: true,
-      },
-    }));
+    updateSelectedJumpGuideState((current) => {
+      const nextState = markGuideStepAcknowledged(current, stage);
+
+      if (stage === 'purchases') {
+        return setGuideDismissed(setGuideCurrentStep(nextState, 'purchases'), true);
+      }
+
+      return setGuideCurrentStep(nextState, stage === 'basics' ? 'party' : 'purchases');
+    });
 
     if (stage === 'basics') {
       showAffirmation('The jump basics are set. Next is deciding who belongs in this jump.');
@@ -298,7 +322,8 @@ export function JumpsPage() {
       return;
     }
 
-    showAffirmation('This jump has a workable purchase pass. You can refine it whenever you want.');
+    markOverviewStepComplete('jump', 'participation');
+    showAffirmation('This jump has a workable purchase pass. Next, the participation setup can take over below.');
     handleTabChange('purchases', { preserveAffirmation: true });
   }
 
@@ -339,7 +364,16 @@ export function JumpsPage() {
         await switchActiveJump(chainId, jump.id);
       }
 
-      navigate(withSearchParams(`/chains/${chainId}/jumps/${jump.id}`, { search: searchQuery }));
+      if (simpleMode && branchGuideScopeKey) {
+        updateBranchGuideState(branchGuideScopeKey, 'jumps', jump.id, () => createSimpleModePageGuideState('basics'));
+      }
+
+      navigate(
+        withSearchParams(`/chains/${chainId}/jumps/${jump.id}`, {
+          search: searchQuery,
+          guide: simpleMode ? '1' : null,
+        }),
+      );
       setNotice({
         tone: 'success',
         message: 'Created a new jump record.',
@@ -401,6 +435,9 @@ export function JumpsPage() {
           nextParams.set('panel', 'participation');
         });
       } else if (!alreadyParticipating) {
+        ensureParticipationGuideState(targetJump.id, participantId);
+        setGuideRequested(true);
+        handleTabChange('purchases', { preserveAffirmation: true });
         setFocusedParticipant(participantId);
       }
 
@@ -430,6 +467,10 @@ export function JumpsPage() {
     );
 
     if (existing) {
+      if (simpleMode) {
+        ensureParticipationGuideState(targetJump.id, participantId);
+        setGuideRequested(true);
+      }
       handleTabChange('purchases');
       updateQuery((nextParams) => {
         nextParams.set('participant', participantId);
@@ -455,6 +496,10 @@ export function JumpsPage() {
         });
       }
 
+      if (simpleMode) {
+        ensureParticipationGuideState(targetJump.id, participantId);
+        setGuideRequested(true);
+      }
       handleTabChange('purchases');
       updateQuery((nextParams) => {
         nextParams.set('participant', participantId);
@@ -700,7 +745,7 @@ export function JumpsPage() {
     if (jumpParticipants.length === 0) {
       return (
         <article className="card editor-sheet stack">
-          <div className="section-heading">
+                  <div className="section-heading">
             <h3>No participants yet</h3>
             <span className="pill">Start in Party</span>
           </div>
@@ -925,6 +970,22 @@ export function JumpsPage() {
                       </div>
                     </div>
                     <div className="actions">
+                      {simpleMode ? (
+                        <button
+                          className="button button--secondary"
+                          type="button"
+                          onClick={() => {
+                            if (!currentJumpGuideStep) {
+                              return;
+                            }
+
+                            updateSelectedJumpGuideState((current) => setGuideCurrentStep(setGuideDismissed(current, false), currentJumpGuideStep));
+                            setGuideRequested(true);
+                          }}
+                        >
+                          {guideRequested && !selectedJumpGuideState.dismissed ? 'Guide Open' : 'Reopen Jump Setup'}
+                        </button>
+                      ) : null}
                       {workspace.currentJump?.id === draftJump.id ? (
                         <span className="pill">Current jump</span>
                       ) : (
@@ -937,7 +998,45 @@ export function JumpsPage() {
 
                   {simpleMode ? (
                     <>
-                      <JumpGuidedStepper activeTab={activeTab} reviewState={selectedJumpReviewState} onChange={(nextTab) => handleTabChange(nextTab)} />
+                      {guideRequested && currentJumpGuideStep && !selectedJumpGuideState.dismissed ? (
+                        <SimpleModeGuideFrame
+                          title={`${draftJump.title} setup`}
+                          steps={JUMP_GUIDED_STAGES.map((stage) => ({
+                            id: stage.id,
+                            label: stage.label,
+                            description:
+                              stage.id === 'basics'
+                                ? 'Set the jump basics first so the rest of the branch has a stable target.'
+                                : stage.id === 'party'
+                                  ? 'Choose who is actually in this jump before opening the purchases editor.'
+                                  : 'Use the purchases pass below to review the active participant and the jump-level setup.'
+                          }))}
+                          currentStepId={currentJumpGuideStep}
+                          acknowledgedStepIds={selectedJumpGuideState.acknowledgedStepIds}
+                          onStepChange={(stepId) => handleJumpGuideStepChange(stepId as JumpGuidedStage)}
+                          onDismiss={() => {
+                            updateSelectedJumpGuideState((current) => setGuideDismissed(current, true));
+                            setGuideRequested(false);
+                          }}
+                        >
+                          <div className="actions">
+                            {currentJumpGuideStep !== 'basics' ? (
+                              <button
+                                className="button button--secondary"
+                                type="button"
+                                onClick={() =>
+                                  handleJumpGuideStepChange(currentJumpGuideStep === 'purchases' ? 'party' : 'basics')
+                                }
+                              >
+                                Back
+                              </button>
+                            ) : null}
+                            <button className="button" type="button" onClick={() => markSimpleStageComplete(currentJumpGuideStep)}>
+                              {currentJumpGuideStep === 'purchases' ? 'Continue to Participation' : 'Continue'}
+                            </button>
+                          </div>
+                        </SimpleModeGuideFrame>
+                      ) : null}
                       <SimpleModeAffirmation message={simpleAffirmation} />
                     </>
                   ) : (

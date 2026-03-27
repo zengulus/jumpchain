@@ -12,12 +12,25 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  SimpleModeGuideFrame,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
+import {
+  createBranchGuideScopeKey,
+  createSimpleModePageGuideState,
+  getFirstIncompleteGuideStep,
+  isCompanionGuideStepComplete,
+  markGuideStepAcknowledged,
+  readGuideRequested,
+  setGuideCurrentStep,
+  setGuideDismissed,
+  updateGuideSearchParams,
+  type CompanionGuideStepId,
+} from '../workspace/simpleModeGuides';
 
 type CompanionFilter = 'all' | 'attached' | 'independent' | 'inactive';
 
@@ -49,7 +62,7 @@ function getCompanionSimpleSummary(companion: Companion, parentName: string | nu
 }
 
 export function CompanionsPage() {
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, getBranchGuideState, updateBranchGuideState } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<CompanionFilter>('all');
@@ -91,6 +104,73 @@ export function CompanionsPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save companion changes.'),
   });
   const draftCompanion = companionAutosave.draft ?? selectedCompanion;
+  const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
+  const guideRequested = simpleMode && readGuideRequested(searchParams);
+  const companionGuideSteps = [
+    {
+      id: 'relationship',
+      label: 'Relationship',
+      description: 'Start with the companion name, role, and whether they are attached to a jumper or standing on their own.',
+    },
+    {
+      id: 'continuity',
+      label: 'Continuity',
+      description: 'Add the origin-jump and continuity details only when they are useful for this chain.',
+    },
+  ] as const;
+  const selectedCompanionGuideState =
+    branchGuideScopeKey && selectedCompanion
+      ? getBranchGuideState(branchGuideScopeKey, 'companions', selectedCompanion.id)
+      : createSimpleModePageGuideState('relationship');
+  const currentGuideStepId = draftCompanion
+    ? (getFirstIncompleteGuideStep(
+        companionGuideSteps.map((step) => step.id),
+        selectedCompanionGuideState,
+        (stepId) =>
+          isCompanionGuideStepComplete(draftCompanion, selectedCompanionGuideState, stepId as CompanionGuideStepId),
+      ) as CompanionGuideStepId | null)
+    : null;
+
+  function updateSelectedCompanionGuideState(
+    updater: (current: ReturnType<typeof getBranchGuideState>) => ReturnType<typeof getBranchGuideState>,
+  ) {
+    if (!branchGuideScopeKey || !selectedCompanion) {
+      return;
+    }
+
+    updateBranchGuideState(branchGuideScopeKey, 'companions', selectedCompanion.id, updater);
+  }
+
+  function setGuideRequested(requested: boolean) {
+    setSearchParams((currentParams) => updateGuideSearchParams(currentParams, requested));
+  }
+
+  function handleGuideStepChange(stepId: CompanionGuideStepId) {
+    updateSelectedCompanionGuideState((current) => setGuideCurrentStep(current, stepId));
+  }
+
+  function handleGuideDismiss() {
+    updateSelectedCompanionGuideState((current) => setGuideDismissed(current, true));
+    setGuideRequested(false);
+  }
+
+  function handleReopenGuide() {
+    if (!currentGuideStepId) {
+      return;
+    }
+
+    updateSelectedCompanionGuideState((current) => setGuideCurrentStep(setGuideDismissed(current, false), currentGuideStepId));
+    setGuideRequested(true);
+  }
+
+  function handleRelationshipGuideContinue() {
+    updateSelectedCompanionGuideState((current) => setGuideCurrentStep(markGuideStepAcknowledged(current, 'relationship'), 'continuity'));
+  }
+
+  function handleCompanionGuideFinish() {
+    updateSelectedCompanionGuideState((current) => setGuideCurrentStep(markGuideStepAcknowledged(current, 'continuity'), 'continuity'));
+    setGuideRequested(false);
+  }
 
   async function handleAddCompanion() {
     if (!workspace.activeBranch) {
@@ -104,8 +184,14 @@ export function CompanionsPage() {
       setSearchParams((currentParams) => {
         const nextParams = new URLSearchParams(currentParams);
         nextParams.set('companion', companion.id);
+        if (simpleMode) {
+          nextParams.set('guide', '1');
+        }
         return nextParams;
       });
+      if (simpleMode && branchGuideScopeKey) {
+        updateBranchGuideState(branchGuideScopeKey, 'companions', companion.id, () => createSimpleModePageGuideState('relationship'));
+      }
       setNotice({
         tone: 'success',
         message: 'Created a new companion record.',
@@ -280,6 +366,11 @@ export function CompanionsPage() {
                     <SearchHighlight text={draftCompanion.name} query={searchQuery} />
                   </h3>
                   <div className="actions">
+                    {simpleMode ? (
+                      <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                        {guideRequested ? 'Guide Open' : 'Reopen Setup'}
+                      </button>
+                    ) : null}
                     <Link
                       className="button button--secondary"
                       to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
@@ -328,6 +419,34 @@ export function CompanionsPage() {
                   </div>
                 </div>
                 {simpleMode ? <p>Start with the relationship basics here. Optional holds origin and raw import details.</p> : null}
+
+                {simpleMode && guideRequested && currentGuideStepId ? (
+                  <SimpleModeGuideFrame
+                    title={`${draftCompanion.name} setup`}
+                    steps={[...companionGuideSteps]}
+                    currentStepId={currentGuideStepId}
+                    acknowledgedStepIds={selectedCompanionGuideState.acknowledgedStepIds}
+                    onStepChange={(stepId) => handleGuideStepChange(stepId as CompanionGuideStepId)}
+                    onDismiss={handleGuideDismiss}
+                  >
+                    <div className="actions">
+                      {currentGuideStepId === 'continuity' ? (
+                        <button className="button button--secondary" type="button" onClick={() => handleGuideStepChange('relationship')}>
+                          Back to Relationship
+                        </button>
+                      ) : null}
+                      {currentGuideStepId === 'relationship' ? (
+                        <button className="button" type="button" onClick={handleRelationshipGuideContinue}>
+                          Continue to Continuity
+                        </button>
+                      ) : (
+                        <button className="button" type="button" onClick={handleCompanionGuideFinish}>
+                          Finish Setup
+                        </button>
+                      )}
+                    </div>
+                  </SimpleModeGuideFrame>
+                ) : null}
 
                 <section className="stack stack--compact">
                   <h4>Core relationship</h4>
@@ -397,7 +516,7 @@ export function CompanionsPage() {
                 </section>
 
                 {simpleMode ? (
-                  <details className="details-panel">
+                  <details className="details-panel" open={guideRequested && currentGuideStepId === 'continuity' ? true : undefined}>
                     <summary className="details-panel__summary">
                       <span>Continuity and advanced details</span>
                       <span className="pill">Optional</span>

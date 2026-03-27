@@ -8,11 +8,25 @@ import {
   PlainLanguageHint,
   ReadinessPill,
   SimpleModeAffirmation,
+  SimpleModeGuideFrame,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
   useSimpleModeAffirmation,
 } from '../workspace/shared';
+import {
+  SIMPLE_MODE_GUIDE_DEFAULT_KEY,
+  createSimpleModePageGuideState,
+  getFirstIncompleteGuideStep,
+  isCosmicBackpackGuideStepComplete,
+  markGuideStepAcknowledged,
+  readGuideRequested,
+  setGuideCurrentStep,
+  setGuideDismissed,
+  updateGuideSearchParams,
+  type CosmicBackpackGuideStepId,
+  type SimpleModePageGuideState,
+} from '../workspace/simpleModeGuides';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { SearchHighlight } from '../search/SearchHighlight';
@@ -461,11 +475,12 @@ function CosmicBackpackCustomUpgradeSection(props: {
 
 export function CosmicBackpackPage() {
   const { chainId, workspace } = useChainWorkspace();
-  const { simpleMode } = useUiPreferences();
-  const [searchParams] = useSearchParams();
+  const { simpleMode, getChainGuideState, updateChainGuideState } = useUiPreferences();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const { message: simpleAffirmation, showAffirmation } = useSimpleModeAffirmation();
   const highlightQuery = searchParams.get('highlight') ?? '';
+  const guideRequested = simpleMode && readGuideRequested(searchParams);
   const chainAutosave = useAutosaveRecord(workspace.chain, {
     onSave: async (nextValue) => {
       await saveChainEntity(nextValue);
@@ -503,6 +518,29 @@ export function CosmicBackpackPage() {
   const attachments = cosmicBackpackOptionCatalog.filter((option) => option.category === 'attachment');
   const modifiers = cosmicBackpackOptionCatalog.filter((option) => option.category === 'modifier');
   const activeLoadoutCount = selectedOptions.length + state.customUpgrades.length;
+  const backpackGuideSteps: Array<{ id: CosmicBackpackGuideStepId; label: string; description: string }> = [
+    {
+      id: 'free-options',
+      label: 'Free Options',
+      description: 'Start with the free or essential choices so the Backpack has its basic identity before upgrades pile on.',
+    },
+    {
+      id: 'notes-and-appearance',
+      label: 'Notes And Appearance',
+      description: 'Capture how this bag looks, what it replaces, and any chain-facing planning notes.',
+    },
+    {
+      id: 'upgrades',
+      label: 'Upgrades',
+      description: 'Add paid upgrades, attachments, or custom warehouse carry-overs only where the chain actually needs them.',
+    },
+  ];
+  const backpackGuideState = getChainGuideState(chainId, 'cosmic-backpack', SIMPLE_MODE_GUIDE_DEFAULT_KEY);
+  const currentGuideStepId = getFirstIncompleteGuideStep(
+    backpackGuideSteps.map((step) => step.id),
+    backpackGuideState,
+    (stepId) => isCosmicBackpackGuideStepComplete(state, backpackGuideState, stepId as CosmicBackpackGuideStepId),
+  ) as CosmicBackpackGuideStepId | null;
 
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or restore a branch before using the Cosmic Backpack workspace." />;
@@ -518,6 +556,16 @@ export function CosmicBackpackPage() {
 
       return writeCosmicBackpackState(currentChain, updater(readCosmicBackpackState(currentChain)));
     });
+  }
+
+  function updateBackpackGuideState(
+    updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState,
+  ) {
+    updateChainGuideState(chainId, 'cosmic-backpack', SIMPLE_MODE_GUIDE_DEFAULT_KEY, updater);
+  }
+
+  function setGuideRequestedState(requested: boolean) {
+    setSearchParams((currentParams) => updateGuideSearchParams(currentParams, requested));
   }
 
   function handleToggle(optionId: string, checked: boolean) {
@@ -542,6 +590,46 @@ export function CosmicBackpackPage() {
     showAffirmation('Cosmic Backpack reset. You can rebuild it a piece at a time whenever you want.');
   }
 
+  function handleGuideDismiss() {
+    updateBackpackGuideState((current) => setGuideDismissed(current, true));
+    setGuideRequestedState(false);
+  }
+
+  function handleGuideStepChange(nextStepId: CosmicBackpackGuideStepId) {
+    updateBackpackGuideState((current) => setGuideCurrentStep(current, nextStepId));
+  }
+
+  function handleReopenGuide() {
+    const stepId = currentGuideStepId ?? 'upgrades';
+    updateBackpackGuideState((current) => setGuideCurrentStep(setGuideDismissed(current, false), stepId));
+    setGuideRequestedState(true);
+  }
+
+  function handleGuideContinue() {
+    if (!currentGuideStepId) {
+      return;
+    }
+
+    if (currentGuideStepId === 'free-options') {
+      updateBackpackGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'free-options'), 'notes-and-appearance'),
+      );
+      return;
+    }
+
+    if (currentGuideStepId === 'notes-and-appearance') {
+      updateBackpackGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'notes-and-appearance'), 'upgrades'),
+      );
+      return;
+    }
+
+    updateBackpackGuideState((current) =>
+      setGuideDismissed(setGuideCurrentStep(markGuideStepAcknowledged(current, 'upgrades'), 'upgrades'), true),
+    );
+    setGuideRequestedState(false);
+  }
+
   return (
     <div className="stack">
       <WorkspaceModuleHeader
@@ -556,6 +644,11 @@ export function CosmicBackpackPage() {
         badge={workspace.activeBranch.title}
         actions={
           <>
+            {simpleMode ? (
+              <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                {guideRequested && !backpackGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+              </button>
+            ) : null}
             <Link className="button button--secondary" to={`/chains/${chainId}/overview`}>
               Chain Overview
             </Link>
@@ -567,6 +660,34 @@ export function CosmicBackpackPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
+
+      {simpleMode && guideRequested && currentGuideStepId && !backpackGuideState.dismissed ? (
+        <SimpleModeGuideFrame
+          title="Cosmic Backpack setup"
+          steps={backpackGuideSteps}
+          currentStepId={currentGuideStepId}
+          acknowledgedStepIds={backpackGuideState.acknowledgedStepIds}
+          onStepChange={(stepId) => handleGuideStepChange(stepId as CosmicBackpackGuideStepId)}
+          onDismiss={handleGuideDismiss}
+        >
+          <div className="actions">
+            {currentGuideStepId !== 'free-options' ? (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() =>
+                  handleGuideStepChange(currentGuideStepId === 'upgrades' ? 'notes-and-appearance' : 'free-options')
+                }
+              >
+                Back
+              </button>
+            ) : null}
+            <button className="button" type="button" onClick={handleGuideContinue}>
+              {currentGuideStepId === 'upgrades' ? 'Finish Backpack Setup' : 'Continue'}
+            </button>
+          </div>
+        </SimpleModeGuideFrame>
+      ) : null}
 
       {simpleMode ? (
         <details className="details-panel">
@@ -645,7 +766,7 @@ export function CosmicBackpackPage() {
         ) : null}
       </section>
 
-      <details className="details-panel">
+      <details className="details-panel" open={guideRequested && currentGuideStepId === 'upgrades' ? true : undefined}>
         <summary className="details-panel__summary">
           <span>Current Loadout</span>
           <div className="inline-meta">
@@ -765,6 +886,7 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
+        defaultOpen={guideRequested && currentGuideStepId === 'free-options'}
       />
 
       <CosmicBackpackOptionSection
@@ -774,6 +896,7 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
+        defaultOpen={guideRequested && currentGuideStepId === 'upgrades'}
       />
 
       <CosmicBackpackOptionSection
@@ -784,6 +907,7 @@ export function CosmicBackpackPage() {
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
         lockedOptionIds={[...cosmicBackpackMandatoryOptionIds]}
+        defaultOpen={guideRequested && currentGuideStepId === 'free-options'}
       />
 
       <CosmicBackpackCustomUpgradeSection
@@ -795,6 +919,7 @@ export function CosmicBackpackPage() {
             customUpgrades: nextCustomUpgrades,
           }))
         }
+        defaultOpen={guideRequested && currentGuideStepId === 'upgrades'}
       />
     </div>
   );

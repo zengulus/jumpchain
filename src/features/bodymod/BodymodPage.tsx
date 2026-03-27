@@ -14,16 +14,30 @@ import {
   PlainLanguageHint,
   ReadinessPill,
   SimpleModeAffirmation,
+  SimpleModeGuideFrame,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
   useSimpleModeAffirmation,
 } from '../workspace/shared';
+import {
+  createBranchGuideScopeKey,
+  createSimpleModePageGuideState,
+  getFirstIncompleteGuideStep,
+  isBodymodGuideStepComplete,
+  markGuideStepAcknowledged,
+  readGuideRequested,
+  setGuideCurrentStep,
+  setGuideDismissed,
+  updateGuideSearchParams,
+  type BodymodGuideStepId,
+  type SimpleModePageGuideState,
+} from '../workspace/simpleModeGuides';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 export function BodymodPage() {
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, getBranchGuideState, updateBranchGuideState } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
@@ -44,10 +58,56 @@ export function BodymodPage() {
   const draftProfile = profileAutosave.draft ?? profile;
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const iconicStartedForSelectedJumper = Boolean(draftProfile);
+  const guideRequested = simpleMode && readGuideRequested(searchParams);
+  const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
+  const bodymodGuideState =
+    branchGuideScopeKey && selectedJumperId
+      ? getBranchGuideState(branchGuideScopeKey, 'bodymod', selectedJumperId)
+      : createSimpleModePageGuideState('create-profile');
+  const bodymodGuideSteps: Array<{ id: BodymodGuideStepId; label: string; description: string }> = [
+    {
+      id: 'create-profile',
+      label: 'Create Profile',
+      description: 'Start the Iconic profile for this jumper so the continuity package has a place to live.',
+    },
+    {
+      id: 'tier-and-concept',
+      label: 'Tier And Concept',
+      description: 'Set the overall concept, benchmark notes, and the broad shape of what makes this jumper recognizable.',
+    },
+    {
+      id: 'signature-package',
+      label: 'Signature Package',
+      description: 'Use the full editor below to lock in the package you want to keep stable across harsh resets.',
+    },
+  ];
+  const currentGuideStepId =
+    selectedJumperId
+      ? (getFirstIncompleteGuideStep(
+          bodymodGuideSteps.map((step) => step.id),
+          bodymodGuideState,
+          (stepId) =>
+            isBodymodGuideStepComplete(draftProfile, bodymodGuideState, stepId as BodymodGuideStepId),
+        ) as BodymodGuideStepId | null)
+      : null;
 
   useEffect(() => {
     clearAffirmation();
   }, [clearAffirmation, selectedJumperId]);
+
+  function updateSelectedBodymodGuideState(
+    updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState,
+  ) {
+    if (!branchGuideScopeKey || !selectedJumperId) {
+      return;
+    }
+
+    updateBranchGuideState(branchGuideScopeKey, 'bodymod', selectedJumperId, updater);
+  }
+
+  function setGuideRequestedState(requested: boolean) {
+    setSearchParams((currentParams) => updateGuideSearchParams(currentParams, requested));
+  }
 
   async function handleCreateProfile() {
     if (!workspace.activeBranch || !selectedJumper) {
@@ -59,6 +119,14 @@ export function BodymodPage() {
         db.bodymodProfiles,
         createBlankBodymodProfile(chainId, workspace.activeBranch.id, selectedJumper.id),
       );
+
+      if (simpleMode && branchGuideScopeKey) {
+        updateBranchGuideState(branchGuideScopeKey, 'bodymod', selectedJumper.id, (current) =>
+          setGuideCurrentStep(setGuideDismissed(current, false), 'tier-and-concept'),
+        );
+        setGuideRequestedState(true);
+      }
+
       setNotice({
         tone: 'success',
         message: 'Created an Iconic profile for this jumper.',
@@ -72,6 +140,51 @@ export function BodymodPage() {
         message: error instanceof Error ? error.message : 'Unable to create Iconic profile.',
       });
     }
+  }
+
+  function handleGuideDismiss() {
+    updateSelectedBodymodGuideState((current) => setGuideDismissed(current, true));
+    setGuideRequestedState(false);
+  }
+
+  function handleGuideStepChange(nextStepId: BodymodGuideStepId) {
+    updateSelectedBodymodGuideState((current) => setGuideCurrentStep(current, nextStepId));
+  }
+
+  function handleReopenGuide() {
+    const stepId = currentGuideStepId ?? 'signature-package';
+    updateSelectedBodymodGuideState((current) => setGuideCurrentStep(setGuideDismissed(current, false), stepId));
+    setGuideRequestedState(true);
+  }
+
+  function handleGuideContinue() {
+    if (!currentGuideStepId) {
+      return;
+    }
+
+    if (currentGuideStepId === 'create-profile') {
+      if (!draftProfile) {
+        void handleCreateProfile();
+        return;
+      }
+
+      updateSelectedBodymodGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'create-profile'), 'tier-and-concept'),
+      );
+      return;
+    }
+
+    if (currentGuideStepId === 'tier-and-concept') {
+      updateSelectedBodymodGuideState((current) =>
+        setGuideCurrentStep(markGuideStepAcknowledged(current, 'tier-and-concept'), 'signature-package'),
+      );
+      return;
+    }
+
+    updateSelectedBodymodGuideState((current) =>
+      setGuideDismissed(setGuideCurrentStep(markGuideStepAcknowledged(current, 'signature-package'), 'signature-package'), true),
+    );
+    setGuideRequestedState(false);
   }
 
   if (!workspace.activeBranch) {
@@ -96,9 +209,16 @@ export function BodymodPage() {
         badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}
         actions={
           selectedJumper ? (
-            <Link className="button button--secondary" to={`/chains/${chainId}/jumpers?jumper=${selectedJumper.id}`}>
-              Open Jumper
-            </Link>
+            <>
+              {simpleMode ? (
+                <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                  {guideRequested && !bodymodGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+                </button>
+              ) : null}
+              <Link className="button button--secondary" to={`/chains/${chainId}/jumpers?jumper=${selectedJumper.id}`}>
+                Open Jumper
+              </Link>
+            </>
           ) : undefined
         }
       />
@@ -106,6 +226,36 @@ export function BodymodPage() {
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={profileAutosave.status} />
       <SimpleModeAffirmation message={simpleAffirmation} />
+
+      {simpleMode && guideRequested && currentGuideStepId && !bodymodGuideState.dismissed ? (
+        <SimpleModeGuideFrame
+          title={selectedJumper ? `${selectedJumper.name} Iconic setup` : 'Iconic setup'}
+          steps={bodymodGuideSteps}
+          currentStepId={currentGuideStepId}
+          acknowledgedStepIds={bodymodGuideState.acknowledgedStepIds}
+          onStepChange={(stepId) => handleGuideStepChange(stepId as BodymodGuideStepId)}
+          onDismiss={handleGuideDismiss}
+        >
+          <div className="actions">
+            {currentGuideStepId !== 'create-profile' ? (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => handleGuideStepChange(currentGuideStepId === 'signature-package' ? 'tier-and-concept' : 'create-profile')}
+              >
+                Back
+              </button>
+            ) : null}
+            <button className="button" type="button" onClick={handleGuideContinue}>
+              {currentGuideStepId === 'create-profile' && !draftProfile
+                ? 'Create Profile'
+                : currentGuideStepId === 'signature-package'
+                  ? 'Finish Iconic Setup'
+                  : 'Continue'}
+            </button>
+          </div>
+        </SimpleModeGuideFrame>
+      ) : null}
 
       {simpleMode ? (
         <details className="details-panel" open={iconicStartedForSelectedJumper}>

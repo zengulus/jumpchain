@@ -4,11 +4,15 @@ import { UI_PREFERENCES_STORAGE_KEY, UiPreferencesProvider, useUiPreferences } f
 import { AssistiveHint, TooltipFrame } from '../features/workspace/shared';
 
 function PreferenceProbe() {
-  const { simpleMode, setSimpleMode } = useUiPreferences();
+  const { simpleMode, setSimpleMode, getOverviewGuideState } = useUiPreferences();
+  const overviewGuideState = getOverviewGuideState('chain-1:branch-1');
 
   return (
     <div>
       <span data-testid="mode">{simpleMode ? 'simple' : 'advanced'}</span>
+      <span data-testid="overview-step">{overviewGuideState.currentStepId ?? 'none'}</span>
+      <span data-testid="overview-prompt">{overviewGuideState.promptState}</span>
+      <span data-testid="overview-iconic">{overviewGuideState.iconicDecision}</span>
       <button type="button" onClick={() => setSimpleMode(!simpleMode)}>
         Toggle mode
       </button>
@@ -43,7 +47,10 @@ describe('UI preferences', () => {
     expect(screen.getByTestId('mode').textContent).toBe('simple');
     expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) ?? '{}')).toEqual({
       simpleMode: true,
-      simpleModeWizardByChain: {},
+      simpleModeGuideRegistry: {
+        branch: {},
+        chain: {},
+      },
     });
 
     firstRender.unmount();
@@ -55,6 +62,36 @@ describe('UI preferences', () => {
     );
 
     expect(screen.getByTestId('mode').textContent).toBe('simple');
+  });
+
+  it('migrates legacy wizard storage into the overview guide registry', () => {
+    window.localStorage.setItem(
+      UI_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        simpleMode: true,
+        simpleModeWizardByChain: {
+          'chain-1:branch-1': {
+            jumperWizardCompleted: true,
+            guidedJumpCount: 1,
+            wizardPromptState: 'dismissed',
+            iconicDecision: 'yes',
+            cosmicBackpackDecision: 'not-now',
+            lastSupplementPromptJumpCount: 2,
+          },
+        },
+      }),
+    );
+
+    render(
+      <UiPreferencesProvider>
+        <PreferenceProbe />
+      </UiPreferencesProvider>,
+    );
+
+    expect(screen.getByTestId('mode').textContent).toBe('simple');
+    expect(screen.getByTestId('overview-step').textContent).toBe('participation');
+    expect(screen.getByTestId('overview-prompt').textContent).toBe('dismissed');
+    expect(screen.getByTestId('overview-iconic').textContent).toBe('yes');
   });
 
   it('falls back safely when the stored preference is invalid', () => {
