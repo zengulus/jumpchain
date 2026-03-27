@@ -152,11 +152,16 @@ export function JumpsPage() {
           (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationJumper.id,
         ) ?? null
       : null;
+  const [liveParticipationDraft, setLiveParticipationDraft] = useState<(typeof workspace.participations)[number] | null>(null);
+  const visibleParticipation =
+    liveParticipationDraft && activeParticipation && liveParticipationDraft.id === activeParticipation.id
+      ? liveParticipationDraft
+      : activeParticipation;
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
   const purchaseBudgetAttachment = useMemo(() => {
-    if (activeTab !== 'purchases' || !draftJump || !activeParticipationJumper || !activeParticipation) {
+    if (activeTab !== 'purchases' || !draftJump || !activeParticipationJumper || !visibleParticipation) {
       return null;
     }
 
@@ -164,11 +169,11 @@ export function JumpsPage() {
       <ParticipationBudgetShellAttachment
         jump={draftJump}
         jumper={activeParticipationJumper}
-        participation={activeParticipation}
+        participation={visibleParticipation}
         workspace={workspace}
       />
     );
-  }, [activeParticipation, activeParticipationJumper, activeTab, draftJump, workspace]);
+  }, [activeParticipationJumper, activeTab, draftJump, visibleParticipation, workspace]);
 
   useWorkspaceHeaderAttachment(purchaseBudgetAttachment);
 
@@ -690,6 +695,7 @@ export function JumpsPage() {
               workspace={workspace}
               showBudgetSummary={false}
               showBudgetHeader={false}
+              onDraftChange={setLiveParticipationDraft}
             />
           </>
         ) : activeParticipationJumper ? (

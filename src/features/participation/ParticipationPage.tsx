@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
@@ -17,7 +17,7 @@ type WorkspaceJumper = Workspace['jumpers'][number];
 type WorkspaceJump = Workspace['jumps'][number];
 type WorkspaceParticipation = Workspace['participations'][number];
 
-type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks';
+type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks' | 'notes';
 type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
 type DiscountLevel = 0 | 1 | 2;
 type BeginningSlotId = 'origin' | 'background' | 'race' | 'age';
@@ -512,6 +512,29 @@ function updateSelectionItems(
   return items.map((item, itemIndex) =>
     itemIndex === index ? updater(normalizeSelectionForEdit(item, `Selection ${index + 1}`)) : item,
   );
+}
+
+function getSelectionEditorKey(value: unknown, title: string, index: number) {
+  const record = asRecord(value);
+  const explicitId =
+    getOptionalIdentifier(record.id) ??
+    getOptionalIdentifier(record.selectionId) ??
+    getOptionalIdentifier(record.entryId) ??
+    getOptionalIdentifier(record.uuid);
+  const sourceId =
+    getOptionalIdentifier(record.sourcePurchaseId) ??
+    getOptionalIdentifier(record.sourceDrawbackId) ??
+    getOptionalIdentifier(record.sourceId);
+
+  if (explicitId) {
+    return `${title}-${explicitId}`;
+  }
+
+  if (sourceId) {
+    return `${title}-source-${sourceId}`;
+  }
+
+  return `${title}-${index}`;
 }
 
 function getSelectionMetadata(record: Record<string, unknown>) {
@@ -1246,7 +1269,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
               subtypeKey && !subtypeKeys.includes(subtypeKey) ? [subtypeKey, ...subtypeKeys] : subtypeKeys;
 
             return (
-              <div className="selection-editor" key={`${props.title}-${index}-${getSelectionToken(item).label}`}>
+              <div className="selection-editor" key={getSelectionEditorKey(item, props.title, index)}>
                 <div className="selection-editor__header">
                   <div className="stack stack--compact">
                     <strong>{getSelectionTitleValue(record, fallbackTitle)}</strong>
@@ -2199,6 +2222,7 @@ export function ParticipationEditorCard(props: {
   workspace: Workspace;
   showBudgetSummary?: boolean;
   showBudgetHeader?: boolean;
+  onDraftChange?: (draft: WorkspaceParticipation | null) => void;
 }) {
   const participationAutosave = useAutosaveRecord(props.participation, {
     onSave: async (nextValue) => {
@@ -2207,6 +2231,15 @@ export function ParticipationEditorCard(props: {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save participation changes.'),
   });
   const draftParticipation = participationAutosave.draft ?? props.participation;
+  useEffect(() => {
+    props.onDraftChange?.(draftParticipation);
+  }, [draftParticipation, props.onDraftChange]);
+
+  useEffect(() => {
+    return () => {
+      props.onDraftChange?.(null);
+    };
+  }, [props.onDraftChange]);
   const rawCurrencyDefinitions = getCurrencyDefinitions(asRecord(draftParticipation.importSourceMetadata).currencies);
   const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, draftParticipation);
   const stipendRows = flattenStipends(draftParticipation.stipends);
@@ -2287,6 +2320,9 @@ export function ParticipationEditorCard(props: {
     draftParticipation.currencyExchanges,
     currencyDefinitions,
   );
+  const primaryBudgetLedgerEntry =
+    budgetLedgerEntries.find((entry) => entry.currencyKey === primaryCurrencyKey) ?? budgetLedgerEntries[0] ?? null;
+  const cpCurrentValue = primaryBudgetLedgerEntry?.remaining ?? cpBudgetValue;
 
   function updateParticipation(
     updater:
@@ -2684,6 +2720,7 @@ export function ParticipationEditorCard(props: {
     { id: 'items', label: 'Items', count: purchaseGroups.items.length + itemStipendRows.length },
     { id: 'other', label: 'Other', count: purchaseGroups.others.length + exchangeTokens.length },
     { id: 'drawbacks', label: 'Drawbacks', count: draftParticipation.drawbacks.length + draftParticipation.retainedDrawbacks.length },
+    { id: 'notes', label: 'Notes' },
   ];
 
   return (
@@ -2699,7 +2736,7 @@ export function ParticipationEditorCard(props: {
         <ParticipationBudgetSummaryGrid
           cpBaseValue={cpBaseValue}
           cpBudgetLabel={cpBudgetLabel}
-          cpBudgetValue={cpBudgetValue}
+          cpBudgetValue={cpCurrentValue}
           cpJumpDrawbackGrant={cpJumpDrawbackGrant}
           cpChainDrawbackGrant={cpChainDrawbackGrant}
         />
@@ -2743,71 +2780,6 @@ export function ParticipationEditorCard(props: {
                       updateParticipation((current) => ({
                         ...current,
                         bankDeposit: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-
-              <label className="field">
-                <span>Notes</span>
-                <textarea
-                  rows={5}
-                  value={draftParticipation.notes}
-                  onChange={(event) =>
-                    updateParticipation((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <div className="field-grid field-grid--three">
-                <label className="field">
-                  <span>Accomplishments</span>
-                  <textarea
-                    rows={4}
-                    value={draftParticipation.narratives.accomplishments}
-                    onChange={(event) =>
-                      updateParticipation((current) => ({
-                        ...current,
-                        narratives: {
-                          ...current.narratives,
-                          accomplishments: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>Challenges</span>
-                  <textarea
-                    rows={4}
-                    value={draftParticipation.narratives.challenges}
-                    onChange={(event) =>
-                      updateParticipation((current) => ({
-                        ...current,
-                        narratives: {
-                          ...current.narratives,
-                          challenges: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>Goals</span>
-                  <textarea
-                    rows={4}
-                    value={draftParticipation.narratives.goals}
-                    onChange={(event) =>
-                      updateParticipation((current) => ({
-                        ...current,
-                        narratives: {
-                          ...current.narratives,
-                          goals: event.target.value,
-                        },
                       }))
                     }
                   />
@@ -3026,6 +2998,81 @@ export function ParticipationEditorCard(props: {
             }
             currencyDefinitions={currencyDefinitions}
           />
+        </div>
+      ) : null}
+
+      {activeTab === 'notes' ? (
+        <div className="stack stack--compact">
+          <section className="editor-section">
+            <div className="editor-section__header">
+              <h4>Notes</h4>
+            </div>
+
+            <label className="field">
+              <span>Jump notes</span>
+              <textarea
+                rows={5}
+                value={draftParticipation.notes}
+                onChange={(event) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <div className="field-grid field-grid--three">
+              <label className="field">
+                <span>Accomplishments</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.accomplishments}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        accomplishments: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Challenges</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.challenges}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        challenges: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Goals</span>
+                <textarea
+                  rows={4}
+                  value={draftParticipation.narratives.goals}
+                  onChange={(event) =>
+                    updateParticipation((current) => ({
+                      ...current,
+                      narratives: {
+                        ...current.narratives,
+                        goals: event.target.value,
+                      },
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -3252,10 +3299,26 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
     ),
   );
   const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+  const orderedOriginKeys = getOrderedOriginCategoryKeys(
+    participation.origins,
+    getOriginCategoryDefinitions(asRecord(participation.importSourceMetadata).originCategories),
+    getKeyList(asRecord(participation.importSourceMetadata).originCategoryList),
+  );
+  const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(effectiveBudgetState.effectiveBudgets)[0] ?? '0';
+  const budgetLedgerEntries = getBudgetLedgerEntries(
+    effectiveBudgetState.effectiveBudgets,
+    participation.purchases,
+    participation.origins,
+    orderedOriginKeys,
+    participation.currencyExchanges,
+    currencyDefinitions,
+  );
+  const primaryBudgetLedgerEntry =
+    budgetLedgerEntries.find((entry) => entry.currencyKey === primaryCurrencyKey) ?? budgetLedgerEntries[0] ?? null;
 
   return {
     cpBudgetLabel: cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null,
-    cpBudgetValue: cpBudgetEntry?.[1] ?? null,
+    cpBudgetValue: primaryBudgetLedgerEntry?.remaining ?? cpBudgetEntry?.[1] ?? null,
     cpBaseValue: cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null,
     cpJumpDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.participationDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,
     cpChainDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,

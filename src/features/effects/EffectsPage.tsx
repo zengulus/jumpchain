@@ -12,6 +12,8 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  PlainLanguageHint,
+  ReadinessPill,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
@@ -256,7 +258,7 @@ export function EffectsPage() {
         title="Active Effects"
         description={
           simpleMode
-            ? 'Track one effect at a time, starting with what it is and where it applies.'
+            ? 'Advanced rules tool. Use it when you need a custom effect or rule-state record attached to part of the chain.'
             : 'Filterable branch-visible effects with chain, jump, and jumper ownership plus rule override metadata.'
         }
         badge={`${workspace.effects.length} total`}
@@ -288,10 +290,25 @@ export function EffectsPage() {
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={effectAutosave.status} />
 
+      {simpleMode ? (
+        <section className="section-surface stack stack--compact">
+          <div className="section-heading">
+            <h3>How this fits</h3>
+            <ReadinessPill tone="advanced" />
+          </div>
+          <PlainLanguageHint term="Effect" meaning="a custom record that can describe or drive chain, jump, or jumper logic." />
+          <p>You can ignore Effects during normal setup. Open it when you want custom rule logic, custom state tracking, or a structured effect tied to part of the chain.</p>
+        </section>
+      ) : null}
+
       {workspace.effects.length === 0 ? (
         <EmptyWorkspaceCard
           title="No effects yet"
-          body="Create the first chain-, jump-, or jumper-scoped effect for this branch."
+          body={
+            simpleMode
+              ? 'No effects yet. That is fine unless you want custom chain, jump, or jumper logic.'
+              : 'Create the first chain-, jump-, or jumper-scoped effect for this branch.'
+          }
           action={
             <button className="button" type="button" onClick={() => void handleCreateEffect()}>
               Create First Effect

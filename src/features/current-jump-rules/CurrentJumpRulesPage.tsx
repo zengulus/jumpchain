@@ -29,6 +29,8 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  PlainLanguageHint,
+  ReadinessPill,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
@@ -249,7 +251,7 @@ export function CurrentJumpRulesPage() {
         title="Current Jump Rules"
         description={
           simpleMode
-            ? 'Review the live rule state first, then set branch defaults or jump-specific overrides only where you need them.'
+            ? 'Advanced rules tool. Check the live rule state here and only create overrides when this jump needs exceptions.'
             : 'Branch defaults and per-jump overrides live here. Chainwide drawbacks and chain-owned rule effects live in Chainwide Rules.'
         }
         badge={currentJump.title}
@@ -262,6 +264,17 @@ export function CurrentJumpRulesPage() {
 
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={autosaveStatus} />
+
+      {simpleMode ? (
+        <section className="section-surface stack stack--compact">
+          <div className="section-heading">
+            <h3>How this fits</h3>
+            <ReadinessPill tone="advanced" />
+          </div>
+          <PlainLanguageHint term="Current jump rules" meaning="rule overrides that only apply to the active jump." />
+          <p>You can ignore this while learning the core flow. Open it when the active jump needs explicit rule exceptions beyond the normal branch defaults.</p>
+        </section>
+      ) : null}
 
       <section className="grid grid--two">
         <article className="card stack">

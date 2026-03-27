@@ -12,6 +12,8 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
+  PlainLanguageHint,
+  ReadinessPill,
   StatusNoticeBanner,
   type StatusNotice,
   WorkspaceModuleHeader,
@@ -168,7 +170,7 @@ export function ChainwideRulesPage() {
         title="Chainwide Rules"
         description={
           simpleMode
-            ? 'Set the chain-level flags first, then add the chain rules or drawbacks that should follow the whole branch.'
+            ? 'Advanced rules tool. Change chain-wide flags here only when the whole branch should inherit the same drawback or rule behavior.'
             : 'Chain-level rule flags, chainwide drawbacks, and branch-visible chain-owned rule effects live here.'
         }
         badge={`${chainwideEffects.length} entries`}
@@ -189,6 +191,17 @@ export function ChainwideRulesPage() {
 
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={autosaveStatus} />
+
+      {simpleMode ? (
+        <section className="section-surface stack stack--compact">
+          <div className="section-heading">
+            <h3>How this fits</h3>
+            <ReadinessPill tone="advanced" />
+          </div>
+          <PlainLanguageHint term="Chainwide rule" meaning="a rule or drawback that follows the whole active branch instead of one jump." />
+          <p>You can leave this alone during ordinary setup. Use it when the whole branch needs a standing drawback, a standing rule entry, or a chain-level flag change.</p>
+        </section>
+      ) : null}
 
       <section className="grid grid--two">
         <article className="card stack">
@@ -261,7 +274,11 @@ export function ChainwideRulesPage() {
       {chainwideEffects.length === 0 ? (
         <EmptyWorkspaceCard
           title="No chainwide entries yet"
-          body="Create chain drawbacks or chain-owned rule effects here, then use Current Jump Rules for per-jump overrides."
+          body={
+            simpleMode
+              ? 'No chainwide entries yet. That is fine unless the whole branch needs standing drawbacks or rule entries.'
+              : 'Create chain drawbacks or chain-owned rule effects here, then use Current Jump Rules for per-jump overrides.'
+          }
           action={
             <div className="actions">
               <button className="button" type="button" onClick={() => void handleCreateChainwideEffect('drawback')}>

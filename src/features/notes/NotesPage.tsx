@@ -7,7 +7,15 @@ import { db } from '../../db/database';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery } from '../search/searchUtils';
 import { createBlankNote, deleteChainRecord, saveChainRecord } from '../workspace/records';
-import { AutosaveStatusIndicator, EmptyWorkspaceCard, StatusNoticeBanner, type StatusNotice, WorkspaceModuleHeader } from '../workspace/shared';
+import {
+  AutosaveStatusIndicator,
+  EmptyWorkspaceCard,
+  PlainLanguageHint,
+  ReadinessPill,
+  StatusNoticeBanner,
+  type StatusNotice,
+  WorkspaceModuleHeader,
+} from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -189,7 +197,7 @@ export function NotesPage() {
         title="Notes"
         description={
           simpleMode
-            ? 'Capture the note itself first, then attach it to the right part of the chain.'
+            ? 'Optional support tool. Use notes when you want reminders or rulings attached to part of the chain.'
             : 'Chain, jump, jumper, companion, participation, and snapshot notes from one place, with live filters and autosave.'
         }
         badge={`${workspace.notes.length} total`}
@@ -221,10 +229,25 @@ export function NotesPage() {
       <StatusNoticeBanner notice={notice} />
       <AutosaveStatusIndicator status={noteAutosave.status} />
 
+      {simpleMode ? (
+        <section className="section-surface stack stack--compact">
+          <div className="section-heading">
+            <h3>How this fits</h3>
+            <ReadinessPill tone="optional" />
+          </div>
+          <PlainLanguageHint term="Note" meaning="a saved reminder, ruling, or journal entry attached to part of the chain." />
+          <p>You do not need notes to get the core chain working. Add them when you want to capture reminders, rulings, or extra context for future-you.</p>
+        </section>
+      ) : null}
+
       {workspace.notes.length === 0 ? (
         <EmptyWorkspaceCard
           title="No notes yet"
-          body="Create the first chain note or attach notes directly to jumps, jumpers, participations, and snapshots."
+          body={
+            simpleMode
+              ? 'No notes yet. That is fine until you want to save reminders, rulings, or journal-style context.'
+              : 'Create the first chain note or attach notes directly to jumps, jumpers, participations, and snapshots.'
+          }
           action={
             <button className="button" type="button" onClick={() => void handleCreateNote()}>
               Create First Note
