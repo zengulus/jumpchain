@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
@@ -160,6 +160,15 @@ export function JumpsPage() {
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const selectedJumpReviewState = selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {};
+  const previousTabContextRef = useRef<{
+    jumpId: string | undefined;
+    simpleMode: boolean;
+    participationPanelRequested: boolean;
+  }>({
+    jumpId: selectedJump?.id,
+    simpleMode,
+    participationPanelRequested,
+  });
   const purchaseBudgetAttachment = useMemo(() => {
     if (activeTab !== 'purchases' || !draftJump || !activeParticipationJumper || !visibleParticipation) {
       return null;
@@ -182,12 +191,28 @@ export function JumpsPage() {
   }
 
   useEffect(() => {
-    if (simpleMode) {
-      setActiveTab(participationPanelRequested ? 'purchases' : getFirstIncompleteStage(selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {}));
-      return;
+    const previousContext = previousTabContextRef.current;
+    const jumpChanged = previousContext.jumpId !== selectedJump?.id;
+    const modeChanged = previousContext.simpleMode !== simpleMode;
+    const purchasesPanelOpened = !previousContext.participationPanelRequested && participationPanelRequested;
+
+    if (jumpChanged || modeChanged) {
+      if (simpleMode) {
+        setActiveTab(
+          participationPanelRequested ? 'purchases' : getFirstIncompleteStage(selectedJump ? simpleReviewByJump[selectedJump.id] ?? {} : {}),
+        );
+      } else {
+        setActiveTab(participationPanelRequested ? 'purchases' : 'basics');
+      }
+    } else if (purchasesPanelOpened) {
+      setActiveTab('purchases');
     }
 
-    setActiveTab(participationPanelRequested ? 'purchases' : 'basics');
+    previousTabContextRef.current = {
+      jumpId: selectedJump?.id,
+      simpleMode,
+      participationPanelRequested,
+    };
   }, [selectedJump?.id, participationPanelRequested, simpleMode, simpleReviewByJump]);
 
   useEffect(() => {
@@ -652,63 +677,104 @@ export function JumpsPage() {
       );
     }
 
+    const purchaseEditor = activeParticipationJumper && activeParticipation ? (
+      <ParticipationEditorCard
+        jump={draftJump}
+        jumper={activeParticipationJumper}
+        participation={activeParticipation}
+        workspace={workspace}
+        showBudgetSummary={false}
+        showBudgetHeader={false}
+        onDraftChange={setLiveParticipationDraft}
+      />
+    ) : activeParticipationJumper ? (
+      <article className="card editor-sheet stack">
+        <div className="section-heading">
+          <h3>{activeParticipationJumper.name}</h3>
+          <span className="pill pill--soft">record missing</span>
+        </div>
+        <p>{activeParticipationJumper.name} is participating, but the record is missing.</p>
+        <div className="actions">
+          <button className="button" type="button" onClick={() => void ensureParticipation(activeParticipationJumper.id)}>
+            Create Record
+          </button>
+        </div>
+      </article>
+    ) : null;
+
+    const showParticipantRail = !simpleMode && (jumpParticipantJumpers.length > 1 || pendingFocusedJumper);
+    const participantSelector = jumpParticipantJumpers.length > 1 ? (
+      <div className={showParticipantRail ? 'selection-list' : 'chip-grid'}>
+        {jumpParticipantJumpers.map((jumper) =>
+          showParticipantRail ? (
+            <button
+              className={`selection-list__item${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
+              type="button"
+              key={jumper.id}
+              onClick={() => setFocusedParticipant(jumper.id)}
+            >
+              <strong>{jumper.name}</strong>
+              <span>{activeParticipationJumper?.id === jumper.id ? 'Current editor' : 'Open purchases'}</span>
+            </button>
+          ) : (
+            <button
+              className={`choice-chip${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
+              type="button"
+              key={jumper.id}
+              onClick={() => setFocusedParticipant(jumper.id)}
+            >
+              <span>{jumper.name}</span>
+            </button>
+          ),
+        )}
+      </div>
+    ) : null;
+
     return (
       <div className="stack stack--compact">
-        {jumpParticipantJumpers.length > 1 || pendingFocusedJumper ? (
-          <section className="section-surface stack stack--compact">
-            {jumpParticipantJumpers.length > 1 ? (
-              <div className="chip-grid">
-                {jumpParticipantJumpers.map((jumper) => (
-                  <button
-                    className={`choice-chip${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
-                    type="button"
-                    key={jumper.id}
-                    onClick={() => setFocusedParticipant(jumper.id)}
-                  >
-                    <span>{jumper.name}</span>
-                  </button>
-                ))}
+        {showParticipantRail ? (
+          <section className="workspace-two-column">
+            <aside className="card stack">
+              <div className="section-heading">
+                <h3>Participants</h3>
+                <span className="pill">{jumpParticipantJumpers.length} in jump</span>
               </div>
-            ) : null}
-            {pendingFocusedJumper ? (
-              <div className="jump-focus-callout">
-                <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
-                <div className="actions">
-                  <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
-                    Add {pendingFocusedJumper.name} To This Jump
-                  </button>
+              {participantSelector}
+              {pendingFocusedJumper ? (
+                <div className="jump-focus-callout">
+                  <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
+                  <div className="actions">
+                    <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
+                      Add {pendingFocusedJumper.name} To This Jump
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+              ) : null}
+            </aside>
 
-        {activeParticipationJumper && activeParticipation ? (
+            <div className="stack stack--compact">{purchaseEditor}</div>
+          </section>
+        ) : (
           <>
-            <ParticipationEditorCard
-              jump={draftJump}
-              jumper={activeParticipationJumper}
-              participation={activeParticipation}
-              workspace={workspace}
-              showBudgetSummary={false}
-              showBudgetHeader={false}
-              onDraftChange={setLiveParticipationDraft}
-            />
+            {participantSelector || pendingFocusedJumper ? (
+              <section className="section-surface stack stack--compact">
+                {participantSelector}
+                {pendingFocusedJumper ? (
+                  <div className="jump-focus-callout">
+                    <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
+                    <div className="actions">
+                      <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
+                        Add {pendingFocusedJumper.name} To This Jump
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {purchaseEditor}
           </>
-        ) : activeParticipationJumper ? (
-          <article className="card editor-sheet stack">
-            <div className="section-heading">
-              <h3>{activeParticipationJumper.name}</h3>
-              <span className="pill pill--soft">record missing</span>
-            </div>
-            <p>{activeParticipationJumper.name} is participating, but the record is missing.</p>
-            <div className="actions">
-              <button className="button" type="button" onClick={() => void ensureParticipation(activeParticipationJumper.id)}>
-                Create Record
-              </button>
-            </div>
-          </article>
-        ) : null}
+        )}
 
         {simpleMode ? (
           <div className="actions">

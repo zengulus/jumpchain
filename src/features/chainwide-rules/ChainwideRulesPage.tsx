@@ -22,6 +22,7 @@ import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosa
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
 type ChainwideCategoryFilter = 'all' | Effect['category'];
+const CUSTOM_BUDGET_CURRENCY = '__custom__';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -31,6 +32,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function formatNumericValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function formatBudgetCurrencyLabel(currencyKey: string) {
+  if (currencyKey === '0') {
+    return 'Choice Points (CP)';
+  }
+
+  return currencyKey;
 }
 
 function getSingleBudgetGrant(effect: Effect) {
@@ -461,7 +470,27 @@ export function ChainwideRulesPage() {
                         />
                       </label>
                       <label className="field">
-                        <span>Currency key</span>
+                        <span>Budget currency</span>
+                        <select
+                          value={getSingleBudgetGrant(draftEffect).currencyKey === '0' ? '0' : CUSTOM_BUDGET_CURRENCY}
+                          onChange={(event) =>
+                            updateSelectedEffect(
+                              setEffectBudgetGrant(
+                                draftEffect,
+                                event.target.value === CUSTOM_BUDGET_CURRENCY ? getSingleBudgetGrant(draftEffect).currencyKey : event.target.value,
+                                getSingleBudgetGrant(draftEffect).amount,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="0">Choice Points (CP)</option>
+                          <option value={CUSTOM_BUDGET_CURRENCY}>Custom currency</option>
+                        </select>
+                      </label>
+                    </div>
+                    {getSingleBudgetGrant(draftEffect).currencyKey !== '0' ? (
+                      <label className="field">
+                        <span>Custom budget ID</span>
                         <input
                           value={getSingleBudgetGrant(draftEffect).currencyKey}
                           onChange={(event) =>
@@ -475,11 +504,13 @@ export function ChainwideRulesPage() {
                           }
                         />
                       </label>
-                    </div>
+                    ) : null}
                     <div className="field-label-row">
                       <strong>Budget behavior</strong>
                       <AssistiveHint
-                        text="Applied to each jump participation budget while this drawback is active."
+                        text={`Applied to each jump participation budget while this drawback is active. ${formatBudgetCurrencyLabel(
+                          getSingleBudgetGrant(draftEffect).currencyKey,
+                        )} is the pool being adjusted.`}
                         triggerLabel="Explain budget behavior"
                       />
                     </div>
