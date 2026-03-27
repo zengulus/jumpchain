@@ -170,6 +170,18 @@ export function ChainWorkspaceLayout() {
     return registerWorkspaceDrawer();
   }, [registerWorkspaceDrawer, state?.status]);
 
+  const outletContext = useMemo<ChainWorkspaceOutletContext | null>(() => {
+    if (!chainId || state?.status !== 'ready' || !state.bundle || !state.workspace) {
+      return null;
+    }
+
+    return {
+      chainId,
+      bundle: state.bundle,
+      workspace: state.workspace,
+    };
+  }, [chainId, state]);
+
   if (!chainId) {
     return <Navigate to="/" replace />;
   }
@@ -193,17 +205,7 @@ export function ChainWorkspaceLayout() {
   }
 
   const resolvedChainId = chainId;
-  const bundle = state.bundle as NativeChainBundle;
   const workspace = state.workspace;
-  const outletContext = useMemo(
-    () =>
-      ({
-        chainId: resolvedChainId,
-        bundle,
-        workspace,
-      }) satisfies ChainWorkspaceOutletContext,
-    [bundle, resolvedChainId, workspace],
-  );
   const activeBranch = workspace.activeBranch;
   const currentJump = workspace.currentJump;
   const selectedJumper =
@@ -936,7 +938,7 @@ export function ChainWorkspaceLayout() {
         <div className="workspace-frame">
           {headerAttachment ? <section className="workspace-header-attachment">{headerAttachment}</section> : null}
           <section className="workspace-content">
-            <Outlet context={outletContext} />
+            <Outlet context={outletContext as ChainWorkspaceOutletContext} />
           </section>
         </div>
       </div>
