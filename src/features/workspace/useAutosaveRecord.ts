@@ -25,6 +25,27 @@ function toSerializedValue(value: unknown) {
   return JSON.stringify(value ?? null);
 }
 
+interface SerializedValueCacheEntry {
+  value: unknown;
+  serialized: string;
+}
+
+function readCachedSerializedValue(
+  value: unknown,
+  cacheRef: { current: SerializedValueCacheEntry | null },
+) {
+  if (cacheRef.current && Object.is(cacheRef.current.value, value)) {
+    return cacheRef.current.serialized;
+  }
+
+  const serialized = toSerializedValue(value);
+  cacheRef.current = {
+    value,
+    serialized,
+  };
+  return serialized;
+}
+
 export function mergeAutosaveStatuses(statuses: AutosaveStatus[]) {
   if (statuses.some((status) => status.phase === 'error')) {
     return statuses.find((status) => status.phase === 'error') ?? { phase: 'idle' as const };
@@ -51,14 +72,17 @@ export function useAutosaveRecord<T>(sourceValue: T | null, options: UseAutosave
   const currentRecordKeyRef = useRef<string | null>(null);
   const inFlightSerializedRef = useRef<string | null>(null);
   const failedSerializedRef = useRef<string | null>(null);
+  const sourceSerializedCacheRef = useRef<SerializedValueCacheEntry | null>(null);
+  const draftSerializedCacheRef = useRef<SerializedValueCacheEntry | null>(null);
   const onSaveRef = useRef(options.onSave);
   const getErrorMessageRef = useRef(options.getErrorMessage);
   const getKey = options.getKey ?? defaultGetRecordKey<T>;
   const delayMs = options.delayMs ?? 500;
   const sourceKey = getKey(sourceValue);
   const draftKey = getKey(draft);
-  const serializedSource = toSerializedValue(sourceValue);
-  const serializedDraft = toSerializedValue(draft);
+  const serializedDraft = readCachedSerializedValue(draft, draftSerializedCacheRef);
+  const serializedSource =
+    Object.is(sourceValue, draft) ? serializedDraft : readCachedSerializedValue(sourceValue, sourceSerializedCacheRef);
 
   currentRecordKeyRef.current = sourceKey;
 

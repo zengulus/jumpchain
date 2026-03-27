@@ -41,7 +41,10 @@ describe('UI preferences', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Toggle mode' }));
 
     expect(screen.getByTestId('mode').textContent).toBe('simple');
-    expect(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY)).toBe('{"simpleMode":true}');
+    expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) ?? '{}')).toEqual({
+      simpleMode: true,
+      simpleModeWizardByChain: {},
+    });
 
     firstRender.unmount();
 

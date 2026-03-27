@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
@@ -891,6 +891,43 @@ function getStipendTokens(
   );
 }
 
+function formatStipendRowNote(
+  row: StipendRow,
+  subtypeDefinitions: Record<string, PurchaseSubtypeDefinition>,
+  currencyDefinitions: Record<string, CurrencyDefinition>,
+) {
+  const definition = subtypeDefinitions[row.subtypeKey];
+  const subtypeLabel =
+    definition?.name?.trim() && definition.name.trim().length > 0
+      ? definition.name.trim()
+      : row.subtypeKey.startsWith('stipend-subtype')
+        ? 'Custom stipend'
+        : titleCaseIdentifier(row.subtypeKey) || 'Custom stipend';
+
+  return `${subtypeLabel}: ${formatNumericValue(row.amount)} ${formatCurrencyLabel(row.currencyKey, currencyDefinitions)}`;
+}
+
+function getActiveStipendNote(
+  stipends: Record<string, Record<string, number>>,
+  subtypeDefinitions: Record<string, PurchaseSubtypeDefinition>,
+  currencyDefinitions: Record<string, CurrencyDefinition>,
+) {
+  const activeRows = flattenStipends(stipends).filter((row) => Number.isFinite(row.amount) && row.amount > 0);
+
+  if (activeRows.length === 0) {
+    return null;
+  }
+
+  const previewLimit = 2;
+  const preview = activeRows
+    .slice(0, previewLimit)
+    .map((row) => formatStipendRowNote(row, subtypeDefinitions, currencyDefinitions))
+    .join(' - ');
+  const hiddenCount = Math.max(0, activeRows.length - previewLimit);
+
+  return `Stipends apply before the main budget: ${preview}${hiddenCount > 0 ? ` - +${hiddenCount} more` : ''}.`;
+}
+
 function getRecordStringValue(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     const value = record[key];
@@ -1004,20 +1041,28 @@ function getSelectionSpendAmount(selection: unknown) {
     return 0;
   }
 
-  return getOptionalNumber(record.purchaseValue) ?? getComputedSelectionCost(record) ?? getOptionalNumber(record.value) ?? 0;
+  const storedPurchaseValue = getOptionalNumber(record.purchaseValue);
+  const computedCost = getComputedSelectionCost(record);
+
+  if (storedPurchaseValue !== null && !(storedPurchaseValue === 0 && computedCost !== null && computedCost > 0)) {
+    return storedPurchaseValue;
+  }
+
+  return computedCost ?? getOptionalNumber(record.value) ?? 0;
 }
 
 function sumCurrencyAmounts(entries: Array<{ currencyKey: string; amount: number }>) {
-  return entries.reduce<Record<string, number>>((totals, entry) => {
+  const totals: Record<string, number> = {};
+
+  for (const entry of entries) {
     if (!Number.isFinite(entry.amount) || entry.amount === 0) {
-      return totals;
+      continue;
     }
 
-    return {
-      ...totals,
-      [entry.currencyKey]: (totals[entry.currencyKey] ?? 0) + entry.amount,
-    };
-  }, {});
+    totals[entry.currencyKey] = (totals[entry.currencyKey] ?? 0) + entry.amount;
+  }
+
+  return totals;
 }
 
 function getOriginSpendAmounts(
@@ -1182,22 +1227,24 @@ function flattenStipends(stipends: Record<string, Record<string, number>>): Stip
 }
 
 function buildStipendsFromRows(rows: StipendRow[]) {
-  return rows.reduce<Record<string, Record<string, number>>>((nextStipends, row) => {
+  const nextStipends: Record<string, Record<string, number>> = {};
+
+  for (const row of rows) {
     const currencyKey = row.currencyKey.trim();
     const subtypeKey = row.subtypeKey.trim();
 
     if (currencyKey.length === 0 || subtypeKey.length === 0) {
-      return nextStipends;
+      continue;
     }
 
-    return {
-      ...nextStipends,
-      [currencyKey]: {
-        ...(nextStipends[currencyKey] ?? {}),
-        [subtypeKey]: row.amount,
-      },
-    };
-  }, {});
+    if (!(currencyKey in nextStipends)) {
+      nextStipends[currencyKey] = {};
+    }
+
+    nextStipends[currencyKey][subtypeKey] = row.amount;
+  }
+
+  return nextStipends;
 }
 
 function renameRecordKey<T>(record: Record<string, T>, previousKey: string, nextKey: string) {
@@ -1281,18 +1328,24 @@ function SummarySection(props: {
 }
 
 function SelectionEditorSection(props: SelectionEditorSectionProps) {
-  const subtypeKeys = props.subtypeDefinitions ? Object.keys(props.subtypeDefinitions) : [];
-  const stipendBreakdown =
-    props.enablePricing && props.stipends
-      ? applyPurchaseStipends(
-          props.items.map((item) => ({
-            currencyKey: getSelectionCurrencyKey(item),
-            subtypeKey: getSelectionSubtypeKey(item),
-            grossAmount: getSelectionSpendAmount(item),
-          })),
-          props.stipends,
-        )
-      : [];
+  const subtypeKeys = useMemo(
+    () => (props.subtypeDefinitions ? Object.keys(props.subtypeDefinitions) : []),
+    [props.subtypeDefinitions],
+  );
+  const stipendBreakdown = useMemo(
+    () =>
+      props.enablePricing && props.stipends
+        ? applyPurchaseStipends(
+            props.items.map((item) => ({
+              currencyKey: getSelectionCurrencyKey(item),
+              subtypeKey: getSelectionSubtypeKey(item),
+              grossAmount: getSelectionSpendAmount(item),
+            })),
+            props.stipends,
+          )
+        : [],
+    [props.enablePricing, props.items, props.stipends],
+  );
 
   return (
     <section className="editor-section">
@@ -2306,54 +2359,117 @@ export function ParticipationEditorCard(props: {
       props.onDraftChange?.(null);
     };
   }, [props.onDraftChange]);
-  const rawCurrencyDefinitions = getCurrencyDefinitions(asRecord(draftParticipation.importSourceMetadata).currencies);
-  const effectiveBudgetState = getEffectiveParticipationBudgetState(props.workspace, draftParticipation);
-  const stipendRows = flattenStipends(draftParticipation.stipends);
-  const provisionalCurrencyKeys = Array.from(
-    new Set([
-      ...Object.keys(rawCurrencyDefinitions),
-      ...Object.keys(effectiveBudgetState.baseBudgets),
-      ...Object.keys(draftParticipation.budgets),
-      ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
-      ...Object.keys(effectiveBudgetState.chainDrawbackBudgetGrants),
-      ...stipendRows.map((row) => row.currencyKey),
-      ...draftParticipation.purchases.map((purchase) => getSelectionCurrencyKey(purchase)),
-      ...draftParticipation.currencyExchanges.flatMap((exchange) => {
-        const record = normalizeCurrencyExchangeForEdit(exchange, '0');
-        return [String(record.fromCurrency), String(record.toCurrency)];
+  const rawImportSourceMetadata = asRecord(draftParticipation.importSourceMetadata);
+  const rawCurrencyDefinitions = useMemo(
+    () => getCurrencyDefinitions(asRecord(rawImportSourceMetadata).currencies),
+    [rawImportSourceMetadata],
+  );
+  const effectiveBudgetState = useMemo(
+    () =>
+      getEffectiveParticipationBudgetState(props.workspace, {
+        budgets: draftParticipation.budgets,
+        importSourceMetadata: draftParticipation.importSourceMetadata,
+        drawbacks: draftParticipation.drawbacks,
+        retainedDrawbacks: draftParticipation.retainedDrawbacks,
+        jumperId: draftParticipation.jumperId,
       }),
-    ]),
+    [
+      draftParticipation.budgets,
+      draftParticipation.drawbacks,
+      draftParticipation.importSourceMetadata,
+      draftParticipation.jumperId,
+      draftParticipation.retainedDrawbacks,
+      props.workspace,
+    ],
   );
-  const currencyDefinitions = ensureCurrencyDefinitions(
-    rawCurrencyDefinitions,
-    provisionalCurrencyKeys,
+  const stipendRows = useMemo(() => flattenStipends(draftParticipation.stipends), [draftParticipation.stipends]);
+  const provisionalCurrencyKeys = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(rawCurrencyDefinitions),
+          ...Object.keys(effectiveBudgetState.baseBudgets),
+          ...Object.keys(draftParticipation.budgets),
+          ...Object.keys(effectiveBudgetState.participationDrawbackBudgetGrants),
+          ...Object.keys(effectiveBudgetState.chainDrawbackBudgetGrants),
+          ...stipendRows.map((row) => row.currencyKey),
+          ...draftParticipation.purchases.map((purchase) => getSelectionCurrencyKey(purchase)),
+          ...draftParticipation.currencyExchanges.flatMap((exchange) => {
+            const record = normalizeCurrencyExchangeForEdit(exchange, '0');
+            return [String(record.fromCurrency), String(record.toCurrency)];
+          }),
+        ]),
+      ),
+    [
+      draftParticipation.budgets,
+      draftParticipation.currencyExchanges,
+      draftParticipation.purchases,
+      effectiveBudgetState.baseBudgets,
+      effectiveBudgetState.chainDrawbackBudgetGrants,
+      effectiveBudgetState.participationDrawbackBudgetGrants,
+      rawCurrencyDefinitions,
+      stipendRows,
+    ],
   );
-  const rawPurchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(draftParticipation.importSourceMetadata).purchaseSubtypes);
-  const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
-    rawPurchaseSubtypeDefinitions,
-    Array.from(
-      new Set([
-        ...Object.keys(rawPurchaseSubtypeDefinitions),
-        ...stipendRows.map((row) => row.subtypeKey),
-        ...draftParticipation.purchases
-          .map((purchase) => getSelectionSubtypeKey(purchase))
-          .filter((value): value is string => Boolean(value)),
-      ]),
-    ),
+  const currencyDefinitions = useMemo(
+    () => ensureCurrencyDefinitions(rawCurrencyDefinitions, provisionalCurrencyKeys),
+    [provisionalCurrencyKeys, rawCurrencyDefinitions],
   );
-  const purchaseClassification = getPurchaseClassification(purchaseSubtypeDefinitions);
-  const purchaseGroups = getPurchaseTokenGroups(draftParticipation.purchases, purchaseClassification);
-  const originCategories = getOriginCategoryDefinitions(asRecord(draftParticipation.importSourceMetadata).originCategories);
-  const orderedOriginKeys = getOrderedOriginCategoryKeys(
-    draftParticipation.origins,
-    originCategories,
-    getKeyList(asRecord(draftParticipation.importSourceMetadata).originCategoryList),
+  const rawPurchaseSubtypeDefinitions = useMemo(
+    () => getPurchaseSubtypeDefinitions(asRecord(rawImportSourceMetadata).purchaseSubtypes),
+    [rawImportSourceMetadata],
   );
-  const inheritedBaseBudgets = getInheritedBaseBudgets(rawCurrencyDefinitions, draftParticipation.budgets);
+  const purchaseSubtypeDefinitions = useMemo(
+    () =>
+      ensurePurchaseSubtypeDefinitions(
+        rawPurchaseSubtypeDefinitions,
+        Array.from(
+          new Set([
+            ...Object.keys(rawPurchaseSubtypeDefinitions),
+            ...stipendRows.map((row) => row.subtypeKey),
+            ...draftParticipation.purchases
+              .map((purchase) => getSelectionSubtypeKey(purchase))
+              .filter((value): value is string => Boolean(value)),
+          ]),
+        ),
+      ),
+    [draftParticipation.purchases, rawPurchaseSubtypeDefinitions, stipendRows],
+  );
+  const purchaseClassification = useMemo(
+    () => getPurchaseClassification(purchaseSubtypeDefinitions),
+    [purchaseSubtypeDefinitions],
+  );
+  const purchaseGroups = useMemo(
+    () => getPurchaseTokenGroups(draftParticipation.purchases, purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const originCategories = useMemo(
+    () => getOriginCategoryDefinitions(asRecord(rawImportSourceMetadata).originCategories),
+    [rawImportSourceMetadata],
+  );
+  const orderedOriginKeys = useMemo(
+    () =>
+      getOrderedOriginCategoryKeys(
+        draftParticipation.origins,
+        originCategories,
+        getKeyList(asRecord(rawImportSourceMetadata).originCategoryList),
+      ),
+    [draftParticipation.origins, originCategories, rawImportSourceMetadata],
+  );
+  const inheritedBaseBudgets = useMemo(
+    () => getInheritedBaseBudgets(rawCurrencyDefinitions, draftParticipation.budgets),
+    [draftParticipation.budgets, rawCurrencyDefinitions],
+  );
   const showBudgetSummary = props.showBudgetSummary ?? true;
   const showBudgetHeader = props.showBudgetHeader ?? true;
-  const exchangeTokens = getCurrencyExchangeTokens(draftParticipation.currencyExchanges, currencyDefinitions);
-  const cpBudgetEntry = findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions);
+  const exchangeTokens = useMemo(
+    () => getCurrencyExchangeTokens(draftParticipation.currencyExchanges, currencyDefinitions),
+    [currencyDefinitions, draftParticipation.currencyExchanges],
+  );
+  const cpBudgetEntry = useMemo(
+    () => findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions),
+    [currencyDefinitions, effectiveBudgetState.effectiveBudgets],
+  );
   const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(currencyDefinitions)[0] ?? '0';
   const cpBudgetLabel = cpBudgetEntry ? formatCurrencyLabel(cpBudgetEntry[0], currencyDefinitions) : null;
   const cpBudgetValue = cpBudgetEntry?.[1] ?? null;
@@ -2362,30 +2478,64 @@ export function ParticipationEditorCard(props: {
     cpBudgetEntry ? effectiveBudgetState.participationDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null;
   const cpChainDrawbackGrant =
     cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null;
-  const budgetRows = Array.from(
-    new Set([...Object.keys(effectiveBudgetState.baseBudgets), ...Object.keys(draftParticipation.budgets)]),
+  const budgetRows = useMemo(
+    () => Array.from(new Set([...Object.keys(effectiveBudgetState.baseBudgets), ...Object.keys(draftParticipation.budgets)])),
+    [draftParticipation.budgets, effectiveBudgetState.baseBudgets],
   );
-  const subsystemStipendRows = stipendRows.filter((row) =>
-    matchesStipendSection(row, 'subsystems', purchaseSubtypeDefinitions, purchaseClassification),
+  const subsystemStipendRows = useMemo(
+    () =>
+      stipendRows.filter((row) =>
+        matchesStipendSection(row, 'subsystems', purchaseSubtypeDefinitions, purchaseClassification),
+      ),
+    [purchaseClassification, purchaseSubtypeDefinitions, stipendRows],
   );
-  const itemStipendRows = stipendRows.filter((row) =>
-    matchesStipendSection(row, 'items', purchaseSubtypeDefinitions, purchaseClassification),
+  const itemStipendRows = useMemo(
+    () =>
+      stipendRows.filter((row) =>
+        matchesStipendSection(row, 'items', purchaseSubtypeDefinitions, purchaseClassification),
+      ),
+    [purchaseClassification, purchaseSubtypeDefinitions, stipendRows],
   );
   const [activeTab, setActiveTab] = useState<ParticipationTab>('beginnings');
 
-  const perkPurchases = filterPurchasesBySection(draftParticipation.purchases, 'perk', purchaseClassification);
-  const subsystemPurchases = filterPurchasesBySection(draftParticipation.purchases, 'subsystem', purchaseClassification);
-  const itemPurchases = filterPurchasesBySection(draftParticipation.purchases, 'item', purchaseClassification);
-  const otherPurchases = filterPurchasesBySection(draftParticipation.purchases, 'other', purchaseClassification);
-  const budgetLedgerEntries = getBudgetLedgerEntries(
-    effectiveBudgetState.effectiveBudgets,
-    draftParticipation.purchases,
-    draftParticipation.stipends,
-    draftParticipation.origins,
-    orderedOriginKeys,
-    draftParticipation.bankDeposit,
-    draftParticipation.currencyExchanges,
-    currencyDefinitions,
+  const perkPurchases = useMemo(
+    () => filterPurchasesBySection(draftParticipation.purchases, 'perk', purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const subsystemPurchases = useMemo(
+    () => filterPurchasesBySection(draftParticipation.purchases, 'subsystem', purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const itemPurchases = useMemo(
+    () => filterPurchasesBySection(draftParticipation.purchases, 'item', purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const otherPurchases = useMemo(
+    () => filterPurchasesBySection(draftParticipation.purchases, 'other', purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const budgetLedgerEntries = useMemo(
+    () =>
+      getBudgetLedgerEntries(
+        effectiveBudgetState.effectiveBudgets,
+        draftParticipation.purchases,
+        draftParticipation.stipends,
+        draftParticipation.origins,
+        orderedOriginKeys,
+        draftParticipation.bankDeposit,
+        draftParticipation.currencyExchanges,
+        currencyDefinitions,
+      ),
+    [
+      currencyDefinitions,
+      draftParticipation.bankDeposit,
+      draftParticipation.currencyExchanges,
+      draftParticipation.origins,
+      draftParticipation.purchases,
+      draftParticipation.stipends,
+      effectiveBudgetState.effectiveBudgets,
+      orderedOriginKeys,
+    ],
   );
   const primaryBudgetLedgerEntry =
     budgetLedgerEntries.find((entry) => entry.currencyKey === primaryCurrencyKey) ?? budgetLedgerEntries[0] ?? null;
@@ -2599,11 +2749,12 @@ export function ParticipationEditorCard(props: {
                   <div className="selection-editor__header">
                     <div className="stack stack--compact">
                       <strong>{formatPurchaseSubtypeLabel(row.subtypeKey, purchaseSubtypeDefinitions, currencyDefinitions)}</strong>
-                      {subtypeDefinition?.stipend !== null && subtypeDefinition?.stipend !== undefined ? (
-                        <div className="inline-meta">
+                      <div className="inline-meta">
+                        <span className="pill pill--soft">{formatCurrencyLabel(row.currencyKey, currencyDefinitions)}</span>
+                        {subtypeDefinition?.stipend !== null && subtypeDefinition?.stipend !== undefined ? (
                           <span className="pill">Default {formatNumericValue(subtypeDefinition.stipend)}</span>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                     <button
                       className="button button--secondary"
@@ -2624,37 +2775,7 @@ export function ParticipationEditorCard(props: {
                     </button>
                   </div>
 
-                  <div className="field-grid field-grid--three">
-                    <label className="field">
-                      <span>Currency</span>
-                      <select
-                        value={row.currencyKey}
-                        onChange={(event) =>
-                          updateParticipation((current) => {
-                            const nextRows = flattenStipends(current.stipends).map((existingRow) =>
-                              existingRow.currencyKey === row.currencyKey && existingRow.subtypeKey === row.subtypeKey
-                                ? {
-                                    ...existingRow,
-                                    currencyKey: event.target.value,
-                                  }
-                                : existingRow,
-                            );
-
-                            return {
-                              ...current,
-                              stipends: buildStipendsFromRows(nextRows),
-                            };
-                          })
-                        }
-                      >
-                        {availableCurrencyKeys.map((currencyKey) => (
-                          <option key={`stipend-currency-${currencyKey}`} value={currencyKey}>
-                            {formatCurrencyLabel(currencyKey, currencyDefinitions)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
+                  <div className="field-grid field-grid--two">
                     <label className="field">
                       <span>Stipend type</span>
                       <select
@@ -2710,6 +2831,44 @@ export function ParticipationEditorCard(props: {
                       />
                     </label>
                   </div>
+
+                  <details className="details-panel">
+                    <summary className="details-panel__summary">
+                      <span>Advanced</span>
+                      <span className="pill pill--soft">{formatCurrencyLabel(row.currencyKey, currencyDefinitions)}</span>
+                    </summary>
+                    <div className="details-panel__body">
+                      <label className="field">
+                        <span>Currency</span>
+                        <select
+                          value={row.currencyKey}
+                          onChange={(event) =>
+                            updateParticipation((current) => {
+                              const nextRows = flattenStipends(current.stipends).map((existingRow) =>
+                                existingRow.currencyKey === row.currencyKey && existingRow.subtypeKey === row.subtypeKey
+                                  ? {
+                                      ...existingRow,
+                                      currencyKey: event.target.value,
+                                    }
+                                  : existingRow,
+                              );
+
+                              return {
+                                ...current,
+                                stipends: buildStipendsFromRows(nextRows),
+                              };
+                            })
+                          }
+                        >
+                          {availableCurrencyKeys.map((currencyKey) => (
+                            <option key={`stipend-currency-${currencyKey}`} value={currencyKey}>
+                              {formatCurrencyLabel(currencyKey, currencyDefinitions)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </details>
                 </div>
               );
             })}
@@ -3356,6 +3515,19 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
     getOriginCategoryDefinitions(asRecord(participation.importSourceMetadata).originCategories),
     getKeyList(asRecord(participation.importSourceMetadata).originCategoryList),
   );
+  const rawPurchaseSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(participation.importSourceMetadata).purchaseSubtypes);
+  const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
+    rawPurchaseSubtypeDefinitions,
+    Array.from(
+      new Set([
+        ...Object.keys(rawPurchaseSubtypeDefinitions),
+        ...stipendRows.map((row) => row.subtypeKey),
+        ...participation.purchases
+          .map((purchase) => getSelectionSubtypeKey(purchase))
+          .filter((value): value is string => Boolean(value)),
+      ]),
+    ),
+  );
   const primaryCurrencyKey = cpBudgetEntry?.[0] ?? Object.keys(effectiveBudgetState.effectiveBudgets)[0] ?? '0';
   const budgetLedgerEntries = getBudgetLedgerEntries(
     effectiveBudgetState.effectiveBudgets,
@@ -3376,6 +3548,7 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
     cpBaseValue: cpBudgetEntry ? effectiveBudgetState.baseBudgets[cpBudgetEntry[0]] ?? 0 : null,
     cpJumpDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.participationDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,
     cpChainDrawbackGrant: cpBudgetEntry ? effectiveBudgetState.chainDrawbackBudgetGrants[cpBudgetEntry[0]] ?? 0 : null,
+    stipendNote: getActiveStipendNote(participation.stipends, purchaseSubtypeDefinitions, currencyDefinitions),
   };
 }
 
@@ -3399,6 +3572,7 @@ export function ParticipationBudgetHeader(props: {
         cpJumpDrawbackGrant={summary.cpJumpDrawbackGrant}
         cpChainDrawbackGrant={summary.cpChainDrawbackGrant}
       />
+      {summary.stipendNote ? <p className="field-hint">{summary.stipendNote}</p> : null}
     </section>
   );
 }
@@ -3447,6 +3621,7 @@ export function ParticipationBudgetShellAttachment(props: {
           <span>Chain gain</span>
         </article>
       </div>
+      {summary.stipendNote ? <p className="field-hint">{summary.stipendNote}</p> : null}
     </section>
   );
 }
@@ -3537,10 +3712,10 @@ export function ParticipationBudgetInspector(props: {
           </p>
           <p>
             {formatNumericValue(primaryBudgetLedgerEntry.starting)} start
-            {primaryBudgetLedgerEntry.spent !== 0 ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.spent)} spent` : ''}
             {primaryBudgetLedgerEntry.stipendCovered !== 0
-              ? ` | ${formatNumericValue(primaryBudgetLedgerEntry.stipendCovered)} covered by stipends`
+              ? ` | ${formatNumericValue(primaryBudgetLedgerEntry.stipendCovered)} covered by stipends first`
               : ''}
+            {primaryBudgetLedgerEntry.spent !== 0 ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.spent)} spent from budget` : ''}
             {primaryBudgetLedgerEntry.exchangedOut !== 0
               ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.exchangedOut)} exchanged out`
               : ''}
@@ -3557,8 +3732,8 @@ export function ParticipationBudgetInspector(props: {
           label: `${formatCurrencyLabel(entry.currencyKey, currencyDefinitions)}: ${formatNumericValue(entry.remaining)} left`,
           detail: [
             `${formatNumericValue(entry.starting)} start`,
-            entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent` : null,
-            entry.stipendCovered !== 0 ? `${formatNumericValue(entry.stipendCovered)} covered by stipends` : null,
+            entry.stipendCovered !== 0 ? `${formatNumericValue(entry.stipendCovered)} covered by stipends first` : null,
+            entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent from budget` : null,
             entry.exchangedOut !== 0 ? `-${formatNumericValue(entry.exchangedOut)} exchanged out` : null,
             entry.exchangedIn !== 0 ? `+${formatNumericValue(entry.exchangedIn)} exchanged in` : null,
           ]

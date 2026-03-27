@@ -1,25 +1,32 @@
+import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
-import { buildUniversalSearchResults, normalizeSearchQuery } from './searchUtils';
+import { normalizeSearchQuery, queryUniversalSearchResults } from './searchUtils';
 
 export function SearchResultsPage() {
   const { simpleMode } = useUiPreferences();
   const [searchParams] = useSearchParams();
-  const searchData = useUniversalSearchData();
+  const { data: searchData, ensureLoaded, isLoading } = useUniversalSearchData();
   const query = searchParams.get('q') ?? '';
   const preferredChainId = searchParams.get('chain') ?? undefined;
   const normalizedQuery = normalizeSearchQuery(query);
-  const results =
-    searchData && normalizedQuery.length > 0
-      ? buildUniversalSearchResults({
-          query,
-          overviews: searchData.overviews,
-          bundles: searchData.bundles,
-          preferredChainId,
-        })
-      : [];
+  const results = useMemo(
+    () =>
+      searchData && normalizedQuery.length > 0
+        ? queryUniversalSearchResults({
+            query,
+            index: searchData.index,
+            preferredChainId,
+          })
+        : [],
+    [normalizedQuery.length, preferredChainId, query, searchData],
+  );
+
+  useEffect(() => {
+    ensureLoaded();
+  }, [ensureLoaded]);
 
   return (
     <div className="search-page stack">
@@ -32,7 +39,7 @@ export function SearchResultsPage() {
         </p>
         <div className="inline-meta">
           <span className="pill">{normalizedQuery.length > 0 ? `Query: ${query}` : 'Enter a query in the header'}</span>
-          {searchData ? <span className="pill pill--soft">{results.length} matches</span> : <span className="pill pill--soft">Loading...</span>}
+          {searchData ? <span className="pill pill--soft">{results.length} matches</span> : <span className="pill pill--soft">{isLoading ? 'Loading...' : 'Search idle'}</span>}
         </div>
       </section>
 

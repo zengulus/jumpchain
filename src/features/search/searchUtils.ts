@@ -158,46 +158,21 @@ export function withSearchParams(pathname: string, params: Record<string, string
   return search.length > 0 ? `${pathname}?${search}` : pathname;
 }
 
-function buildResultScore(
-  kind: UniversalSearchResultKind,
-  title: string,
-  subtitle: string,
-  snippet: string,
-  query: string,
-  chainId: string,
-  preferredChainId?: string,
-) {
-  const normalizedQuery = normalizeSearchQuery(query);
-  const normalizedTitle = normalizeSearchQuery(title);
-  const normalizedSubtitle = normalizeSearchQuery(subtitle);
-  const normalizedSnippet = normalizeSearchQuery(snippet);
+function withQueryForSearchResult(to: string, kind: UniversalSearchResultKind, query: string) {
+  const [pathname, rawSearch = ''] = to.split('?');
+  const existingParams = Object.fromEntries(new URLSearchParams(rawSearch).entries());
 
-  let score = kindPriority[kind];
-
-  if (preferredChainId && preferredChainId === chainId) {
-    score += 40;
+  if (kind === 'cosmic-backpack') {
+    return withSearchParams(pathname, {
+      ...existingParams,
+      highlight: query,
+    });
   }
 
-  if (normalizedTitle === normalizedQuery) {
-    score += 180;
-  } else if (normalizedTitle.startsWith(normalizedQuery)) {
-    score += 140;
-  } else if (normalizedTitle.includes(normalizedQuery)) {
-    score += 100;
-  }
-
-  if (normalizedSubtitle.includes(normalizedQuery)) {
-    score += 28;
-  }
-
-  if (normalizedSnippet.includes(normalizedQuery)) {
-    score += 18;
-  }
-
-  const terms = extractSearchTerms(query);
-  score += terms.filter((term) => normalizedTitle.includes(term)).length * 12;
-
-  return score;
+  return withSearchParams(pathname, {
+    ...existingParams,
+    search: query,
+  });
 }
 
 interface SearchResultSeed {
@@ -209,19 +184,32 @@ interface SearchResultSeed {
   snippet: string;
   to: string;
   extraText?: unknown[];
+  preferredChainOnly?: boolean;
 }
 
-function pushResult(
-  results: UniversalSearchResult[],
-  seed: SearchResultSeed,
-  query: string,
-  preferredChainId?: string,
-) {
-  if (!matchesSearchQuery(query, seed.title, seed.subtitle, seed.snippet, ...(seed.extraText ?? []))) {
-    return;
-  }
+export interface UniversalSearchIndexEntry {
+  id: string;
+  kind: UniversalSearchResultKind;
+  kindLabel: string;
+  chainId: string;
+  chainTitle: string;
+  title: string;
+  subtitle: string;
+  snippet: string;
+  to: string;
+  searchableText: string;
+  normalizedTitle: string;
+  normalizedSubtitle: string;
+  normalizedSnippet: string;
+  preferredChainOnly: boolean;
+}
 
-  results.push({
+function buildSearchableText(seed: SearchResultSeed) {
+  return normalizeSearchQuery([seed.title, seed.subtitle, seed.snippet, ...(seed.extraText ?? [])].map((value) => valueToSearchText(value)).join(' '));
+}
+
+function buildSearchIndexEntry(seed: SearchResultSeed): UniversalSearchIndexEntry {
+  return {
     id: `${seed.kind}:${seed.chainId}:${seed.to}`,
     kind: seed.kind,
     kindLabel: kindLabels[seed.kind],
@@ -231,23 +219,87 @@ function pushResult(
     subtitle: seed.subtitle,
     snippet: seed.snippet,
     to: seed.to,
-    score: buildResultScore(seed.kind, seed.title, seed.subtitle, seed.snippet, query, seed.chainId, preferredChainId),
-  });
+    searchableText: buildSearchableText(seed),
+    normalizedTitle: normalizeSearchQuery(seed.title),
+    normalizedSubtitle: normalizeSearchQuery(seed.subtitle),
+    normalizedSnippet: normalizeSearchQuery(seed.snippet),
+    preferredChainOnly: seed.preferredChainOnly === true,
+  };
 }
 
-export function buildUniversalSearchResults(input: {
+function pushSearchIndexEntry(
+  results: UniversalSearchIndexEntry[],
+  seed: SearchResultSeed,
+) {
+  results.push(buildSearchIndexEntry(seed));
+}
+
+function matchesSearchTerms(terms: string[], haystack: string) {
+  return terms.every((term) => haystack.includes(term));
+}
+
+export function queryUniversalSearchResults(input: {
   query: string;
-  overviews: ChainOverview[];
-  bundles: NativeChainBundle[];
+  index: UniversalSearchIndexEntry[];
   preferredChainId?: string;
 }) {
   const query = input.query.trim();
+  const normalizedQuery = normalizeSearchQuery(query);
+  const terms = extractSearchTerms(query);
 
-  if (extractSearchTerms(query).length === 0) {
+  if (terms.length === 0) {
     return [] as UniversalSearchResult[];
   }
 
-  const results: UniversalSearchResult[] = [];
+  return input.index
+    .filter((entry) => (!entry.preferredChainOnly || entry.chainId === input.preferredChainId) && matchesSearchTerms(terms, entry.searchableText))
+    .map<UniversalSearchResult>((entry) => ({
+      id: entry.id,
+      kind: entry.kind,
+      kindLabel: entry.kindLabel,
+      chainId: entry.chainId,
+      chainTitle: entry.chainTitle,
+      title: entry.title,
+      subtitle: entry.subtitle,
+      snippet: entry.snippet,
+      to: withQueryForSearchResult(entry.to, entry.kind, query),
+      score: (() => {
+        let score = kindPriority[entry.kind];
+
+        if (input.preferredChainId && input.preferredChainId === entry.chainId) {
+          score += 40;
+        }
+
+        if (entry.normalizedTitle === normalizedQuery) {
+          score += 180;
+        } else if (entry.normalizedTitle.startsWith(normalizedQuery)) {
+          score += 140;
+        } else if (entry.normalizedTitle.includes(normalizedQuery)) {
+          score += 100;
+        }
+
+        if (entry.normalizedSubtitle.includes(normalizedQuery)) {
+          score += 28;
+        }
+
+        if (entry.normalizedSnippet.includes(normalizedQuery)) {
+          score += 18;
+        }
+
+        score += terms.filter((term) => entry.normalizedTitle.includes(term)).length * 12;
+
+        return score;
+      })(),
+    }))
+    .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
+    .slice(0, 120);
+}
+
+export function buildUniversalSearchIndex(input: {
+  overviews: ChainOverview[];
+  bundles: NativeChainBundle[];
+}) {
+  const results: UniversalSearchIndexEntry[] = [];
   const overviewByChainId = new Map(input.overviews.map((overview) => [overview.chainId, overview]));
 
   for (const bundle of input.bundles) {
@@ -260,145 +312,112 @@ export function buildUniversalSearchResults(input: {
     const companionById = new Map(workspace.companions.map((companion) => [companion.id, companion]));
     const snapshotById = new Map(workspace.snapshots.map((snapshot) => [snapshot.id, snapshot]));
 
-    pushResult(
-      results,
-      {
-        kind: 'chain',
-        chainId: bundle.chain.id,
-        chainTitle,
-        title: chainTitle,
-        subtitle: `Chain | ${branchTitle}`,
-        snippet: `${overview?.jumperCount ?? workspace.jumpers.length} jumpers, ${overview?.jumpCount ?? workspace.jumps.length} jumps, active branch ${branchTitle}.`,
-        to: withSearchParams(`/chains/${bundle.chain.id}/overview`, { search: query }),
-        extraText: [bundle.chain.importSourceMetadata, branchTitle],
-      },
-      query,
-      input.preferredChainId,
-    );
+    pushSearchIndexEntry(results, {
+      kind: 'chain',
+      chainId: bundle.chain.id,
+      chainTitle,
+      title: chainTitle,
+      subtitle: `Chain | ${branchTitle}`,
+      snippet: `${overview?.jumperCount ?? workspace.jumpers.length} jumpers, ${overview?.jumpCount ?? workspace.jumps.length} jumps, active branch ${branchTitle}.`,
+      to: withSearchParams(`/chains/${bundle.chain.id}/overview`, { search: '' }),
+      extraText: [bundle.chain.importSourceMetadata, branchTitle],
+    });
 
     for (const branch of bundle.branches) {
-      pushResult(
-        results,
-        {
-          kind: 'branch',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(branch.title, 'Untitled Branch'),
-          subtitle: `Branch | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, branch.notes, branch.sourceMetadata, branch.forkedFromJumpId ? 'forked from jump' : ''),
-          to: withSearchParams(`/chains/${bundle.chain.id}/backups`, { search: query }),
-          extraText: [branch.notes, branch.sourceMetadata],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'branch',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(branch.title, 'Untitled Branch'),
+        subtitle: `Branch | ${chainTitle}`,
+        snippet: buildSearchSnippet('', branch.notes, branch.sourceMetadata, branch.forkedFromJumpId ? 'forked from jump' : ''),
+        to: withSearchParams(`/chains/${bundle.chain.id}/backups`, {}),
+        extraText: [branch.notes, branch.sourceMetadata],
+      });
     }
 
     for (const jumper of workspace.jumpers) {
-      pushResult(
-        results,
-        {
-          kind: 'jumper',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(jumper.name, 'Untitled Jumper'),
-          subtitle: `Jumper | ${chainTitle}`,
-          snippet: buildSearchSnippet(
-            query,
-            jumper.notes,
-            jumper.gender,
-            jumper.background.summary,
-            jumper.background.description,
-            jumper.personality,
-          ),
-          to: withSearchParams(`/chains/${bundle.chain.id}/jumpers`, {
-            jumper: jumper.id,
-            search: query,
-          }),
-          extraText: [jumper.gender, jumper.notes, jumper.personality, jumper.background, jumper.importSourceMetadata],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'jumper',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(jumper.name, 'Untitled Jumper'),
+        subtitle: `Jumper | ${chainTitle}`,
+        snippet: buildSearchSnippet(
+          '',
+          jumper.notes,
+          jumper.gender,
+          jumper.background.summary,
+          jumper.background.description,
+          jumper.personality,
+        ),
+        to: withSearchParams(`/chains/${bundle.chain.id}/jumpers`, {
+          jumper: jumper.id,
+        }),
+        extraText: [jumper.gender, jumper.notes, jumper.personality, jumper.background, jumper.importSourceMetadata],
+      });
     }
 
     for (const companion of workspace.companions) {
       const parentName = companion.parentJumperId ? jumperById.get(companion.parentJumperId)?.name ?? '' : '';
 
-      pushResult(
-        results,
-        {
-          kind: 'companion',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(companion.name, 'Untitled Companion'),
-          subtitle: `Companion | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, companion.role, companion.status, parentName, companion.importSourceMetadata),
-          to: withSearchParams(`/chains/${bundle.chain.id}/companions`, {
-            companion: companion.id,
-            search: query,
-          }),
-          extraText: [companion.role, companion.status, parentName, companion.importSourceMetadata],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'companion',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(companion.name, 'Untitled Companion'),
+        subtitle: `Companion | ${chainTitle}`,
+        snippet: buildSearchSnippet('', companion.role, companion.status, parentName, companion.importSourceMetadata),
+        to: withSearchParams(`/chains/${bundle.chain.id}/companions`, {
+          companion: companion.id,
+        }),
+        extraText: [companion.role, companion.status, parentName, companion.importSourceMetadata],
+      });
     }
 
     for (const jump of workspace.jumps) {
-      pushResult(
-        results,
-        {
-          kind: 'jump',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(jump.title, `Jump ${jump.orderIndex + 1}`),
-          subtitle: `Jump | ${jump.status} | ${jump.jumpType} | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, jump.duration, jump.importSourceMetadata),
-          to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${jump.id}`, { search: query }),
-          extraText: [jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'jump',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(jump.title, `Jump ${jump.orderIndex + 1}`),
+        subtitle: `Jump | ${jump.status} | ${jump.jumpType} | ${chainTitle}`,
+        snippet: buildSearchSnippet('', jump.duration, jump.importSourceMetadata),
+        to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${jump.id}`, {}),
+        extraText: [jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata],
+      });
     }
 
     for (const participation of workspace.participations) {
       const jump = jumpById.get(participation.jumpId);
       const jumper = jumperById.get(participation.jumperId);
 
-      pushResult(
-        results,
-        {
-          kind: 'participation',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: `${cleanLabel(jumper?.name, 'Jumper')} @ ${cleanLabel(jump?.title, 'Jump')}`,
-          subtitle: `Participation & Purchases | ${chainTitle}`,
-          snippet: buildSearchSnippet(
-            query,
-            participation.notes,
-            participation.narratives,
-            participation.origins,
-            participation.importSourceMetadata,
-          ),
-          to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${participation.jumpId}`, {
-            jumper: participation.jumperId,
-            search: query,
-            panel: 'participation',
-          }),
-          extraText: [
-            jumper?.name,
-            jump?.title,
-            participation.notes,
-            participation.narratives,
-            participation.origins,
-            participation.importSourceMetadata,
-          ],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'participation',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: `${cleanLabel(jumper?.name, 'Jumper')} @ ${cleanLabel(jump?.title, 'Jump')}`,
+        subtitle: `Participation & Purchases | ${chainTitle}`,
+        snippet: buildSearchSnippet(
+          '',
+          participation.notes,
+          participation.narratives,
+          participation.origins,
+          participation.importSourceMetadata,
+        ),
+        to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${participation.jumpId}`, {
+          jumper: participation.jumperId,
+          panel: 'participation',
+        }),
+        extraText: [
+          jumper?.name,
+          jump?.title,
+          participation.notes,
+          participation.narratives,
+          participation.origins,
+          participation.importSourceMetadata,
+        ],
+      });
     }
 
     for (const effect of workspace.effects) {
@@ -415,24 +434,18 @@ export function buildUniversalSearchResults(input: {
                   ? cleanLabel(snapshotById.get(effect.ownerEntityId)?.title, effect.ownerEntityType)
                   : effect.ownerEntityType;
 
-      pushResult(
-        results,
-        {
-          kind: 'effect',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(effect.title, 'Untitled Effect'),
-          subtitle: `Effect | ${effect.category} | ${effect.state} | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, effect.description, ownerLabel, effect.importSourceMetadata),
-          to: withSearchParams(`/chains/${bundle.chain.id}/effects`, {
-            effect: effect.id,
-            search: query,
-          }),
-          extraText: [effect.description, effect.category, effect.state, ownerLabel, effect.importSourceMetadata],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'effect',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(effect.title, 'Untitled Effect'),
+        subtitle: `Effect | ${effect.category} | ${effect.state} | ${chainTitle}`,
+        snippet: buildSearchSnippet('', effect.description, ownerLabel, effect.importSourceMetadata),
+        to: withSearchParams(`/chains/${bundle.chain.id}/effects`, {
+          effect: effect.id,
+        }),
+        extraText: [effect.description, effect.category, effect.state, ownerLabel, effect.importSourceMetadata],
+      });
     }
 
     for (const note of workspace.notes) {
@@ -449,135 +462,118 @@ export function buildUniversalSearchResults(input: {
                   ? cleanLabel(snapshotById.get(note.ownerEntityId)?.title, note.ownerEntityType)
                   : note.ownerEntityType;
 
-      pushResult(
-        results,
-        {
-          kind: 'note',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(note.title, 'Untitled Note'),
-          subtitle: `Note | ${note.noteType} | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, note.content, note.tags, ownerLabel),
-          to: withSearchParams(`/chains/${bundle.chain.id}/notes`, {
-            note: note.id,
-            search: query,
-          }),
-          extraText: [note.noteType, note.content, note.tags, ownerLabel],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'note',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(note.title, 'Untitled Note'),
+        subtitle: `Note | ${note.noteType} | ${chainTitle}`,
+        snippet: buildSearchSnippet('', note.content, note.tags, ownerLabel),
+        to: withSearchParams(`/chains/${bundle.chain.id}/notes`, {
+          note: note.id,
+        }),
+        extraText: [note.noteType, note.content, note.tags, ownerLabel],
+      });
     }
 
     for (const snapshot of workspace.snapshots) {
-      pushResult(
-        results,
-        {
-          kind: 'snapshot',
-          chainId: bundle.chain.id,
-          chainTitle,
-          title: cleanLabel(snapshot.title, 'Untitled Snapshot'),
-          subtitle: `Snapshot | ${chainTitle}`,
-          snippet: buildSearchSnippet(query, snapshot.description, snapshot.summary),
-          to: withSearchParams(`/chains/${bundle.chain.id}/backups`, {
-            snapshot: snapshot.id,
-            search: query,
-          }),
-          extraText: [snapshot.description, snapshot.summary],
-        },
-        query,
-        input.preferredChainId,
-      );
+      pushSearchIndexEntry(results, {
+        kind: 'snapshot',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(snapshot.title, 'Untitled Snapshot'),
+        subtitle: `Snapshot | ${chainTitle}`,
+        snippet: buildSearchSnippet('', snapshot.description, snapshot.summary),
+        to: withSearchParams(`/chains/${bundle.chain.id}/backups`, {
+          snapshot: snapshot.id,
+        }),
+        extraText: [snapshot.description, snapshot.summary],
+      });
     }
 
     const cosmicBackpackState = readCosmicBackpackState(bundle.chain);
 
-    pushResult(
-      results,
-      {
+    pushSearchIndexEntry(results, {
+      kind: 'cosmic-backpack',
+      chainId: bundle.chain.id,
+      chainTitle,
+      title: 'Cosmic Backpack plan notes',
+      subtitle: `Cosmic Backpack | ${chainTitle}`,
+      snippet: buildSearchSnippet(
+        '',
+        cosmicBackpackState.notes,
+        cosmicBackpackState.appearanceNotes,
+        cosmicBackpackState.containerForm,
+        cosmicBackpackState.customUpgrades,
+      ),
+      to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {}),
+      extraText: [
+        cosmicBackpackState.notes,
+        cosmicBackpackState.appearanceNotes,
+        cosmicBackpackState.containerForm,
+        cosmicBackpackState.customUpgrades,
+      ],
+    });
+
+    for (const option of cosmicBackpackOptionCatalog) {
+      pushSearchIndexEntry(results, {
         kind: 'cosmic-backpack',
         chainId: bundle.chain.id,
         chainTitle,
-        title: 'Cosmic Backpack plan notes',
+        title: option.title,
         subtitle: `Cosmic Backpack | ${chainTitle}`,
+        snippet: buildSearchSnippet('', option.description, option.note, option.costBp === 0 ? 'Free' : `${option.costBp} BP`),
+        to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {}),
+        extraText: [option.description, option.note, option.costBp],
+        preferredChainOnly: true,
+      });
+    }
+
+    for (const customUpgrade of cosmicBackpackState.customUpgrades) {
+      pushSearchIndexEntry(results, {
+        kind: 'cosmic-backpack',
+        chainId: bundle.chain.id,
+        chainTitle,
+        title: cleanLabel(customUpgrade.title, 'Custom Cosmic Backpack upgrade'),
+        subtitle: `Cosmic Backpack | Custom upgrade | ${chainTitle}`,
         snippet: buildSearchSnippet(
-          query,
-          cosmicBackpackState.notes,
-          cosmicBackpackState.appearanceNotes,
-          cosmicBackpackState.containerForm,
-          cosmicBackpackState.customUpgrades,
+          '',
+          customUpgrade.notes,
+          customUpgrade.costBp === 0 ? 'Free' : `${customUpgrade.costBp} BP`,
+          customUpgrade.addedVolumeFt3 > 0 ? `${customUpgrade.addedVolumeFt3} ft^3 added` : '',
+          customUpgrade.volumeMultiplier !== 1 ? `x${customUpgrade.volumeMultiplier} volume scale` : '',
         ),
-        to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
-          highlight: query,
-        }),
+        to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {}),
         extraText: [
-          cosmicBackpackState.notes,
-          cosmicBackpackState.appearanceNotes,
-          cosmicBackpackState.containerForm,
-          cosmicBackpackState.customUpgrades,
+          customUpgrade.notes,
+          customUpgrade.costBp,
+          customUpgrade.addedVolumeFt3,
+          customUpgrade.volumeMultiplier,
         ],
-      },
-      query,
-      input.preferredChainId,
-    );
-
-    if (input.preferredChainId === bundle.chain.id) {
-      for (const option of cosmicBackpackOptionCatalog) {
-        pushResult(
-          results,
-          {
-            kind: 'cosmic-backpack',
-            chainId: bundle.chain.id,
-            chainTitle,
-            title: option.title,
-            subtitle: `Cosmic Backpack | ${chainTitle}`,
-            snippet: buildSearchSnippet(query, option.description, option.note, option.costBp === 0 ? 'Free' : `${option.costBp} BP`),
-            to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
-              highlight: query,
-            }),
-            extraText: [option.description, option.note, option.costBp],
-          },
-          query,
-          input.preferredChainId,
-        );
-      }
-
-      for (const customUpgrade of cosmicBackpackState.customUpgrades) {
-        pushResult(
-          results,
-          {
-            kind: 'cosmic-backpack',
-            chainId: bundle.chain.id,
-            chainTitle,
-            title: cleanLabel(customUpgrade.title, 'Custom Cosmic Backpack upgrade'),
-            subtitle: `Cosmic Backpack | Custom upgrade | ${chainTitle}`,
-            snippet: buildSearchSnippet(
-              query,
-              customUpgrade.notes,
-              customUpgrade.costBp === 0 ? 'Free' : `${customUpgrade.costBp} BP`,
-              customUpgrade.addedVolumeFt3 > 0 ? `${customUpgrade.addedVolumeFt3} ft^3 added` : '',
-              customUpgrade.volumeMultiplier !== 1 ? `x${customUpgrade.volumeMultiplier} volume scale` : '',
-            ),
-            to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
-              highlight: query,
-            }),
-            extraText: [
-              customUpgrade.notes,
-              customUpgrade.costBp,
-              customUpgrade.addedVolumeFt3,
-              customUpgrade.volumeMultiplier,
-            ],
-          },
-          query,
-          input.preferredChainId,
-        );
-      }
+        preferredChainOnly: true,
+      });
     }
   }
 
-  return results
-    .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
-    .slice(0, 120);
+  return results;
+}
+
+export function buildUniversalSearchResults(input: {
+  query: string;
+  overviews: ChainOverview[];
+  bundles: NativeChainBundle[];
+  preferredChainId?: string;
+}) {
+  const index = buildUniversalSearchIndex({
+    overviews: input.overviews,
+    bundles: input.bundles,
+  });
+
+  return queryUniversalSearchResults({
+    query: input.query,
+    index,
+    preferredChainId: input.preferredChainId,
+  });
 }
 
 export function readRouteSearchValue(search: string) {

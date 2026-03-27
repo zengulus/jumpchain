@@ -1,22 +1,17 @@
+import type { ComponentType } from 'react';
 import { Navigate, createHashRouter } from 'react-router-dom';
 import { PageShell } from '../components/PageShell';
-import { ChainOverviewPage } from '../features/chain-overview/ChainOverviewPage';
-import { BackupsPage } from '../features/backups/BackupsPage';
 import { HomePage } from '../features/home/HomePage';
-import { ImportDebugPage } from '../features/advanced-import/ImportDebugPage';
-import { JumpersPage } from '../features/jumpers/JumpersPage';
-import { CompanionsPage } from '../features/companions/CompanionsPage';
-import { JumpsPage } from '../features/jumps/JumpsPage';
-import { ParticipationPage } from '../features/participation/ParticipationPage';
-import { EffectsPage } from '../features/effects/EffectsPage';
-import { ChainwideRulesPage } from '../features/chainwide-rules/ChainwideRulesPage';
-import { CurrentJumpRulesPage } from '../features/current-jump-rules/CurrentJumpRulesPage';
-import { BodymodPage } from '../features/bodymod/BodymodPage';
-import { TimelinePage } from '../features/timeline/TimelinePage';
-import { NotesPage } from '../features/notes/NotesPage';
-import { ChainWorkspaceLayout } from '../features/workspace/ChainWorkspaceLayout';
-import { CosmicBackpackPage } from '../features/cosmic-backpack/CosmicBackpackPage';
-import { SearchResultsPage } from '../features/search/SearchResultsPage';
+
+function lazyRoute<TModule extends Record<string, unknown>>(loader: () => Promise<TModule>, exportName: keyof TModule) {
+  return async () => {
+    const module = await loader();
+
+    return {
+      Component: module[exportName] as ComponentType,
+    };
+  };
+}
 
 export const appRouter = createHashRouter([
   {
@@ -29,15 +24,15 @@ export const appRouter = createHashRouter([
       },
       {
         path: 'import',
-        element: <ImportDebugPage />,
+        lazy: lazyRoute(() => import('../features/advanced-import/ImportDebugPage'), 'ImportDebugPage'),
       },
       {
         path: 'search',
-        element: <SearchResultsPage />,
+        lazy: lazyRoute(() => import('../features/search/SearchResultsPage'), 'SearchResultsPage'),
       },
       {
         path: 'chains/:chainId',
-        element: <ChainWorkspaceLayout />,
+        lazy: lazyRoute(() => import('../features/workspace/ChainWorkspaceLayout'), 'ChainWorkspaceLayout'),
         children: [
           {
             index: true,
@@ -45,47 +40,47 @@ export const appRouter = createHashRouter([
           },
           {
             path: 'overview',
-            element: <ChainOverviewPage />,
+            lazy: lazyRoute(() => import('../features/chain-overview/ChainOverviewPage'), 'ChainOverviewPage'),
           },
           {
             path: 'jumpers',
-            element: <JumpersPage />,
+            lazy: lazyRoute(() => import('../features/jumpers/JumpersPage'), 'JumpersPage'),
           },
           {
             path: 'companions',
-            element: <CompanionsPage />,
+            lazy: lazyRoute(() => import('../features/companions/CompanionsPage'), 'CompanionsPage'),
           },
           {
             path: 'jumps',
-            element: <JumpsPage />,
+            lazy: lazyRoute(() => import('../features/jumps/JumpsPage'), 'JumpsPage'),
           },
           {
             path: 'jumps/:jumpId',
-            element: <JumpsPage />,
+            lazy: lazyRoute(() => import('../features/jumps/JumpsPage'), 'JumpsPage'),
           },
           {
             path: 'participation/:jumpId',
-            element: <ParticipationPage />,
+            lazy: lazyRoute(() => import('../features/participation/ParticipationPage'), 'ParticipationPage'),
           },
           {
             path: 'effects',
-            element: <EffectsPage />,
+            lazy: lazyRoute(() => import('../features/effects/EffectsPage'), 'EffectsPage'),
           },
           {
             path: 'rules',
-            element: <ChainwideRulesPage />,
+            lazy: lazyRoute(() => import('../features/chainwide-rules/ChainwideRulesPage'), 'ChainwideRulesPage'),
           },
           {
             path: 'current-jump-rules',
-            element: <CurrentJumpRulesPage />,
+            lazy: lazyRoute(() => import('../features/current-jump-rules/CurrentJumpRulesPage'), 'CurrentJumpRulesPage'),
           },
           {
             path: 'bodymod',
-            element: <BodymodPage />,
+            lazy: lazyRoute(() => import('../features/bodymod/BodymodPage'), 'BodymodPage'),
           },
           {
             path: 'cosmic-backpack',
-            element: <CosmicBackpackPage />,
+            lazy: lazyRoute(() => import('../features/cosmic-backpack/CosmicBackpackPage'), 'CosmicBackpackPage'),
           },
           {
             path: 'personal-reality',
@@ -93,15 +88,15 @@ export const appRouter = createHashRouter([
           },
           {
             path: 'timeline',
-            element: <TimelinePage />,
+            lazy: lazyRoute(() => import('../features/timeline/TimelinePage'), 'TimelinePage'),
           },
           {
             path: 'notes',
-            element: <NotesPage />,
+            lazy: lazyRoute(() => import('../features/notes/NotesPage'), 'NotesPage'),
           },
           {
             path: 'backups',
-            element: <BackupsPage />,
+            lazy: lazyRoute(() => import('../features/backups/BackupsPage'), 'BackupsPage'),
           },
         ],
       },

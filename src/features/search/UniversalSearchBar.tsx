@@ -1,32 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
-import { buildUniversalSearchResults, readRouteSearchValue, withSearchParams } from './searchUtils';
+import { queryUniversalSearchResults, readRouteSearchValue, withSearchParams } from './searchUtils';
 
 export function UniversalSearchBar() {
   const { simpleMode } = useUiPreferences();
   const location = useLocation();
   const navigate = useNavigate();
-  const searchData = useUniversalSearchData();
+  const { data: searchData, ensureLoaded, isLoading } = useUniversalSearchData();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [draftQuery, setDraftQuery] = useState(() => readRouteSearchValue(location.search));
   const [isOpen, setIsOpen] = useState(false);
   const currentChainId = matchPath('/chains/:chainId/*', location.pathname)?.params.chainId;
   const preferredChainId = currentChainId ?? new URLSearchParams(location.search).get('chain') ?? undefined;
   const trimmedQuery = draftQuery.trim();
+  const deferredTrimmedQuery = useDeferredValue(trimmedQuery);
   const results = useMemo(
     () =>
       searchData
-        ? buildUniversalSearchResults({
-            query: trimmedQuery,
-            overviews: searchData.overviews,
-            bundles: searchData.bundles,
+        ? queryUniversalSearchResults({
+            query: deferredTrimmedQuery,
+            index: searchData.index,
             preferredChainId,
           })
         : [],
-    [preferredChainId, searchData, trimmedQuery],
+    [deferredTrimmedQuery, preferredChainId, searchData],
   );
   const previewResults = results.slice(0, 12);
   const searchPagePath = withSearchParams('/search', {
@@ -82,10 +82,14 @@ export function UniversalSearchBar() {
             value={draftQuery}
             placeholder={searchPlaceholder}
             onChange={(event) => {
+              ensureLoaded();
               setDraftQuery(event.target.value);
               setIsOpen(true);
             }}
-            onFocus={() => setIsOpen(true)}
+            onFocus={() => {
+              ensureLoaded();
+              setIsOpen(true);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 setIsOpen(false);
@@ -102,7 +106,7 @@ export function UniversalSearchBar() {
         <div className="page-shell__search-panel">
           <div className="page-shell__search-panel-header">
             <strong>{searchPanelTitle}</strong>
-            <span>{searchData ? `${results.length} matches` : 'Building index...'}</span>
+            <span>{searchData ? `${results.length} matches` : isLoading ? 'Building index...' : 'Type to search'}</span>
           </div>
 
           {trimmedQuery.length < 2 ? (
