@@ -39,17 +39,16 @@ import {
 } from './model';
 
 const CUBIC_FEET_TO_CUBIC_METERS = 0.028316846592;
-const SIDE_LENGTH_UNITS: Array<{ label: string; sizeFt: number }> = [
-  { label: 'ft', sizeFt: 1 },
-  { label: 'mi', sizeFt: 5_280 },
-  { label: 'Earth diameters', sizeFt: 41_804_000 },
-  { label: 'AU', sizeFt: 4.90806624e11 },
-  { label: 'ly', sizeFt: 3.10399e16 },
-  { label: 'pc', sizeFt: 1.0117e17 },
-  { label: 'kpc', sizeFt: 1.0117e20 },
-  { label: 'Mpc', sizeFt: 1.0117e23 },
-  { label: 'Gpc', sizeFt: 1.0117e26 },
-  { label: 'observable-universe diameters', sizeFt: 2.9e27 },
+const DISPLAY_BASE_SIDE_METERS = 3;
+const DISPLAY_LENGTH_UNITS: Array<{ label: string; sizeMeters: number; tight?: boolean }> = [
+  { label: 'm', sizeMeters: 1, tight: true },
+  { label: 'km', sizeMeters: 1e3, tight: true },
+  { label: 'Earth diameters', sizeMeters: 12_742_000 },
+  { label: 'Sun diameters', sizeMeters: 1_391_400_000 },
+  { label: 'AU', sizeMeters: 149_597_870_700 },
+  { label: 'light-years', sizeMeters: 9.4607e15 },
+  { label: 'Milky Way diameters', sizeMeters: 9.4607e20 },
+  { label: 'observable-universe diameters', sizeMeters: 8.8e26 },
 ] as const;
 
 function formatBudget(value: number) {
@@ -74,66 +73,42 @@ function formatSignedBudget(value: number) {
   return '0';
 }
 
-function formatVolumePair(valueFt3: number) {
-  return `${formatDecimal(valueFt3)} ft^3 / ${formatDecimal(valueFt3 * CUBIC_FEET_TO_CUBIC_METERS)} m^3`;
+function convertFt3ToM3(valueFt3: number) {
+  return valueFt3 * CUBIC_FEET_TO_CUBIC_METERS;
 }
 
-function formatScaledRange(lower: number, upper: number) {
-  const formatter =
-    upper >= 100
-      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
-      : upper >= 10
-        ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-        : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-
-  if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
-    return 'very large';
-  }
-
-  if (upper >= 1e6) {
-    return `${lower.toExponential(2)}-${upper.toExponential(2)}`;
-  }
-
-  return `${formatter.format(lower)}-${formatter.format(upper)}`;
+function convertM3ToFt3(valueM3: number) {
+  return valueM3 / CUBIC_FEET_TO_CUBIC_METERS;
 }
 
-function getVolumeReference(storageVolumeFt3: number) {
+function getDisplayCubeSideMeters(storageVolumeFt3: number) {
   if (!Number.isFinite(storageVolumeFt3) || storageVolumeFt3 <= 0) {
-    return {
-      text: 'a cube about 8-17 ft on a side',
-      oom: 0,
-    };
+    return 0;
   }
 
-  const relativeOom = Math.max(
-    0,
-    Math.floor(Math.log10(storageVolumeFt3 / COSMIC_BACKPACK_BASE_VOLUME_FT3)),
-  );
+  return DISPLAY_BASE_SIDE_METERS * Math.cbrt(storageVolumeFt3 / COSMIC_BACKPACK_BASE_VOLUME_FT3);
+}
 
-  if (relativeOom > 100) {
-    return {
-      text: 'Big enough',
-      oom: relativeOom,
-    };
+function formatScaledLength(valueMeters: number) {
+  if (!Number.isFinite(valueMeters) || valueMeters <= 0) {
+    return `0${DISPLAY_LENGTH_UNITS[0].label}`;
   }
 
-  const lowerVolumeFt3 = COSMIC_BACKPACK_BASE_VOLUME_FT3 * 10 ** relativeOom;
-  const upperVolumeFt3 = COSMIC_BACKPACK_BASE_VOLUME_FT3 * 10 ** (relativeOom + 1);
-  const lowerSideFt = Math.cbrt(lowerVolumeFt3);
-  const upperSideFt = Math.cbrt(upperVolumeFt3);
-  const midpointSideFt = Math.sqrt(lowerSideFt * upperSideFt);
   const unit =
-    [...SIDE_LENGTH_UNITS]
+    [...DISPLAY_LENGTH_UNITS]
       .reverse()
-      .find((candidate) => midpointSideFt >= candidate.sizeFt)
-    ?? SIDE_LENGTH_UNITS[0];
-  const lowerInUnit = lowerSideFt / unit.sizeFt;
-  const upperInUnit = upperSideFt / unit.sizeFt;
+      .find((candidate) => valueMeters >= candidate.sizeMeters)
+    ?? DISPLAY_LENGTH_UNITS[0];
+  const scaledValue = valueMeters / unit.sizeMeters;
+  const maximumFractionDigits = scaledValue >= 100 ? 0 : scaledValue >= 10 ? 1 : 2;
+  const formattedValue = new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(scaledValue);
 
-  return {
-    text: `a cube about ${formatScaledRange(lowerInUnit, upperInUnit)} ${unit.label} on a side`,
-    oom: relativeOom,
-  };
+  return unit.tight ? `${formattedValue}${unit.label}` : `${formattedValue} ${unit.label}`;
+}
+
+function formatDisplayCubeDimensions(storageVolumeFt3: number) {
+  const sideLabel = formatScaledLength(getDisplayCubeSideMeters(storageVolumeFt3));
+  return `${sideLabel} x ${sideLabel} x ${sideLabel}`;
 }
 
 function getRequirementText(option: CosmicBackpackOption) {
@@ -406,21 +381,22 @@ function CosmicBackpackCustomUpgradeSection(props: {
 
                 <div className="field-grid field-grid--two">
                   <label className="field">
-                    <span>Add volume (ft^3)</span>
+                    <span>Add space (m^3)</span>
                     <input
                       type="number"
                       min={0}
-                      value={upgrade.addedVolumeFt3}
+                      step={0.1}
+                      value={Number(convertFt3ToM3(upgrade.addedVolumeFt3).toFixed(2))}
                       onChange={(event) =>
                         updateUpgrade(upgrade.id, (currentUpgrade) => ({
                           ...currentUpgrade,
-                          addedVolumeFt3: Math.max(0, Number(event.target.value) || 0),
+                          addedVolumeFt3: Math.max(0, convertM3ToFt3(Number(event.target.value) || 0)),
                         }))
                       }
                     />
                     <small className="field-hint">
                       {upgrade.addedVolumeFt3 > 0
-                        ? `Adds ${formatVolumePair(upgrade.addedVolumeFt3)}.`
+                        ? `Adds about ${formatDisplayCubeDimensions(upgrade.addedVolumeFt3)} of extra room.`
                         : 'Leave at 0 if this upgrade does not add raw space.'}
                     </small>
                   </label>
@@ -524,13 +500,9 @@ export function CosmicBackpackPage() {
     state.appearanceNotes.trim().length > 0 ||
     state.containerForm.trim().length > 0 ||
     state.notes.trim().length > 0;
-  const volumeReference = getVolumeReference(summary.storageVolumeFt3);
   const coreUpgrades = cosmicBackpackOptionCatalog.filter((option) => option.category === 'core-upgrade');
   const attachments = cosmicBackpackOptionCatalog.filter((option) => option.category === 'attachment');
   const modifiers = cosmicBackpackOptionCatalog.filter((option) => option.category === 'modifier');
-  const selectedCoreUpgradeCount = coreUpgrades.filter((option) => selectedOptionIds.includes(option.id)).length;
-  const selectedAttachmentCount = attachments.filter((option) => selectedOptionIds.includes(option.id)).length;
-  const selectedModifierCount = modifiers.filter((option) => selectedOptionIds.includes(option.id)).length;
   const activeLoadoutCount = selectedOptions.length + state.customUpgrades.length;
 
   if (!workspace.activeBranch) {
@@ -598,7 +570,7 @@ export function CosmicBackpackPage() {
       <StatusNoticeBanner notice={notice} />
 
       {simpleMode ? (
-        <details className="details-panel" open={hasStarted}>
+        <details className="details-panel">
           <summary className="details-panel__summary">
             <span>{cosmicBackpackSetupGuide.title}</span>
             <div className="inline-meta">
@@ -644,13 +616,8 @@ export function CosmicBackpackPage() {
             <span>Net transferred BP</span>
           </article>
           <article className="metric">
-            <strong>{formatVolumePair(summary.storageVolumeFt3)}</strong>
-            <span>Interior volume</span>
-            <small className="field-hint">
-              {volumeReference.text === 'Big enough'
-                ? 'As much space as... well, big enough.'
-                : `As much space as... ${volumeReference.text} (OoM +${volumeReference.oom}).`}
-            </small>
+            <strong>{formatDisplayCubeDimensions(summary.storageVolumeFt3)}</strong>
+            <span>Interior size</span>
           </article>
           <article className="metric">
             <strong>{summary.selectedOptionCount}</strong>
@@ -661,7 +628,7 @@ export function CosmicBackpackPage() {
             <span>Custom upgrades</span>
             {summary.customUpgradeCount > 0 ? (
               <small className="field-hint">
-                x{formatDecimal(summary.customVolumeMultiplier)} scaling and +{formatDecimal(summary.customAddedVolumeFt3)} ft^3 custom volume.
+                x{formatDecimal(summary.customVolumeMultiplier)} scaling with added custom space.
               </small>
             ) : null}
           </article>
@@ -699,7 +666,7 @@ export function CosmicBackpackPage() {
           </p>
           <p>The base bag is always light, comfortable to carry, and returns within a day if it is lost or stolen.</p>
           <div className="inline-meta">
-            <span className="pill pill--soft">8 x 8 x 8 feet</span>
+            <span className="pill pill--soft">3m x 3m x 3m</span>
             <span className="pill pill--soft">Indestructible</span>
             <span className="pill pill--soft">Always returns</span>
           </div>
@@ -780,7 +747,6 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
-        defaultOpen={selectedCoreUpgradeCount > 0 || (!hasStarted && highlightQuery.trim().length === 0)}
       />
 
       <CosmicBackpackOptionSection
@@ -790,7 +756,6 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
-        defaultOpen={selectedAttachmentCount > 0 || highlightQuery.trim().length > 0}
       />
 
       <CosmicBackpackOptionSection
@@ -801,13 +766,11 @@ export function CosmicBackpackPage() {
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
         lockedOptionIds={[...cosmicBackpackMandatoryOptionIds]}
-        defaultOpen={selectedModifierCount > 0 && highlightQuery.trim().length > 0}
       />
 
       <CosmicBackpackCustomUpgradeSection
         customUpgrades={state.customUpgrades}
         highlightQuery={highlightQuery}
-        defaultOpen={state.customUpgrades.length > 0}
         onChange={(nextCustomUpgrades) =>
           updateState((currentState) => ({
             ...currentState,
@@ -837,7 +800,7 @@ export function CosmicBackpackPage() {
               <li key={upgrade.id}>
                 <strong>{upgrade.title}</strong> {upgrade.costBp === 0 ? '(Free)' : `(${formatDecimal(upgrade.costBp)} BP)`}
                 {upgrade.addedVolumeFt3 > 0 || upgrade.volumeMultiplier !== 1
-                  ? ` | ${upgrade.addedVolumeFt3 > 0 ? `+${formatDecimal(upgrade.addedVolumeFt3)} ft^3` : ''}${upgrade.addedVolumeFt3 > 0 && upgrade.volumeMultiplier !== 1 ? ', ' : ''}${upgrade.volumeMultiplier !== 1 ? `x${formatDecimal(upgrade.volumeMultiplier)} scale` : ''}`
+                  ? ` | ${upgrade.addedVolumeFt3 > 0 ? `+${formatDisplayCubeDimensions(upgrade.addedVolumeFt3)} equivalent` : ''}${upgrade.addedVolumeFt3 > 0 && upgrade.volumeMultiplier !== 1 ? ', ' : ''}${upgrade.volumeMultiplier !== 1 ? `x${formatDecimal(upgrade.volumeMultiplier)} scale` : ''}`
                   : ''}
               </li>
             ))}
