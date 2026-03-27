@@ -32,6 +32,16 @@ function createChain(id: string, title: string): Chain {
       cosmicBackpack: {
         notes: 'Garage-ready loadout with a mobile workshop and shelter.',
         appearanceNotes: 'Dark canvas backpack with archive pins.',
+        customUpgrades: [
+          {
+            id: 'garage-annex',
+            title: 'Garage Annex',
+            costBp: 75,
+            addedVolumeFt3: 1500,
+            volumeMultiplier: 1,
+            notes: 'Fold-out garage workspace for cross-supplement warehouse tools.',
+          },
+        ],
       },
     },
   };
@@ -300,5 +310,27 @@ describe('search utilities', () => {
 
     expect(withoutPreference.some((result) => result.kind === 'cosmic-backpack' && result.title.toLowerCase().includes('hammerspace'))).toBe(false);
     expect(withPreference.some((result) => result.kind === 'cosmic-backpack' && result.title.toLowerCase().includes('hammerspace'))).toBe(true);
+  });
+
+  it('surfaces custom cosmic backpack upgrades in search results', () => {
+    const bundle = createBundle('chain-alpha', 'Alpha Chain');
+    const results = buildUniversalSearchResults({
+      query: 'garage annex',
+      overviews: [
+        {
+          chainId: bundle.chain.id,
+          title: bundle.chain.title,
+          updatedAt: now,
+          activeBranchId: bundle.chain.activeBranchId,
+          jumperCount: 1,
+          jumpCount: 1,
+          importReportCount: 0,
+        },
+      ],
+      bundles: [bundle],
+      preferredChainId: bundle.chain.id,
+    });
+
+    expect(results.some((result) => result.kind === 'cosmic-backpack' && result.title === 'Garage Annex')).toBe(true);
   });
 });

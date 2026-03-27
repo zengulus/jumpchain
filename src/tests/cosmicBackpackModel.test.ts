@@ -79,4 +79,28 @@ describe('cosmic backpack supplement model', () => {
     expect(summary.remainingBp).toBe(1300);
     expect(summary.selectedOptionCount).toBe(0);
   });
+
+  it('lets custom upgrades add BP cost, flat volume, and scaling', () => {
+    const state = createDefaultCosmicBackpackState();
+    state.selectedOptionIds = ['more-space'];
+    state.customUpgrades = [
+      {
+        id: 'annex',
+        title: 'Fold-Out Annex',
+        costBp: 75,
+        addedVolumeFt3: 256,
+        volumeMultiplier: 3,
+        notes: 'Imported warehouse wing.',
+      },
+    ];
+
+    const summary = buildCosmicBackpackSummary(state);
+
+    expect(summary.spentBp).toBe(275);
+    expect(summary.customUpgradeCount).toBe(1);
+    expect(summary.customSpentBp).toBe(75);
+    expect(summary.customAddedVolumeFt3).toBe(256);
+    expect(summary.customVolumeMultiplier).toBe(3);
+    expect(summary.storageVolumeFt3).toBe(3328);
+  });
 });

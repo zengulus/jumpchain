@@ -235,6 +235,16 @@ describe('native persistence and round-trip safety', () => {
     const createdBundle = await createBlankChain('Cosmic Backpack Reload');
     const cosmicBackpackState = createDefaultCosmicBackpackState();
     cosmicBackpackState.selectedOptionIds = ['hammerspace', 'magic-tent', 'crafting-tools'];
+    cosmicBackpackState.customUpgrades = [
+      {
+        id: 'garage-annex',
+        title: 'Garage Annex',
+        costBp: 75,
+        addedVolumeFt3: 1500,
+        volumeMultiplier: 1,
+        notes: 'Imported from another warehouse supplement.',
+      },
+    ];
     cosmicBackpackState.appearanceNotes = 'Weathered expedition pack with brass buckles.';
     cosmicBackpackState.notes = 'Portable camp-and-workshop package.';
 
@@ -248,12 +258,13 @@ describe('native persistence and round-trip safety', () => {
 
     const reloadedBundle = await getChainBundle(createdBundle.chain.id);
     const reloadedCosmicBackpack = reloadedBundle?.chain.importSourceMetadata.cosmicBackpack as
-      | { appearanceNotes?: string; notes?: string; selectedOptionIds?: string[] }
+      | { appearanceNotes?: string; notes?: string; selectedOptionIds?: string[]; customUpgrades?: Array<{ title?: string }> }
       | undefined;
 
     expect(reloadedCosmicBackpack?.appearanceNotes).toContain('brass buckles');
     expect(reloadedCosmicBackpack?.notes).toContain('Portable camp');
     expect(reloadedCosmicBackpack?.selectedOptionIds).toContain('hammerspace');
+    expect(reloadedCosmicBackpack?.customUpgrades?.[0]?.title).toBe('Garage Annex');
   });
 
   it('deletes a chain and cascades its chain-owned records out of IndexedDB', async () => {

@@ -18,6 +18,7 @@ import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { SetupGuidePanels, cosmicBackpackSetupGuide } from '../supplement-guides/SetupGuidePanels';
 import {
+  COSMIC_BACKPACK_BASE_VOLUME_FT3,
   COSMIC_BACKPACK_TOTAL_BP,
   cosmicBackpackMandatoryOptionIds,
   cosmicBackpackBaseDescription,
@@ -28,15 +29,37 @@ import {
 import {
   COSMIC_BACKPACK_BP_CURRENCY_KEY,
   buildCosmicBackpackSummary,
+  createBlankCosmicBackpackCustomUpgrade,
   createDefaultCosmicBackpackState,
   getCosmicBackpackMissingRequirementIds,
   readCosmicBackpackState,
   setCosmicBackpackOptionSelected,
+  type CosmicBackpackCustomUpgrade,
   writeCosmicBackpackState,
 } from './model';
 
+const CUBIC_FEET_TO_CUBIC_METERS = 0.028316846592;
+const SIDE_LENGTH_UNITS: Array<{ label: string; sizeFt: number }> = [
+  { label: 'ft', sizeFt: 1 },
+  { label: 'mi', sizeFt: 5_280 },
+  { label: 'Earth diameters', sizeFt: 41_804_000 },
+  { label: 'AU', sizeFt: 4.90806624e11 },
+  { label: 'ly', sizeFt: 3.10399e16 },
+  { label: 'pc', sizeFt: 1.0117e17 },
+  { label: 'kpc', sizeFt: 1.0117e20 },
+  { label: 'Mpc', sizeFt: 1.0117e23 },
+  { label: 'Gpc', sizeFt: 1.0117e26 },
+  { label: 'observable-universe diameters', sizeFt: 2.9e27 },
+] as const;
+
 function formatBudget(value: number) {
   return new Intl.NumberFormat().format(value);
+}
+
+function formatDecimal(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatSignedBudget(value: number) {
@@ -49,6 +72,68 @@ function formatSignedBudget(value: number) {
   }
 
   return '0';
+}
+
+function formatVolumePair(valueFt3: number) {
+  return `${formatDecimal(valueFt3)} ft^3 / ${formatDecimal(valueFt3 * CUBIC_FEET_TO_CUBIC_METERS)} m^3`;
+}
+
+function formatScaledRange(lower: number, upper: number) {
+  const formatter =
+    upper >= 100
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+      : upper >= 10
+        ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
+        : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+
+  if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
+    return 'very large';
+  }
+
+  if (upper >= 1e6) {
+    return `${lower.toExponential(2)}-${upper.toExponential(2)}`;
+  }
+
+  return `${formatter.format(lower)}-${formatter.format(upper)}`;
+}
+
+function getVolumeReference(storageVolumeFt3: number) {
+  if (!Number.isFinite(storageVolumeFt3) || storageVolumeFt3 <= 0) {
+    return {
+      text: 'a cube about 8-17 ft on a side',
+      oom: 0,
+    };
+  }
+
+  const relativeOom = Math.max(
+    0,
+    Math.floor(Math.log10(storageVolumeFt3 / COSMIC_BACKPACK_BASE_VOLUME_FT3)),
+  );
+
+  if (relativeOom > 100) {
+    return {
+      text: 'Big enough',
+      oom: relativeOom,
+    };
+  }
+
+  const lowerVolumeFt3 = COSMIC_BACKPACK_BASE_VOLUME_FT3 * 10 ** relativeOom;
+  const upperVolumeFt3 = COSMIC_BACKPACK_BASE_VOLUME_FT3 * 10 ** (relativeOom + 1);
+  const lowerSideFt = Math.cbrt(lowerVolumeFt3);
+  const upperSideFt = Math.cbrt(upperVolumeFt3);
+  const midpointSideFt = Math.sqrt(lowerSideFt * upperSideFt);
+  const unit =
+    [...SIDE_LENGTH_UNITS]
+      .reverse()
+      .find((candidate) => midpointSideFt >= candidate.sizeFt)
+    ?? SIDE_LENGTH_UNITS[0];
+  const lowerInUnit = lowerSideFt / unit.sizeFt;
+  const upperInUnit = upperSideFt / unit.sizeFt;
+
+  return {
+    text: `a cube about ${formatScaledRange(lowerInUnit, upperInUnit)} ${unit.label} on a side`,
+    oom: relativeOom,
+  };
 }
 
 function getRequirementText(option: CosmicBackpackOption) {
@@ -127,92 +212,275 @@ function CosmicBackpackOptionSection(props: {
   highlightQuery: string;
   onToggle: (optionId: string, checked: boolean) => void;
   lockedOptionIds?: string[];
+  defaultOpen?: boolean;
 }) {
+  const selectedCount = props.options.filter((option) => props.selectedOptionIds.includes(option.id)).length;
+
   return (
-    <section className="card stack">
-      <div className="section-heading">
-        <h3>{props.title}</h3>
-        <span className="pill">{props.options.length}</span>
-      </div>
-      <p>{props.description}</p>
-      <div className="checkbox-list">
-        {props.options.map((option) => {
-          const selected = props.selectedOptionIds.includes(option.id);
-          const locked = props.lockedOptionIds?.includes(option.id) ?? false;
-          const missingRequirementIds = getCosmicBackpackMissingRequirementIds(
-            {
-              version: 1,
-              selectedOptionIds: props.selectedOptionIds,
-              appearanceNotes: '',
-              containerForm: '',
-              notes: '',
-            },
-            option.id,
-          );
-          const disabled = missingRequirementIds.length > 0 && !selected;
-          const requirementText = getRequirementText(option);
+    <details className="details-panel" open={props.defaultOpen ? true : undefined}>
+      <summary className="details-panel__summary">
+        <span>{props.title}</span>
+        <div className="inline-meta">
+          <span className="pill">{selectedCount} selected</span>
+          <span className="pill pill--soft">{props.options.length} total</span>
+        </div>
+      </summary>
+      <div className="details-panel__body stack stack--compact">
+        <p>{props.description}</p>
+        <div className="checkbox-list">
+          {props.options.map((option) => {
+            const selected = props.selectedOptionIds.includes(option.id);
+            const locked = props.lockedOptionIds?.includes(option.id) ?? false;
+            const missingRequirementIds = getCosmicBackpackMissingRequirementIds(
+              {
+                version: 1,
+                selectedOptionIds: props.selectedOptionIds,
+                customUpgrades: [],
+                appearanceNotes: '',
+                containerForm: '',
+                notes: '',
+              },
+              option.id,
+            );
+            const disabled = missingRequirementIds.length > 0 && !selected;
+            const requirementText = getRequirementText(option);
 
-          return (
-            <article className="selection-editor" key={option.id}>
-              <div className="selection-editor__header">
-                <div className="stack stack--compact">
-                  <strong>
-                    <SearchHighlight text={option.title} query={props.highlightQuery} />
-                  </strong>
-                  <p className="editor-section__copy">
-                    <SearchHighlight text={option.description} query={props.highlightQuery} />
-                  </p>
+            return (
+              <article className="selection-editor" key={option.id}>
+                <div className="selection-editor__header">
+                  <div className="stack stack--compact">
+                    <strong>
+                      <SearchHighlight text={option.title} query={props.highlightQuery} />
+                    </strong>
+                    <p className="editor-section__copy">
+                      <SearchHighlight text={option.description} query={props.highlightQuery} />
+                    </p>
+                  </div>
+                  <span className="pill pill--soft">{option.costBp === 0 ? 'Free' : `${option.costBp} BP`}</span>
                 </div>
-                <span className="pill pill--soft">{option.costBp === 0 ? 'Free' : `${option.costBp} BP`}</span>
-              </div>
 
-              {option.note ? (
-                <p className="editor-section__copy">
-                  <SearchHighlight text={option.note} query={props.highlightQuery} />
-                </p>
-              ) : null}
+                {option.note ? (
+                  <p className="editor-section__copy">
+                    <SearchHighlight text={option.note} query={props.highlightQuery} />
+                  </p>
+                ) : null}
 
-              {requirementText ? (
-                <p className="field-hint">
-                  Requires <SearchHighlight text={requirementText} query={props.highlightQuery} />.
-                </p>
-              ) : null}
+                {requirementText ? (
+                  <p className="field-hint">
+                    Requires <SearchHighlight text={requirementText} query={props.highlightQuery} />.
+                  </p>
+                ) : null}
 
-              {disabled ? (
-                <p className="field-hint">
-                  Buy{' '}
-                  <SearchHighlight
-                    text={missingRequirementIds
-                      .map((requirementId) => cosmicBackpackOptionsById[requirementId]?.title ?? requirementId)
-                      .join(', ')}
-                    query={props.highlightQuery}
-                  />{' '}
-                  first.
-                </p>
-              ) : null}
+                {disabled ? (
+                  <p className="field-hint">
+                    Buy{' '}
+                    <SearchHighlight
+                      text={missingRequirementIds
+                        .map((requirementId) => cosmicBackpackOptionsById[requirementId]?.title ?? requirementId)
+                        .join(', ')}
+                      query={props.highlightQuery}
+                    />{' '}
+                    first.
+                  </p>
+                ) : null}
 
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  disabled={disabled || locked}
-                  onChange={(event) => props.onToggle(option.id, event.target.checked)}
-                />
-                <span>
-                  {locked
-                    ? 'Always included'
-                    : selected
-                      ? 'Selected'
-                      : option.costBp === 0
-                        ? 'Take this free option'
-                        : 'Buy this upgrade'}
-                </span>
-              </label>
-            </article>
-          );
-        })}
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={disabled || locked}
+                    onChange={(event) => props.onToggle(option.id, event.target.checked)}
+                  />
+                  <span>
+                    {locked
+                      ? 'Always included'
+                      : selected
+                        ? 'Selected'
+                        : option.costBp === 0
+                          ? 'Take this free option'
+                          : 'Buy this upgrade'}
+                  </span>
+                </label>
+              </article>
+            );
+          })}
+        </div>
       </div>
-    </section>
+    </details>
+  );
+}
+
+function CosmicBackpackCustomUpgradeSection(props: {
+  customUpgrades: CosmicBackpackCustomUpgrade[];
+  onChange: (nextCustomUpgrades: CosmicBackpackCustomUpgrade[]) => void;
+  highlightQuery: string;
+  defaultOpen?: boolean;
+}) {
+  function updateUpgrade(
+    upgradeId: string,
+    updater: (currentUpgrade: CosmicBackpackCustomUpgrade) => CosmicBackpackCustomUpgrade,
+  ) {
+    props.onChange(
+      props.customUpgrades.map((upgrade) => (upgrade.id === upgradeId ? updater(upgrade) : upgrade)),
+    );
+  }
+
+  return (
+    <details className="details-panel" open={props.defaultOpen ? true : undefined}>
+      <summary className="details-panel__summary">
+        <span>Custom Upgrades</span>
+        <div className="inline-meta">
+          <span className="pill">{props.customUpgrades.length} custom</span>
+          <span className="pill pill--soft">BP + volume edits</span>
+        </div>
+      </summary>
+      <div className="details-panel__body stack stack--compact">
+        <p>
+          Use this for warehouse add-ons or rulings that are not in the stock list. <strong>Add volume</strong> extends the bag directly.
+          <strong> Scale current volume</strong> multiplies whatever interior total you already have. Leave scale at <code>1</code> if
+          it should not change the size.
+        </p>
+
+        {props.customUpgrades.length > 0 ? (
+          <div className="selection-editor-list">
+            {props.customUpgrades.map((upgrade, index) => (
+              <article className="selection-editor" key={upgrade.id}>
+                <div className="selection-editor__header">
+                  <div className="stack stack--compact">
+                    <strong>
+                      <SearchHighlight text={upgrade.title} query={props.highlightQuery} />
+                    </strong>
+                    {upgrade.notes.trim().length > 0 ? (
+                      <p className="editor-section__copy">
+                        <SearchHighlight text={upgrade.notes} query={props.highlightQuery} />
+                      </p>
+                    ) : (
+                      <p className="editor-section__copy">
+                        Custom BP and volume adjustment for anything the printed list does not cover cleanly.
+                      </p>
+                    )}
+                  </div>
+                  <div className="inline-meta">
+                    <span className="pill pill--soft">{upgrade.costBp === 0 ? 'Free' : `${formatDecimal(upgrade.costBp)} BP`}</span>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() =>
+                        props.onChange(props.customUpgrades.filter((currentUpgrade) => currentUpgrade.id !== upgrade.id))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Title</span>
+                    <input
+                      value={upgrade.title}
+                      placeholder={`Custom upgrade ${index + 1}`}
+                      onChange={(event) =>
+                        updateUpgrade(upgrade.id, (currentUpgrade) => ({
+                          ...currentUpgrade,
+                          title: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>BP cost</span>
+                    <input
+                      type="number"
+                      value={upgrade.costBp}
+                      onChange={(event) =>
+                        updateUpgrade(upgrade.id, (currentUpgrade) => ({
+                          ...currentUpgrade,
+                          costBp: Number(event.target.value) || 0,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Add volume (ft^3)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={upgrade.addedVolumeFt3}
+                      onChange={(event) =>
+                        updateUpgrade(upgrade.id, (currentUpgrade) => ({
+                          ...currentUpgrade,
+                          addedVolumeFt3: Math.max(0, Number(event.target.value) || 0),
+                        }))
+                      }
+                    />
+                    <small className="field-hint">
+                      {upgrade.addedVolumeFt3 > 0
+                        ? `Adds ${formatVolumePair(upgrade.addedVolumeFt3)}.`
+                        : 'Leave at 0 if this upgrade does not add raw space.'}
+                    </small>
+                  </label>
+
+                  <label className="field">
+                    <span>Scale current volume (x)</span>
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.1}
+                      value={upgrade.volumeMultiplier}
+                      onChange={(event) =>
+                        updateUpgrade(upgrade.id, (currentUpgrade) => ({
+                          ...currentUpgrade,
+                          volumeMultiplier: Math.max(0.01, Number(event.target.value) || 1),
+                        }))
+                      }
+                    />
+                    <small className="field-hint">
+                      {upgrade.volumeMultiplier !== 1
+                        ? `Scales the current bag size by x${formatDecimal(upgrade.volumeMultiplier)}.`
+                        : 'Leave at 1 if this upgrade should not scale the bag.'}
+                    </small>
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>Notes / source</span>
+                  <textarea
+                    rows={3}
+                    value={upgrade.notes}
+                    placeholder="What supplement or ruling is this representing?"
+                    onChange={(event) =>
+                      updateUpgrade(upgrade.id, (currentUpgrade) => ({
+                        ...currentUpgrade,
+                        notes: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="editor-section__empty">
+            No custom upgrades yet. Add one when another warehouse supplement or house ruling should live on the Backpack BP budget.
+          </p>
+        )}
+
+        <div className="actions">
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => props.onChange([...props.customUpgrades, createBlankCosmicBackpackCustomUpgrade()])}
+          >
+            Add Custom Upgrade
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -243,22 +511,35 @@ export function CosmicBackpackPage() {
   );
   const summary = buildCosmicBackpackSummary(state, { transferredBp });
   const selectedOptionIds = state.selectedOptionIds;
-  const selectedOptions = selectedOptionIds.map((optionId) => cosmicBackpackOptionsById[optionId]).filter(Boolean);
+  const selectedOptions = selectedOptionIds
+    .map((optionId) => cosmicBackpackOptionsById[optionId])
+    .filter((option): option is CosmicBackpackOption => Boolean(option));
   const userSelectedOptions = selectedOptions.filter(
     (option) =>
       !cosmicBackpackMandatoryOptionIds.includes(option.id as (typeof cosmicBackpackMandatoryOptionIds)[number]),
   );
   const hasStarted =
     userSelectedOptions.length > 0 ||
+    state.customUpgrades.length > 0 ||
     state.appearanceNotes.trim().length > 0 ||
     state.containerForm.trim().length > 0 ||
     state.notes.trim().length > 0;
+  const volumeReference = getVolumeReference(summary.storageVolumeFt3);
+  const coreUpgrades = cosmicBackpackOptionCatalog.filter((option) => option.category === 'core-upgrade');
+  const attachments = cosmicBackpackOptionCatalog.filter((option) => option.category === 'attachment');
+  const modifiers = cosmicBackpackOptionCatalog.filter((option) => option.category === 'modifier');
+  const selectedCoreUpgradeCount = coreUpgrades.filter((option) => selectedOptionIds.includes(option.id)).length;
+  const selectedAttachmentCount = attachments.filter((option) => selectedOptionIds.includes(option.id)).length;
+  const selectedModifierCount = modifiers.filter((option) => selectedOptionIds.includes(option.id)).length;
+  const activeLoadoutCount = selectedOptions.length + state.customUpgrades.length;
 
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or restore a branch before using the Cosmic Backpack workspace." />;
   }
 
-  function updateState(updater: (currentState: ReturnType<typeof readCosmicBackpackState>) => ReturnType<typeof readCosmicBackpackState>) {
+  function updateState(
+    updater: (currentState: ReturnType<typeof readCosmicBackpackState>) => ReturnType<typeof readCosmicBackpackState>,
+  ) {
     chainAutosave.updateDraft((currentChain) => {
       if (!currentChain) {
         return currentChain;
@@ -289,10 +570,6 @@ export function CosmicBackpackPage() {
     });
     showAffirmation('Cosmic Backpack reset. You can rebuild it a piece at a time whenever you want.');
   }
-
-  const coreUpgrades = cosmicBackpackOptionCatalog.filter((option) => option.category === 'core-upgrade');
-  const attachments = cosmicBackpackOptionCatalog.filter((option) => option.category === 'attachment');
-  const modifiers = cosmicBackpackOptionCatalog.filter((option) => option.category === 'modifier');
 
   return (
     <div className="stack">
@@ -367,14 +644,26 @@ export function CosmicBackpackPage() {
             <span>Net transferred BP</span>
           </article>
           <article className="metric">
-            <strong>
-              {formatBudget(summary.storageVolumeFt3)} ft^3 / {summary.storageVolumeM3} m^3
-            </strong>
+            <strong>{formatVolumePair(summary.storageVolumeFt3)}</strong>
             <span>Interior volume</span>
+            <small className="field-hint">
+              {volumeReference.text === 'Big enough'
+                ? 'As much space as... well, big enough.'
+                : `As much space as... ${volumeReference.text} (OoM +${volumeReference.oom}).`}
+            </small>
           </article>
           <article className="metric">
             <strong>{summary.selectedOptionCount}</strong>
-            <span>Chosen upgrades</span>
+            <span>Catalog upgrades</span>
+          </article>
+          <article className="metric">
+            <strong>{summary.customUpgradeCount}</strong>
+            <span>Custom upgrades</span>
+            {summary.customUpgradeCount > 0 ? (
+              <small className="field-hint">
+                x{formatDecimal(summary.customVolumeMultiplier)} scaling and +{formatDecimal(summary.customAddedVolumeFt3)} ft^3 custom volume.
+              </small>
+            ) : null}
           </article>
         </div>
 
@@ -491,6 +780,7 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
+        defaultOpen={selectedCoreUpgradeCount > 0 || (!hasStarted && highlightQuery.trim().length === 0)}
       />
 
       <CosmicBackpackOptionSection
@@ -500,6 +790,7 @@ export function CosmicBackpackPage() {
         selectedOptionIds={selectedOptionIds}
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
+        defaultOpen={selectedAttachmentCount > 0 || highlightQuery.trim().length > 0}
       />
 
       <CosmicBackpackOptionSection
@@ -510,23 +801,44 @@ export function CosmicBackpackPage() {
         highlightQuery={highlightQuery}
         onToggle={handleToggle}
         lockedOptionIds={[...cosmicBackpackMandatoryOptionIds]}
+        defaultOpen={selectedModifierCount > 0 && highlightQuery.trim().length > 0}
+      />
+
+      <CosmicBackpackCustomUpgradeSection
+        customUpgrades={state.customUpgrades}
+        highlightQuery={highlightQuery}
+        defaultOpen={state.customUpgrades.length > 0}
+        onChange={(nextCustomUpgrades) =>
+          updateState((currentState) => ({
+            ...currentState,
+            customUpgrades: nextCustomUpgrades,
+          }))
+        }
       />
 
       <section className="card stack">
         <div className="section-heading">
           <h3>Current Loadout</h3>
-          <span className="pill pill--soft">{selectedOptions.length} active</span>
+          <span className="pill pill--soft">{activeLoadoutCount} active</span>
         </div>
-        {userSelectedOptions.length === 0 ? (
+        {userSelectedOptions.length === 0 && state.customUpgrades.length === 0 ? (
           <p className="field-hint">
             The two warehouse-compression modifiers are already active. Add any other upgrades here only when the chain actually needs them.
           </p>
         ) : null}
-        {selectedOptions.length > 0 ? (
+        {activeLoadoutCount > 0 ? (
           <ul className="list">
             {selectedOptions.map((option) => (
               <li key={option.id}>
                 <strong>{option.title}</strong> {option.costBp === 0 ? '(Free)' : `(${option.costBp} BP)`}
+              </li>
+            ))}
+            {state.customUpgrades.map((upgrade) => (
+              <li key={upgrade.id}>
+                <strong>{upgrade.title}</strong> {upgrade.costBp === 0 ? '(Free)' : `(${formatDecimal(upgrade.costBp)} BP)`}
+                {upgrade.addedVolumeFt3 > 0 || upgrade.volumeMultiplier !== 1
+                  ? ` | ${upgrade.addedVolumeFt3 > 0 ? `+${formatDecimal(upgrade.addedVolumeFt3)} ft^3` : ''}${upgrade.addedVolumeFt3 > 0 && upgrade.volumeMultiplier !== 1 ? ', ' : ''}${upgrade.volumeMultiplier !== 1 ? `x${formatDecimal(upgrade.volumeMultiplier)} scale` : ''}`
+                  : ''}
               </li>
             ))}
           </ul>

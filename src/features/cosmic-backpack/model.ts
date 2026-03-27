@@ -1,20 +1,32 @@
 import type { Chain } from '../../domain/chain/types';
 import type { JsonMap } from '../../domain/common';
+import { createId } from '../../utils/id';
 import {
   COSMIC_BACKPACK_BASE_VOLUME_FT3,
-  COSMIC_BACKPACK_BASE_VOLUME_M3,
   COSMIC_BACKPACK_TOTAL_BP,
   cosmicBackpackMandatoryOptionIds,
   cosmicBackpackOptionCatalog,
   cosmicBackpackOptionsById,
+  type CosmicBackpackOption,
 } from './catalog';
 
 export const COSMIC_BACKPACK_METADATA_KEY = 'cosmicBackpack';
 export const COSMIC_BACKPACK_BP_CURRENCY_KEY = 'cosmic-backpack-bp';
+const CUBIC_FEET_TO_CUBIC_METERS = 0.028316846592;
+
+export interface CosmicBackpackCustomUpgrade {
+  id: string;
+  title: string;
+  costBp: number;
+  addedVolumeFt3: number;
+  volumeMultiplier: number;
+  notes: string;
+}
 
 export interface CosmicBackpackState {
   version: 1;
   selectedOptionIds: string[];
+  customUpgrades: CosmicBackpackCustomUpgrade[];
   appearanceNotes: string;
   containerForm: string;
   notes: string;
@@ -29,9 +41,13 @@ export interface CosmicBackpackSummary {
   storageVolumeFt3: number;
   storageVolumeM3: number;
   selectedOptionCount: number;
+  customUpgradeCount: number;
   selectedCoreUpgradeCount: number;
   selectedAttachmentCount: number;
   selectedModifierCount: number;
+  customSpentBp: number;
+  customAddedVolumeFt3: number;
+  customVolumeMultiplier: number;
   warnings: string[];
 }
 
@@ -51,6 +67,19 @@ function readString(value: unknown) {
   return typeof value === 'string' ? value : '';
 }
 
+function readFiniteNumber(value: unknown, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : fallback;
+  }
+
+  return fallback;
+}
+
 function getValidSelectedOptionIds(value: unknown) {
   const selectedIds = Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry in cosmicBackpackOptionsById)
@@ -59,14 +88,57 @@ function getValidSelectedOptionIds(value: unknown) {
   return Array.from(new Set([...cosmicBackpackMandatoryOptionIds, ...selectedIds]));
 }
 
+function getValidCustomUpgrades(value: unknown): CosmicBackpackCustomUpgrade[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+
+    if (!record) {
+      return [];
+    }
+
+    const rawId = readString(record.id).trim();
+    const nextId = rawId.length > 0 && !seenIds.has(rawId) ? rawId : createId(`cosmic_backpack_upgrade_${index + 1}`);
+    seenIds.add(nextId);
+
+    return [
+      {
+        id: nextId,
+        title: readString(record.title).trim() || `Custom upgrade ${index + 1}`,
+        costBp: readFiniteNumber(record.costBp),
+        addedVolumeFt3: readFiniteNumber(record.addedVolumeFt3),
+        volumeMultiplier: Math.max(0.01, readFiniteNumber(record.volumeMultiplier, 1)),
+        notes: readString(record.notes),
+      },
+    ];
+  });
+}
+
 function formatBudget(value: number) {
   return new Intl.NumberFormat().format(value);
+}
+
+export function createBlankCosmicBackpackCustomUpgrade(): CosmicBackpackCustomUpgrade {
+  return {
+    id: createId('cosmic_backpack_upgrade'),
+    title: 'Custom upgrade',
+    costBp: 0,
+    addedVolumeFt3: 0,
+    volumeMultiplier: 1,
+    notes: '',
+  };
 }
 
 export function createDefaultCosmicBackpackState(): CosmicBackpackState {
   return {
     version: 1,
     selectedOptionIds: [...cosmicBackpackMandatoryOptionIds],
+    customUpgrades: [],
     appearanceNotes: '',
     containerForm: '',
     notes: '',
@@ -84,6 +156,7 @@ export function readCosmicBackpackState(chain: Pick<Chain, 'importSourceMetadata
   return {
     version: 1,
     selectedOptionIds: getValidSelectedOptionIds(metadata.selectedOptionIds),
+    customUpgrades: getValidCustomUpgrades(metadata.customUpgrades),
     appearanceNotes: readString(metadata.appearanceNotes),
     containerForm: readString(metadata.containerForm),
     notes: readString(metadata.notes),
@@ -94,6 +167,7 @@ export function writeCosmicBackpackState(chain: Chain, state: CosmicBackpackStat
   const normalizedState: CosmicBackpackState = {
     ...state,
     selectedOptionIds: getValidSelectedOptionIds(state.selectedOptionIds),
+    customUpgrades: getValidCustomUpgrades(state.customUpgrades),
   };
   const importSourceMetadata = {
     ...chain.importSourceMetadata,
@@ -176,14 +250,34 @@ export function buildCosmicBackpackSummary(
   derivedBudget: CosmicBackpackDerivedBudget = { transferredBp: 0 },
 ): CosmicBackpackSummary {
   const normalizedSelectedIds = getValidSelectedOptionIds(state.selectedOptionIds);
+  const normalizedCustomUpgrades = getValidCustomUpgrades(state.customUpgrades);
   const selectedOptions = normalizedSelectedIds
     .map((optionId) => cosmicBackpackOptionsById[optionId])
-    .filter(Boolean);
-  const spentBp = selectedOptions.reduce((total, option) => total + option.costBp, 0);
+    .filter((option): option is CosmicBackpackOption => Boolean(option));
+  const selectedOptionSpentBp = selectedOptions.reduce((total, option) => total + option.costBp, 0);
+  const customSpentBp = normalizedCustomUpgrades.reduce((total, upgrade) => total + upgrade.costBp, 0);
+  const spentBp = selectedOptionSpentBp + customSpentBp;
   const transferredBp = Number.isFinite(derivedBudget.transferredBp) ? derivedBudget.transferredBp : 0;
   const totalBp = COSMIC_BACKPACK_TOTAL_BP + transferredBp;
   const remainingBp = totalBp - spentBp;
-  const storageMultiplier = normalizedSelectedIds.includes('more-space') ? 2 : 1;
+  const builtInStorageMultiplier = normalizedSelectedIds.includes('more-space') ? 2 : 1;
+  const customVolumeMultiplier = normalizedCustomUpgrades.reduce(
+    (product, upgrade) => product * Math.max(0.01, upgrade.volumeMultiplier),
+    1,
+  );
+  const customAddedVolumeFt3 = normalizedCustomUpgrades.reduce(
+    (total, upgrade) => total + upgrade.addedVolumeFt3,
+    0,
+  );
+  const storageVolumeFt3 = Math.max(
+    0,
+    Number(
+      (
+        COSMIC_BACKPACK_BASE_VOLUME_FT3 * builtInStorageMultiplier * customVolumeMultiplier
+        + customAddedVolumeFt3
+      ).toFixed(2),
+    ),
+  );
   const warnings: string[] = [];
 
   for (const option of selectedOptions) {
@@ -221,12 +315,16 @@ export function buildCosmicBackpackSummary(
     totalBp,
     spentBp,
     remainingBp,
-    storageVolumeFt3: COSMIC_BACKPACK_BASE_VOLUME_FT3 * storageMultiplier,
-    storageVolumeM3: Number((COSMIC_BACKPACK_BASE_VOLUME_M3 * storageMultiplier).toFixed(1)),
+    storageVolumeFt3,
+    storageVolumeM3: Number((storageVolumeFt3 * CUBIC_FEET_TO_CUBIC_METERS).toFixed(1)),
     selectedOptionCount: selectedUserOptionCount,
+    customUpgradeCount: normalizedCustomUpgrades.length,
     selectedCoreUpgradeCount: selectedOptions.filter((option) => option.category === 'core-upgrade').length,
     selectedAttachmentCount: selectedOptions.filter((option) => option.category === 'attachment').length,
     selectedModifierCount: selectedOptions.filter((option) => option.category === 'modifier').length,
+    customSpentBp,
+    customAddedVolumeFt3,
+    customVolumeMultiplier,
     warnings,
   };
 }

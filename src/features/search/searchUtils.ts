@@ -500,11 +500,22 @@ export function buildUniversalSearchResults(input: {
         chainTitle,
         title: 'Cosmic Backpack plan notes',
         subtitle: `Cosmic Backpack | ${chainTitle}`,
-        snippet: buildSearchSnippet(query, cosmicBackpackState.notes, cosmicBackpackState.appearanceNotes, cosmicBackpackState.containerForm),
+        snippet: buildSearchSnippet(
+          query,
+          cosmicBackpackState.notes,
+          cosmicBackpackState.appearanceNotes,
+          cosmicBackpackState.containerForm,
+          cosmicBackpackState.customUpgrades,
+        ),
         to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
           highlight: query,
         }),
-        extraText: [cosmicBackpackState.notes, cosmicBackpackState.appearanceNotes, cosmicBackpackState.containerForm],
+        extraText: [
+          cosmicBackpackState.notes,
+          cosmicBackpackState.appearanceNotes,
+          cosmicBackpackState.containerForm,
+          cosmicBackpackState.customUpgrades,
+        ],
       },
       query,
       input.preferredChainId,
@@ -525,6 +536,37 @@ export function buildUniversalSearchResults(input: {
               highlight: query,
             }),
             extraText: [option.description, option.note, option.costBp],
+          },
+          query,
+          input.preferredChainId,
+        );
+      }
+
+      for (const customUpgrade of cosmicBackpackState.customUpgrades) {
+        pushResult(
+          results,
+          {
+            kind: 'cosmic-backpack',
+            chainId: bundle.chain.id,
+            chainTitle,
+            title: cleanLabel(customUpgrade.title, 'Custom Cosmic Backpack upgrade'),
+            subtitle: `Cosmic Backpack | Custom upgrade | ${chainTitle}`,
+            snippet: buildSearchSnippet(
+              query,
+              customUpgrade.notes,
+              customUpgrade.costBp === 0 ? 'Free' : `${customUpgrade.costBp} BP`,
+              customUpgrade.addedVolumeFt3 > 0 ? `${customUpgrade.addedVolumeFt3} ft^3 added` : '',
+              customUpgrade.volumeMultiplier !== 1 ? `x${customUpgrade.volumeMultiplier} volume scale` : '',
+            ),
+            to: withSearchParams(`/chains/${bundle.chain.id}/cosmic-backpack`, {
+              highlight: query,
+            }),
+            extraText: [
+              customUpgrade.notes,
+              customUpgrade.costBp,
+              customUpgrade.addedVolumeFt3,
+              customUpgrade.volumeMultiplier,
+            ],
           },
           query,
           input.preferredChainId,
