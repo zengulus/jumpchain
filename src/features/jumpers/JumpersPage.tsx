@@ -157,15 +157,15 @@ export function JumpersPage() {
                   </strong>
                   <span>
                     <SearchHighlight
-                      text={
-                        simpleMode
-                          ? jumper.isPrimary
-                            ? 'Primary jumper'
-                            : jumper.gender.trim() || 'Jumper record'
+                        text={
+                          simpleMode
+                            ? jumper.isPrimary
+                              ? 'Primary jumper'
+                              : jumper.gender.trim() || 'Jumper record'
                           : jumper.isPrimary
                             ? 'Primary jumper'
-                            : 'Secondary jumper'
-                      }
+                            : jumper.gender.trim() || 'Jumper record'
+                        }
                       query={searchQuery}
                     />
                   </span>

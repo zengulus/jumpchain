@@ -106,9 +106,8 @@ function formatScaledLength(valueMeters: number) {
   return unit.tight ? `${formattedValue}${unit.label}` : `${formattedValue} ${unit.label}`;
 }
 
-function formatDisplayCubeDimensions(storageVolumeFt3: number) {
-  const sideLabel = formatScaledLength(getDisplayCubeSideMeters(storageVolumeFt3));
-  return `${sideLabel} x ${sideLabel} x ${sideLabel}`;
+function formatDisplayVolume(storageVolumeFt3: number) {
+  return `${formatScaledLength(getDisplayCubeSideMeters(storageVolumeFt3))}³`;
 }
 
 function getRequirementText(option: CosmicBackpackOption) {
@@ -396,7 +395,7 @@ function CosmicBackpackCustomUpgradeSection(props: {
                     />
                     <small className="field-hint">
                       {upgrade.addedVolumeFt3 > 0
-                        ? `Adds about ${formatDisplayCubeDimensions(upgrade.addedVolumeFt3)} of extra room.`
+                        ? `Adds about ${formatDisplayVolume(upgrade.addedVolumeFt3)} of extra room.`
                         : 'Leave at 0 if this upgrade does not add raw space.'}
                     </small>
                   </label>
@@ -616,21 +615,12 @@ export function CosmicBackpackPage() {
             <span>Net transferred BP</span>
           </article>
           <article className="metric">
-            <strong>{formatDisplayCubeDimensions(summary.storageVolumeFt3)}</strong>
-            <span>Interior size</span>
+            <strong>{formatDisplayVolume(summary.storageVolumeFt3)}</strong>
+            <span>Interior volume</span>
           </article>
           <article className="metric">
             <strong>{summary.selectedOptionCount}</strong>
             <span>Catalog upgrades</span>
-          </article>
-          <article className="metric">
-            <strong>{summary.customUpgradeCount}</strong>
-            <span>Custom upgrades</span>
-            {summary.customUpgradeCount > 0 ? (
-              <small className="field-hint">
-                x{formatDecimal(summary.customVolumeMultiplier)} scaling with added custom space.
-              </small>
-            ) : null}
           </article>
         </div>
 
@@ -655,6 +645,34 @@ export function CosmicBackpackPage() {
         ) : null}
       </section>
 
+      <details className="details-panel">
+        <summary className="details-panel__summary">
+          <span>Current Loadout</span>
+          <div className="inline-meta">
+            <span className="pill pill--soft">{activeLoadoutCount} active</span>
+          </div>
+        </summary>
+        <div className="details-panel__body stack stack--compact">
+          {userSelectedOptions.length === 0 && state.customUpgrades.length === 0 ? (
+            <p className="field-hint">
+              The two warehouse-compression modifiers are already active. Add any other upgrades here only when the chain actually needs them.
+            </p>
+          ) : null}
+          <ul className="list">
+            {selectedOptions.map((option) => (
+              <li key={option.id}>
+                <strong>{option.title}</strong> {option.costBp === 0 ? '(Free)' : `(${option.costBp} BP)`}
+              </li>
+            ))}
+            {state.customUpgrades.map((upgrade) => (
+              <li key={upgrade.id}>
+                <strong>{upgrade.title}</strong> {upgrade.costBp === 0 ? '(Free)' : `(${formatDecimal(upgrade.costBp)} BP)`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
+
       <section className="grid grid--two">
         <article className="card stack">
           <div className="section-heading">
@@ -666,7 +684,7 @@ export function CosmicBackpackPage() {
           </p>
           <p>The base bag is always light, comfortable to carry, and returns within a day if it is lost or stolen.</p>
           <div className="inline-meta">
-            <span className="pill pill--soft">3m x 3m x 3m</span>
+            <span className="pill pill--soft">3m³</span>
             <span className="pill pill--soft">Indestructible</span>
             <span className="pill pill--soft">Always returns</span>
           </div>
@@ -778,37 +796,6 @@ export function CosmicBackpackPage() {
           }))
         }
       />
-
-      <section className="card stack">
-        <div className="section-heading">
-          <h3>Current Loadout</h3>
-          <span className="pill pill--soft">{activeLoadoutCount} active</span>
-        </div>
-        {userSelectedOptions.length === 0 && state.customUpgrades.length === 0 ? (
-          <p className="field-hint">
-            The two warehouse-compression modifiers are already active. Add any other upgrades here only when the chain actually needs them.
-          </p>
-        ) : null}
-        {activeLoadoutCount > 0 ? (
-          <ul className="list">
-            {selectedOptions.map((option) => (
-              <li key={option.id}>
-                <strong>{option.title}</strong> {option.costBp === 0 ? '(Free)' : `(${option.costBp} BP)`}
-              </li>
-            ))}
-            {state.customUpgrades.map((upgrade) => (
-              <li key={upgrade.id}>
-                <strong>{upgrade.title}</strong> {upgrade.costBp === 0 ? '(Free)' : `(${formatDecimal(upgrade.costBp)} BP)`}
-                {upgrade.addedVolumeFt3 > 0 || upgrade.volumeMultiplier !== 1
-                  ? ` | ${upgrade.addedVolumeFt3 > 0 ? `+${formatDisplayCubeDimensions(upgrade.addedVolumeFt3)} equivalent` : ''}${upgrade.addedVolumeFt3 > 0 && upgrade.volumeMultiplier !== 1 ? ', ' : ''}${upgrade.volumeMultiplier !== 1 ? `x${formatDecimal(upgrade.volumeMultiplier)} scale` : ''}`
-                  : ''}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No upgrades selected yet. The free base bag is still a valid starting point.</p>
-        )}
-      </section>
     </div>
   );
 }

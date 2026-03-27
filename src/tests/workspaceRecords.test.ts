@@ -1,6 +1,7 @@
 import { db } from '../db/database';
 import { createBlankChain, getChainBundle } from '../db/persistence';
 import {
+  createBlankCompanion,
   createBlankJump,
   createBlankJumper,
   saveChainRecord,
@@ -41,5 +42,23 @@ describe('workspace record helpers', () => {
 
     expect(withoutParticipation?.jumps[0]?.participantJumperIds).toEqual([]);
     expect(withoutParticipation?.participations).toHaveLength(0);
+  });
+
+  it('creates participation rows for companions when they join a jump', async () => {
+    await resetDatabase();
+    const bundle = await createBlankChain('Companion Participation');
+    const branchId = bundle.chain.activeBranchId;
+    const companion = createBlankCompanion(bundle.chain.id, branchId);
+    const jump = createBlankJump(bundle.chain.id, branchId, 0);
+
+    await saveChainRecord(db.companions, companion);
+    await saveChainRecord(db.jumps, jump);
+    await syncJumpParticipantMembership(bundle.chain.id, jump, companion.id, true);
+
+    const persisted = await getChainBundle(bundle.chain.id);
+
+    expect(persisted?.jumps[0]?.participantJumperIds).toEqual([companion.id]);
+    expect(persisted?.participations).toHaveLength(1);
+    expect(persisted?.participations[0]?.jumperId).toBe(companion.id);
   });
 });

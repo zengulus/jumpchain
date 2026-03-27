@@ -12,11 +12,17 @@ import {
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { COSMIC_BACKPACK_BP_CURRENCY_KEY } from '../cosmic-backpack/model';
+import { applyPurchaseStipends } from './budgetMath';
 
 type Workspace = ReturnType<typeof useChainWorkspace>['workspace'];
-type WorkspaceJumper = Workspace['jumpers'][number];
 type WorkspaceJump = Workspace['jumps'][number];
 type WorkspaceParticipation = Workspace['participations'][number];
+
+export interface ParticipationActor {
+  id: string;
+  name: string;
+  kind: 'jumper' | 'companion';
+}
 
 type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks' | 'notes';
 type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
@@ -55,6 +61,7 @@ interface SelectionEditorSectionProps {
   subtypeDefinitions?: Record<string, PurchaseSubtypeDefinition>;
   enablePricing?: boolean;
   showSubtypeSelector?: boolean;
+  stipends?: Record<string, Record<string, number>>;
 }
 
 interface CurrencyDefinition {
@@ -94,6 +101,7 @@ interface BudgetLedgerEntry {
   currencyKey: string;
   starting: number;
   spent: number;
+  stipendCovered: number;
   exchangedOut: number;
   exchangedIn: number;
   remaining: number;
@@ -1070,6 +1078,7 @@ function getCurrencyExchangeFlows(
 function getBudgetLedgerEntries(
   effectiveBudgets: Record<string, number>,
   purchases: unknown[],
+  stipends: Record<string, Record<string, number>>,
   origins: Record<string, unknown>,
   orderedOriginKeys: string[],
   bankDeposit: number,
@@ -1077,10 +1086,24 @@ function getBudgetLedgerEntries(
   currencyDefinitions: Record<string, CurrencyDefinition>,
 ) {
   const primaryCurrencyKey = findPrimaryCpBudget(effectiveBudgets, currencyDefinitions)?.[0] ?? Object.keys(effectiveBudgets)[0] ?? '0';
-  const purchaseSpend = sumCurrencyAmounts(
+  const purchaseSpendBreakdown = applyPurchaseStipends(
     purchases.map((purchase) => ({
       currencyKey: getSelectionCurrencyKey(purchase),
-      amount: getSelectionSpendAmount(purchase),
+      subtypeKey: getSelectionSubtypeKey(purchase),
+      grossAmount: getSelectionSpendAmount(purchase),
+    })),
+    stipends,
+  );
+  const purchaseSpend = sumCurrencyAmounts(
+    purchaseSpendBreakdown.map((purchase) => ({
+      currencyKey: purchase.currencyKey,
+      amount: purchase.netAmount,
+    })),
+  );
+  const stipendCoverage = sumCurrencyAmounts(
+    purchaseSpendBreakdown.map((purchase) => ({
+      currencyKey: purchase.currencyKey,
+      amount: purchase.stipendApplied,
     })),
   );
   const originSpend = getOriginSpendAmounts(origins, orderedOriginKeys, primaryCurrencyKey);
@@ -1102,6 +1125,7 @@ function getBudgetLedgerEntries(
     .map<BudgetLedgerEntry>((currencyKey) => {
       const starting = effectiveBudgets[currencyKey] ?? 0;
       const spent = combinedSpend[currencyKey] ?? 0;
+      const stipendCovered = stipendCoverage[currencyKey] ?? 0;
       const exchangedOut = exchangeFlows.outflows[currencyKey] ?? 0;
       const exchangedIn = exchangeFlows.inflows[currencyKey] ?? 0;
 
@@ -1109,6 +1133,7 @@ function getBudgetLedgerEntries(
         currencyKey,
         starting,
         spent,
+        stipendCovered,
         exchangedOut,
         exchangedIn,
         remaining: starting - spent - exchangedOut + exchangedIn,
@@ -1257,6 +1282,17 @@ function SummarySection(props: {
 
 function SelectionEditorSection(props: SelectionEditorSectionProps) {
   const subtypeKeys = props.subtypeDefinitions ? Object.keys(props.subtypeDefinitions) : [];
+  const stipendBreakdown =
+    props.enablePricing && props.stipends
+      ? applyPurchaseStipends(
+          props.items.map((item) => ({
+            currencyKey: getSelectionCurrencyKey(item),
+            subtypeKey: getSelectionSubtypeKey(item),
+            grossAmount: getSelectionSpendAmount(item),
+          })),
+          props.stipends,
+        )
+      : [];
 
   return (
     <section className="editor-section">
@@ -1282,6 +1318,8 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
             const isFree = getSelectionIsFree(record);
             const computedCost = getComputedSelectionCost(record);
             const discountSource = getDiscountSource(record);
+            const appliedStipend = stipendBreakdown[index]?.stipendApplied ?? 0;
+            const effectiveSpend = stipendBreakdown[index]?.netAmount ?? computedCost ?? 0;
             const availableSubtypeKeys =
               subtypeKey && !subtypeKeys.includes(subtypeKey) ? [subtypeKey, ...subtypeKeys] : subtypeKeys;
 
@@ -1469,9 +1507,16 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
 
                       <label className="field">
                         <span>Computed spend</span>
-                        <input readOnly value={computedCost !== null ? formatNumericValue(computedCost) : ''} />
+                        <input readOnly value={computedCost !== null ? formatNumericValue(effectiveSpend) : ''} />
                       </label>
                     </div>
+
+                    {appliedStipend > 0 ? (
+                      <p className="field-hint">
+                        {formatNumericValue(appliedStipend)} covered by stipend. This purchase spends{' '}
+                        {formatNumericValue(effectiveSpend)} from the main budget.
+                      </p>
+                    ) : null}
 
                     <label className="field">
                       <span>Discount source</span>
@@ -1839,7 +1884,7 @@ function PurchaseSubtypeDefinitionEditorSection(props: {
         <span className="pill">{definitionEntries.length}</span>
       </div>
 
-      {definitionEntries.length === 0 ? <p className="editor-section__empty">No stipend types yet.</p> : null}
+      {definitionEntries.length === 0 ? <p className="editor-section__empty">No stipend templates yet.</p> : null}
 
       {definitionEntries.length > 0 ? (
         <div className="selection-editor-list">
@@ -1905,7 +1950,7 @@ function PurchaseSubtypeDefinitionEditorSection(props: {
                   </label>
 
                   <label className="field">
-                    <span>Default stipend</span>
+                    <span>New line default</span>
                     <input
                       type="number"
                       value={definition.stipend ?? 0}
@@ -1945,7 +1990,7 @@ function PurchaseSubtypeDefinitionEditorSection(props: {
             });
           }}
         >
-          Add Stipend Type
+          Add Stipend Template
         </button>
       </div>
     </section>
@@ -2237,7 +2282,7 @@ function findPrimaryCpBudget(
 }
 
 export function ParticipationEditorCard(props: {
-  jumper: WorkspaceJumper;
+  participant: ParticipationActor;
   jump: WorkspaceJump;
   participation: WorkspaceParticipation;
   workspace: Workspace;
@@ -2335,6 +2380,7 @@ export function ParticipationEditorCard(props: {
   const budgetLedgerEntries = getBudgetLedgerEntries(
     effectiveBudgetState.effectiveBudgets,
     draftParticipation.purchases,
+    draftParticipation.stipends,
     draftParticipation.origins,
     orderedOriginKeys,
     draftParticipation.bankDeposit,
@@ -2745,9 +2791,12 @@ export function ParticipationEditorCard(props: {
   ];
 
   return (
-    <article className="card editor-sheet stack" key={props.jumper.id}>
+    <article className="card editor-sheet stack" key={props.participant.id}>
       <div className="section-heading">
-        <h3>{props.jumper.name}</h3>
+        <div className="inline-meta">
+          <h3>{props.participant.name}</h3>
+          <span className="pill pill--soft">{props.participant.kind}</span>
+        </div>
         <span className="pill">{draftParticipation.status}</span>
       </div>
 
@@ -2829,6 +2878,7 @@ export function ParticipationEditorCard(props: {
                 detail: [
                   `${formatNumericValue(entry.starting)} start`,
                   entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent` : null,
+                  entry.stipendCovered !== 0 ? `${formatNumericValue(entry.stipendCovered)} covered by stipends` : null,
                   entry.exchangedOut !== 0 ? `-${formatNumericValue(entry.exchangedOut)} exchanged out` : null,
                   entry.exchangedIn !== 0 ? `+${formatNumericValue(entry.exchangedIn)} exchanged in` : null,
                 ]
@@ -2876,16 +2926,7 @@ export function ParticipationEditorCard(props: {
             subtypeDefinitions={purchaseSubtypeDefinitions}
             enablePricing
             showSubtypeSelector
-          />
-
-          <SummarySection
-            title="Subsystem stipends"
-            items={getStipendTokens(
-              buildStipendsFromRows(subsystemStipendRows),
-              purchaseSubtypeDefinitions,
-              currencyDefinitions,
-            )}
-            emptyMessage="No subsystem stipends yet."
+            stipends={draftParticipation.stipends}
           />
 
           {renderStipendSection(
@@ -2895,7 +2936,7 @@ export function ParticipationEditorCard(props: {
           )}
 
           <PurchaseSubtypeDefinitionEditorSection
-            title="Subsystem stipend types"
+            title="Subsystem stipend templates"
             section="subsystems"
             definitions={purchaseSubtypeDefinitions}
             currencyDefinitions={currencyDefinitions}
@@ -2917,16 +2958,7 @@ export function ParticipationEditorCard(props: {
             subtypeDefinitions={purchaseSubtypeDefinitions}
             enablePricing
             showSubtypeSelector
-          />
-
-          <SummarySection
-            title="Item stipends"
-            items={getStipendTokens(
-              buildStipendsFromRows(itemStipendRows),
-              purchaseSubtypeDefinitions,
-              currencyDefinitions,
-            )}
-            emptyMessage="No item stipends yet."
+            stipends={draftParticipation.stipends}
           />
 
           {renderStipendSection(
@@ -2936,7 +2968,7 @@ export function ParticipationEditorCard(props: {
           )}
 
           <PurchaseSubtypeDefinitionEditorSection
-            title="Item stipend types"
+            title="Item stipend templates"
             section="items"
             definitions={purchaseSubtypeDefinitions}
             currencyDefinitions={currencyDefinitions}
@@ -3328,6 +3360,7 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
   const budgetLedgerEntries = getBudgetLedgerEntries(
     effectiveBudgetState.effectiveBudgets,
     participation.purchases,
+    participation.stipends,
     participation.origins,
     orderedOriginKeys,
     participation.bankDeposit,
@@ -3347,7 +3380,7 @@ function getParticipationBudgetSummaryData(workspace: Workspace, participation: 
 }
 
 export function ParticipationBudgetHeader(props: {
-  jumper: WorkspaceJumper;
+  participant: ParticipationActor;
   participation: WorkspaceParticipation;
   workspace: Workspace;
 }) {
@@ -3357,7 +3390,7 @@ export function ParticipationBudgetHeader(props: {
     <section className="section-surface stack stack--compact">
       <div className="section-heading">
         <h4>Budget snapshot</h4>
-        <span className="pill">{props.jumper.name}</span>
+        <span className="pill">{props.participant.name}</span>
       </div>
       <ParticipationBudgetSummaryGrid
         cpBaseValue={summary.cpBaseValue}
@@ -3372,7 +3405,7 @@ export function ParticipationBudgetHeader(props: {
 
 export function ParticipationBudgetShellAttachment(props: {
   jump: WorkspaceJump;
-  jumper: WorkspaceJumper;
+  participant: ParticipationActor;
   participation: WorkspaceParticipation;
   workspace: Workspace;
 }) {
@@ -3383,7 +3416,7 @@ export function ParticipationBudgetShellAttachment(props: {
       <div className="jump-shell-budget__identity">
         <div className="jump-shell-budget__identity-topline">
           <span className="pill">Purchases</span>
-          <span className="pill pill--soft">{props.jumper.name}</span>
+          <span className="pill pill--soft">{props.participant.name}</span>
         </div>
         <strong>{props.jump.title}</strong>
         <span>Budget snapshot stays visible while you work through purchases.</span>
@@ -3419,7 +3452,7 @@ export function ParticipationBudgetShellAttachment(props: {
 }
 
 export function ParticipationBudgetInspector(props: {
-  jumper: WorkspaceJumper;
+  participant: ParticipationActor;
   participation: WorkspaceParticipation;
   workspace: Workspace;
 }) {
@@ -3483,6 +3516,7 @@ export function ParticipationBudgetInspector(props: {
   const budgetLedgerEntries = getBudgetLedgerEntries(
     effectiveBudgetState.effectiveBudgets,
     props.participation.purchases,
+    props.participation.stipends,
     props.participation.origins,
     orderedOriginKeys,
     props.participation.bankDeposit,
@@ -3504,6 +3538,9 @@ export function ParticipationBudgetInspector(props: {
           <p>
             {formatNumericValue(primaryBudgetLedgerEntry.starting)} start
             {primaryBudgetLedgerEntry.spent !== 0 ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.spent)} spent` : ''}
+            {primaryBudgetLedgerEntry.stipendCovered !== 0
+              ? ` | ${formatNumericValue(primaryBudgetLedgerEntry.stipendCovered)} covered by stipends`
+              : ''}
             {primaryBudgetLedgerEntry.exchangedOut !== 0
               ? ` | -${formatNumericValue(primaryBudgetLedgerEntry.exchangedOut)} exchanged out`
               : ''}
@@ -3521,6 +3558,7 @@ export function ParticipationBudgetInspector(props: {
           detail: [
             `${formatNumericValue(entry.starting)} start`,
             entry.spent !== 0 ? `-${formatNumericValue(entry.spent)} spent` : null,
+            entry.stipendCovered !== 0 ? `${formatNumericValue(entry.stipendCovered)} covered by stipends` : null,
             entry.exchangedOut !== 0 ? `-${formatNumericValue(entry.exchangedOut)} exchanged out` : null,
             entry.exchangedIn !== 0 ? `+${formatNumericValue(entry.exchangedIn)} exchanged in` : null,
           ]

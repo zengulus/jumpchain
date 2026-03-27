@@ -81,6 +81,18 @@ function remapOptionalId(id: string | null | undefined, map: Map<string, string>
   return remapId(id, map);
 }
 
+function remapParticipantId(id: string, maps: EntityIdMaps) {
+  if (maps.jumper.has(id)) {
+    return remapId(id, maps.jumper);
+  }
+
+  if (maps.companion.has(id)) {
+    return remapId(id, maps.companion);
+  }
+
+  return id;
+}
+
 function remapOwnerEntityId(ownerEntityType: Effect['ownerEntityType'] | Note['ownerEntityType'] | AttachmentRef['ownerEntityType'], ownerEntityId: string, maps: EntityIdMaps) {
   switch (ownerEntityType) {
     case 'chain':
@@ -206,7 +218,7 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     id: remapId(jump.id, maps.jump),
     chainId,
     branchId: remapId(jump.branchId, maps.branch),
-    participantJumperIds: jump.participantJumperIds.map((jumperId) => remapId(jumperId, maps.jumper)),
+    participantJumperIds: jump.participantJumperIds.map((participantId) => remapParticipantId(participantId, maps)),
   }));
 
   const clonedParticipations: JumperParticipation[] = validatedBundle.participations.map((participation) => ({
@@ -215,7 +227,7 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     chainId,
     branchId: remapId(participation.branchId, maps.branch),
     jumpId: remapId(participation.jumpId, maps.jump),
-    jumperId: remapId(participation.jumperId, maps.jumper),
+    jumperId: remapParticipantId(participation.jumperId, maps),
   }));
 
   const clonedEffects: Effect[] = validatedBundle.effects.map((effect) => ({
@@ -360,7 +372,7 @@ function cloneBranchBundleToExistingChain(
     id: remapId(jump.id, maps.jump),
     chainId,
     branchId: newBranchId,
-    participantJumperIds: jump.participantJumperIds.map((jumperId) => remapId(jumperId, maps.jumper)),
+    participantJumperIds: jump.participantJumperIds.map((participantId) => remapParticipantId(participantId, maps)),
     createdAt: now,
     updatedAt: now,
   }));
@@ -371,7 +383,7 @@ function cloneBranchBundleToExistingChain(
     chainId,
     branchId: newBranchId,
     jumpId: remapId(participation.jumpId, maps.jump),
-    jumperId: remapId(participation.jumperId, maps.jumper),
+    jumperId: remapParticipantId(participation.jumperId, maps),
     createdAt: now,
     updatedAt: now,
   }));

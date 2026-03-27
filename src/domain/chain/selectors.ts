@@ -133,6 +133,37 @@ function sumBudgetRecords(records: Array<Record<string, number>>) {
   return combined;
 }
 
+function roundBudgetAmount(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function isChoicePointCurrencyKey(currencyKey: string, importedCurrencyDefinitions: Record<string, unknown>) {
+  const definition = asRecord(importedCurrencyDefinitions[currencyKey]);
+  const name = typeof definition.name === 'string' ? definition.name : '';
+  const abbreviation = typeof definition.abbrev === 'string' ? definition.abbrev : '';
+  const combined = `${currencyKey} ${name} ${abbreviation}`.trim().toLowerCase();
+
+  if (
+    combined.includes('choice point') ||
+    combined.includes('choice points') ||
+    abbreviation.trim().toLowerCase() === 'cp' ||
+    combined === 'cp'
+  ) {
+    return true;
+  }
+
+  return Object.keys(importedCurrencyDefinitions).length === 0 && currencyKey === '0';
+}
+
+function applyCompanionBudgetShare(budgetRecord: Record<string, number>, importedCurrencyDefinitions: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(budgetRecord).map(([currencyKey, amount]) => [
+      currencyKey,
+      isChoicePointCurrencyKey(currencyKey, importedCurrencyDefinitions) ? roundBudgetAmount(amount * 0.8) : amount,
+    ]),
+  );
+}
+
 function getSelectionBudgetGrants(selection: unknown) {
   const record = asRecord(selection);
   const importedValue = parseOptionalFiniteNumber(record.value);
@@ -295,7 +326,7 @@ export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorks
 
 export function getEffectiveParticipationBudgetState(
   workspace: BranchWorkspace,
-  participation: Pick<JumperParticipation, 'budgets' | 'importSourceMetadata' | 'drawbacks' | 'retainedDrawbacks'> | null,
+  participation: Pick<JumperParticipation, 'budgets' | 'importSourceMetadata' | 'drawbacks' | 'retainedDrawbacks' | 'jumperId'> | null,
 ): EffectiveParticipationBudgetState {
   const importedCurrencyDefinitions = asRecord(asRecord(participation?.importSourceMetadata).currencies);
   const importedBaseBudgets = Object.fromEntries(
@@ -307,10 +338,25 @@ export function getEffectiveParticipationBudgetState(
     participation && Object.keys(importedBaseBudgets).length === 0 && Object.keys(participation.budgets).length === 0
       ? { '0': 1000 }
       : {};
-  const baseBudgets = participation
-    ? {
+  const isCompanionParticipation =
+    participation !== null &&
+    workspace.companions.some((companion) => companion.id === participation.jumperId) &&
+    !workspace.jumpers.some((jumper) => jumper.id === participation.jumperId);
+  const inheritedBaseBudgets = isCompanionParticipation
+    ? applyCompanionBudgetShare(
+        {
+          ...fallbackBaseBudgets,
+          ...importedBaseBudgets,
+        },
+        importedCurrencyDefinitions,
+      )
+    : {
         ...fallbackBaseBudgets,
         ...importedBaseBudgets,
+      };
+  const baseBudgets = participation
+    ? {
+        ...inheritedBaseBudgets,
         ...participation.budgets,
       }
     : {};
@@ -329,9 +375,12 @@ export function getEffectiveParticipationBudgetState(
         })),
       ].filter(({ budgetGrants }) => Object.keys(budgetGrants).length > 0)
     : [];
-  const chainDrawbackBudgetGrants = sumBudgetRecords(
-    contributingChainDrawbacks.map((contribution) => contribution.budgetGrants),
-  );
+  const chainDrawbackBudgetGrants = isCompanionParticipation
+    ? applyCompanionBudgetShare(
+        sumBudgetRecords(contributingChainDrawbacks.map((contribution) => contribution.budgetGrants)),
+        importedCurrencyDefinitions,
+      )
+    : sumBudgetRecords(contributingChainDrawbacks.map((contribution) => contribution.budgetGrants));
   const participationDrawbackBudgetGrants = sumBudgetRecords(
     contributingParticipationDrawbacks.map((contribution) => contribution.budgetGrants),
   );

@@ -102,10 +102,7 @@ export function ChainwideRulesPage() {
     0,
   );
 
-  function updateChainSetting<K extends keyof typeof draftChain.chainSettings>(
-    key: K,
-    value: (typeof draftChain.chainSettings)[K],
-  ) {
+  function updateChainSetting<K extends keyof typeof draftChain.chainSettings>(key: K, value: (typeof draftChain.chainSettings)[K]) {
     chainAutosave.updateDraft({
       ...draftChain,
       chainSettings: {
@@ -219,14 +216,10 @@ export function ChainwideRulesPage() {
             <span className="pill">{workspace.activeBranch.title}</span>
           </div>
 
-          <label className="field field--checkbox">
-            <input
-              type="checkbox"
-              checked={draftChain.chainSettings.chainDrawbacksForCompanions}
-              onChange={(event) => updateChainSetting('chainDrawbacksForCompanions', event.target.checked)}
-            />
-            <span>Chain drawbacks apply to companions</span>
-          </label>
+          <p className="field-hint">
+            Companions now carry their own purchase tracks automatically. They use 80% of the usual CP baseline and 80% of
+            chainwide drawback CP, while drawback value taken inside a jump pays out at full value.
+          </p>
 
           <label className="field field--checkbox">
             <input

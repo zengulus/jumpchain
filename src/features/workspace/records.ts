@@ -132,7 +132,7 @@ export function createBlankJump(chainId: string, branchId: string, orderIndex: n
   };
 }
 
-export function createBlankParticipation(chainId: string, branchId: string, jumpId: string, jumperId: string): JumperParticipation {
+export function createBlankParticipation(chainId: string, branchId: string, jumpId: string, participantId: string): JumperParticipation {
   const now = createTimestamp();
 
   return {
@@ -142,7 +142,8 @@ export function createBlankParticipation(chainId: string, branchId: string, jump
     createdAt: now,
     updatedAt: now,
     jumpId,
-    jumperId,
+    // Legacy field name: this now stores either a jumper ID or a companion ID.
+    jumperId: participantId,
     status: 'planned',
     notes: '',
     purchases: [],
@@ -169,14 +170,14 @@ export function createBlankParticipation(chainId: string, branchId: string, jump
 export async function syncJumpParticipantMembership(
   chainId: string,
   jump: Jump,
-  jumperId: string,
+  participantId: string,
   include: boolean,
 ) {
   await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
   const participantJumperIds = include
-    ? Array.from(new Set([...jump.participantJumperIds, jumperId]))
-    : jump.participantJumperIds.filter((id) => id !== jumperId);
+    ? Array.from(new Set([...jump.participantJumperIds, participantId]))
+    : jump.participantJumperIds.filter((id) => id !== participantId);
 
   await db.transaction('rw', [db.chains, db.jumps, db.participations], async () => {
     await db.jumps.put({
@@ -185,11 +186,11 @@ export async function syncJumpParticipantMembership(
       updatedAt,
     });
 
-    const existingParticipations = await db.participations.where('[jumpId+jumperId]').equals([jump.id, jumperId]).toArray();
+    const existingParticipations = await db.participations.where('[jumpId+jumperId]').equals([jump.id, participantId]).toArray();
 
     if (include) {
       if (existingParticipations.length === 0) {
-        await db.participations.put(createBlankParticipation(chainId, jump.branchId, jump.id, jumperId));
+        await db.participations.put(createBlankParticipation(chainId, jump.branchId, jump.id, participantId));
       }
     } else if (existingParticipations.length > 0) {
       await db.participations.bulkDelete(existingParticipations.map((participation) => participation.id));

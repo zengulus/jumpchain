@@ -318,6 +318,137 @@ describe('workspace selectors', () => {
     expect(budgetState.effectiveBudgets['0']).toBe(1300);
   });
 
+  it('gives companion participations 80 percent base CP and chain drawback CP, while jump drawbacks stay full value', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+    const now = new Date().toISOString();
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const companionId = 'companion-budget-test';
+    const companionParticipationId = 'companion-participation-budget-test';
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      companions: [
+        ...session.bundle.companions,
+        {
+          id: companionId,
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          name: 'Budget Buddy',
+          parentJumperId: session.bundle.jumpers[0]?.id ?? null,
+          role: 'Support',
+          status: 'active',
+          originJumpId: null,
+          importSourceMetadata: {},
+        },
+      ],
+      participations: [
+        ...session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+        {
+          ...stripParticipationDrawbacks(baseParticipation),
+          id: companionParticipationId,
+          jumperId: companionId,
+          budgets: {},
+          drawbacks: [
+            {
+              name: 'Companion Jump Drawback',
+              value: 100,
+              currency: 0,
+            },
+          ],
+          retainedDrawbacks: [],
+        },
+      ],
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-companion-budget-chain-drawback',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Companion Chain Drawback',
+          description: '',
+          category: 'drawback',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            value: 300,
+            currency: 0,
+          },
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const participation = workspace.participations.find((entry) => entry.id === companionParticipationId) ?? null;
+    const budgetState = getEffectiveParticipationBudgetState(workspace, participation);
+
+    expect(budgetState.baseBudgets['0']).toBe(800);
+    expect(budgetState.chainDrawbackBudgetGrants['0']).toBe(240);
+    expect(budgetState.participationDrawbackBudgetGrants['0']).toBe(100);
+    expect(budgetState.effectiveBudgets['0']).toBe(1140);
+  });
+
+  it('falls back to an 800 CP baseline for manual companion participations with no budget metadata yet', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+    const now = new Date().toISOString();
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const companionId = 'companion-fallback-budget-test';
+    const companionParticipationId = 'companion-fallback-participation-test';
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      companions: [
+        ...session.bundle.companions,
+        {
+          id: companionId,
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          name: 'Fallback Buddy',
+          parentJumperId: null,
+          role: '',
+          status: 'active',
+          originJumpId: null,
+          importSourceMetadata: {},
+        },
+      ],
+      participations: [
+        ...session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+        {
+          ...stripParticipationDrawbacks(baseParticipation),
+          id: companionParticipationId,
+          jumperId: companionId,
+          budgets: {},
+          importSourceMetadata: {},
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const participation = workspace.participations.find((entry) => entry.id === companionParticipationId) ?? null;
+    const budgetState = getEffectiveParticipationBudgetState(workspace, participation);
+
+    expect(budgetState.baseBudgets).toEqual({ '0': 800 });
+    expect(budgetState.effectiveBudgets).toEqual({ '0': 800 });
+  });
+
   it('supports string-key custom currencies in participation drawback grants', () => {
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const branchId = session.bundle.chain.activeBranchId;

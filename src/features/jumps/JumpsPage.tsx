@@ -4,7 +4,7 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import { ParticipationBudgetShellAttachment, ParticipationEditorCard } from '../participation/ParticipationPage';
+import { ParticipationBudgetShellAttachment, ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
@@ -26,6 +26,9 @@ import { useWorkspaceHeaderAttachment } from '../workspace/ChainWorkspaceLayout'
 
 type JumpWorkspaceTab = 'basics' | 'party' | 'purchases' | 'advanced';
 type JumpGuidedStage = Extract<JumpWorkspaceTab, 'basics' | 'party' | 'purchases'>;
+type JumpParticipantEntry = ParticipationActor & {
+  detail: string;
+};
 
 const JUMP_WORKSPACE_TABS: Array<{ id: JumpWorkspaceTab; label: string }> = [
   { id: 'basics', label: 'Basics' },
@@ -39,6 +42,12 @@ const JUMP_GUIDED_STAGES: Array<{ id: JumpGuidedStage; label: string }> = [
   { id: 'party', label: 'Party' },
   { id: 'purchases', label: 'Purchases' },
 ];
+
+function formatParticipantDetail(
+  participant: JumpParticipantEntry,
+) {
+  return participant.detail.trim().length > 0 ? participant.detail : participant.kind === 'companion' ? 'Companion record' : 'Jumper record';
+}
 
 function JumpWorkspaceTabs(props: {
   activeTab: JumpWorkspaceTab;
@@ -121,7 +130,7 @@ export function JumpsPage() {
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [simpleReviewByJump, setSimpleReviewByJump] = useState<Record<string, Partial<Record<JumpGuidedStage, true>>>>({});
   const searchQuery = searchParams.get('search') ?? '';
-  const focusedJumperId = searchParams.get('jumper');
+  const focusedParticipantId = searchParams.get('participant') ?? searchParams.get('jumper');
   const participationPanelRequested = searchParams.get('panel') === 'participation';
   const filteredJumps = workspace.jumps.filter((jump) =>
     matchesSearchQuery(searchQuery, jump.title, jump.status, jump.jumpType, jump.duration, jump.importSourceMetadata),
@@ -134,22 +143,43 @@ export function JumpsPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save jump changes.'),
   });
   const draftJump = jumpAutosave.draft ?? selectedJump;
-  const focusedJumper =
-    focusedJumperId && workspace.jumpers.some((jumper) => jumper.id === focusedJumperId)
-      ? workspace.jumpers.find((jumper) => jumper.id === focusedJumperId) ?? null
-      : null;
-  const jumpParticipantJumpers =
-    draftJump ? workspace.jumpers.filter((jumper) => draftJump.participantJumperIds.includes(jumper.id)) : [];
-  const pendingFocusedJumper =
-    draftJump && focusedJumper && !draftJump.participantJumperIds.includes(focusedJumper.id) ? focusedJumper : null;
-  const activeParticipationJumper =
-    draftJump && focusedJumper && draftJump.participantJumperIds.includes(focusedJumper.id)
-      ? focusedJumper
-      : jumpParticipantJumpers[0] ?? null;
+  const jumperNameById = new Map(workspace.jumpers.map((jumper) => [jumper.id, jumper.name]));
+  const allParticipants: JumpParticipantEntry[] = [
+    ...workspace.jumpers.map((jumper) => ({
+      id: jumper.id,
+      name: jumper.name,
+      kind: 'jumper' as const,
+      detail: jumper.isPrimary ? 'Primary jumper' : jumper.gender.trim() || 'Jumper record',
+    })),
+    ...workspace.companions.map((companion) => ({
+      id: companion.id,
+      name: companion.name,
+      kind: 'companion' as const,
+      detail: [companion.role.trim(), companion.parentJumperId ? `Attached to ${jumperNameById.get(companion.parentJumperId) ?? 'a jumper'}` : null]
+        .filter((value): value is string => Boolean(value && value.length > 0))
+        .join(' - '),
+    })),
+  ].sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind.localeCompare(right.kind);
+    }
+
+    return left.name.localeCompare(right.name);
+  });
+  const focusedParticipant =
+    focusedParticipantId ? allParticipants.find((participant) => participant.id === focusedParticipantId) ?? null : null;
+  const jumpParticipants =
+    draftJump ? allParticipants.filter((participant) => draftJump.participantJumperIds.includes(participant.id)) : [];
+  const pendingFocusedParticipant =
+    draftJump && focusedParticipant && !draftJump.participantJumperIds.includes(focusedParticipant.id) ? focusedParticipant : null;
+  const activeParticipationParticipant =
+    draftJump && focusedParticipant && draftJump.participantJumperIds.includes(focusedParticipant.id)
+      ? focusedParticipant
+      : jumpParticipants[0] ?? null;
   const activeParticipation =
-    draftJump && activeParticipationJumper
+    draftJump && activeParticipationParticipant
       ? workspace.participations.find(
-          (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationJumper.id,
+          (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationParticipant.id,
         ) ?? null
       : null;
   const [liveParticipationDraft, setLiveParticipationDraft] = useState<(typeof workspace.participations)[number] | null>(null);
@@ -170,19 +200,19 @@ export function JumpsPage() {
     participationPanelRequested,
   });
   const purchaseBudgetAttachment = useMemo(() => {
-    if (activeTab !== 'purchases' || !draftJump || !activeParticipationJumper || !visibleParticipation) {
+    if (activeTab !== 'purchases' || !draftJump || !activeParticipationParticipant || !visibleParticipation) {
       return null;
     }
 
     return (
       <ParticipationBudgetShellAttachment
         jump={draftJump}
-        jumper={activeParticipationJumper}
+        participant={activeParticipationParticipant}
         participation={visibleParticipation}
         workspace={workspace}
       />
     );
-  }, [activeParticipationJumper, activeTab, draftJump, visibleParticipation, workspace]);
+  }, [activeParticipationParticipant, activeTab, draftJump, visibleParticipation, workspace]);
 
   useWorkspaceHeaderAttachment(purchaseBudgetAttachment);
 
@@ -271,13 +301,14 @@ export function JumpsPage() {
     handleTabChange('purchases', { preserveAffirmation: true });
   }
 
-  function setFocusedParticipant(nextJumperId: string | null) {
+  function setFocusedParticipant(nextParticipantId: string | null) {
     updateQuery((nextParams) => {
-      if (nextJumperId && nextJumperId.trim().length > 0) {
-        nextParams.set('jumper', nextJumperId);
+      if (nextParticipantId && nextParticipantId.trim().length > 0) {
+        nextParams.set('participant', nextParticipantId);
       } else {
-        nextParams.delete('jumper');
+        nextParams.delete('participant');
       }
+      nextParams.delete('jumper');
 
       if (activeTab === 'purchases' || participationPanelRequested) {
         nextParams.set('panel', 'participation');
@@ -288,7 +319,7 @@ export function JumpsPage() {
   function getJumpPath(nextJumpId: string) {
     return withSearchParams(`/chains/${chainId}/jumps/${nextJumpId}`, {
       search: searchQuery,
-      jumper: focusedJumperId,
+      participant: focusedParticipantId,
       panel: activeTab === 'purchases' || participationPanelRequested ? 'participation' : undefined,
     });
   }
@@ -339,17 +370,17 @@ export function JumpsPage() {
     }
   }
 
-  async function toggleParticipant(jumperId: string) {
+  async function toggleParticipant(participantId: string) {
     const targetJump = draftJump ?? selectedJump;
 
     if (!targetJump) {
       return;
     }
 
-    const alreadyParticipating = targetJump.participantJumperIds.includes(jumperId);
+    const alreadyParticipating = targetJump.participantJumperIds.includes(participantId);
     const nextParticipantIds = alreadyParticipating
-      ? targetJump.participantJumperIds.filter((id) => id !== jumperId)
-      : Array.from(new Set([...targetJump.participantJumperIds, jumperId]));
+      ? targetJump.participantJumperIds.filter((id) => id !== participantId)
+      : Array.from(new Set([...targetJump.participantJumperIds, participantId]));
 
     jumpAutosave.updateDraft({
       ...targetJump,
@@ -357,24 +388,25 @@ export function JumpsPage() {
     });
 
     try {
-      await syncJumpParticipantMembership(chainId, targetJump, jumperId, !alreadyParticipating);
+      await syncJumpParticipantMembership(chainId, targetJump, participantId, !alreadyParticipating);
 
-      if (alreadyParticipating && focusedJumperId === jumperId) {
+      if (alreadyParticipating && focusedParticipantId === participantId) {
         setFocusedParticipant(nextParticipantIds[0] ?? null);
       } else if (!alreadyParticipating && !simpleMode) {
         setActiveTab('purchases');
         updateQuery((nextParams) => {
-          nextParams.set('jumper', jumperId);
+          nextParams.set('participant', participantId);
+          nextParams.delete('jumper');
           nextParams.set('panel', 'participation');
         });
       } else if (!alreadyParticipating) {
-        setFocusedParticipant(jumperId);
+        setFocusedParticipant(participantId);
       }
 
       setNotice({
         tone: 'success',
         message: alreadyParticipating
-          ? 'Removed jumper from this jump and cleaned up participation and purchases data.'
+          ? 'Removed this participant from the jump and cleaned up the purchases record.'
           : 'Updated jump participants and their records.',
       });
     } catch (error) {
@@ -385,7 +417,7 @@ export function JumpsPage() {
     }
   }
 
-  async function ensureParticipation(jumperId: string) {
+  async function ensureParticipation(participantId: string) {
     const targetJump = draftJump ?? selectedJump;
 
     if (!workspace.activeBranch || !targetJump) {
@@ -393,22 +425,23 @@ export function JumpsPage() {
     }
 
     const existing = workspace.participations.find(
-      (participation) => participation.jumpId === targetJump.id && participation.jumperId === jumperId,
+      (participation) => participation.jumpId === targetJump.id && participation.jumperId === participantId,
     );
 
     if (existing) {
       handleTabChange('purchases');
       updateQuery((nextParams) => {
-        nextParams.set('jumper', jumperId);
+        nextParams.set('participant', participantId);
+        nextParams.delete('jumper');
       });
       return;
     }
 
     try {
-      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, targetJump.id, jumperId));
+      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, targetJump.id, participantId));
 
-      if (!targetJump.participantJumperIds.includes(jumperId)) {
-        const nextParticipantIds = [...targetJump.participantJumperIds, jumperId];
+      if (!targetJump.participantJumperIds.includes(participantId)) {
+        const nextParticipantIds = [...targetJump.participantJumperIds, participantId];
 
         jumpAutosave.updateDraft({
           ...targetJump,
@@ -423,11 +456,12 @@ export function JumpsPage() {
 
       handleTabChange('purchases');
       updateQuery((nextParams) => {
-        nextParams.set('jumper', jumperId);
+        nextParams.set('participant', participantId);
+        nextParams.delete('jumper');
       });
       setNotice({
         tone: 'success',
-        message: 'Created a participation and purchases record for this jumper.',
+        message: 'Created a participation and purchases record for this participant.',
       });
     } catch (error) {
       setNotice({
@@ -593,8 +627,8 @@ export function JumpsPage() {
       return <p>No jumps match the current search.</p>;
     }
 
-    if (workspace.jumpers.length === 0) {
-      return <p>No jumpers yet.</p>;
+    if (allParticipants.length === 0) {
+      return <p>No jumpers or companions yet.</p>;
     }
 
     return (
@@ -602,34 +636,36 @@ export function JumpsPage() {
         <section className="editor-section">
           <div className="editor-section__header">
             <div className="stack stack--compact">
-              <h4>Jumpers in this jump</h4>
-              <PlainLanguageHint term="Party" meaning="the jumpers who are taking part in this jump." />
+              <h4>Participants in this jump</h4>
+              <PlainLanguageHint term="Party" meaning="the jumpers and companions taking part in this jump." />
             </div>
-            <span className="pill">{draftJump.participantJumperIds.length}</span>
+            <span className="pill">{jumpParticipants.length}</span>
           </div>
 
           <div className="selection-editor-list">
-            {workspace.jumpers.map((jumper) => {
-              const isParticipating = draftJump.participantJumperIds.includes(jumper.id);
-              const isFocused = focusedJumperId === jumper.id;
+            {allParticipants.map((participant) => {
+              const isParticipating = draftJump.participantJumperIds.includes(participant.id);
+              const isFocused = focusedParticipantId === participant.id;
 
               return (
-                <div className="selection-editor" key={jumper.id}>
+                <div className="selection-editor" key={participant.id}>
                   <div className="selection-editor__header">
                     <div className="stack stack--compact">
-                      <strong>{jumper.name}</strong>
+                      <strong>{participant.name}</strong>
                       <div className="inline-meta">
+                        <span className="pill pill--soft">{participant.kind}</span>
                         <span className="pill">{isParticipating ? 'Participating' : 'Not in jump'}</span>
                         {isFocused ? <span className="pill">Current focus</span> : null}
                       </div>
+                      <p className="editor-section__copy">{formatParticipantDetail(participant)}</p>
                     </div>
                     <div className="actions">
                       {isParticipating ? (
-                        <button className="button button--secondary" type="button" onClick={() => setFocusedParticipant(jumper.id)}>
+                        <button className="button button--secondary" type="button" onClick={() => setFocusedParticipant(participant.id)}>
                           Focus
                         </button>
                       ) : null}
-                      <button className="button" type="button" onClick={() => void toggleParticipant(jumper.id)}>
+                      <button className="button" type="button" onClick={() => void toggleParticipant(participant.id)}>
                         {isParticipating ? 'Remove' : 'Add To Jump'}
                       </button>
                     </div>
@@ -656,18 +692,18 @@ export function JumpsPage() {
       return <p>No jumps match the current search.</p>;
     }
 
-    if (workspace.jumpers.length === 0) {
-      return <p>No jumpers yet.</p>;
+    if (allParticipants.length === 0) {
+      return <p>No jumpers or companions yet.</p>;
     }
 
-    if (jumpParticipantJumpers.length === 0) {
+    if (jumpParticipants.length === 0) {
       return (
         <article className="card editor-sheet stack">
           <div className="section-heading">
-            <h3>No participating jumpers yet</h3>
+            <h3>No participants yet</h3>
             <span className="pill">Start in Party</span>
           </div>
-          <p>Add at least one jumper to this jump before editing purchases.</p>
+          <p>Add at least one jumper or companion to this jump before editing purchases.</p>
           <div className="actions">
             <button className="button" type="button" onClick={() => handleTabChange('party')}>
               Open Party
@@ -677,53 +713,53 @@ export function JumpsPage() {
       );
     }
 
-    const purchaseEditor = activeParticipationJumper && activeParticipation ? (
+    const purchaseEditor = activeParticipationParticipant && activeParticipation ? (
       <ParticipationEditorCard
         jump={draftJump}
-        jumper={activeParticipationJumper}
+        participant={activeParticipationParticipant}
         participation={activeParticipation}
         workspace={workspace}
         showBudgetSummary={false}
         showBudgetHeader={false}
         onDraftChange={setLiveParticipationDraft}
       />
-    ) : activeParticipationJumper ? (
+    ) : activeParticipationParticipant ? (
       <article className="card editor-sheet stack">
         <div className="section-heading">
-          <h3>{activeParticipationJumper.name}</h3>
+          <h3>{activeParticipationParticipant.name}</h3>
           <span className="pill pill--soft">record missing</span>
         </div>
-        <p>{activeParticipationJumper.name} is participating, but the record is missing.</p>
+        <p>{activeParticipationParticipant.name} is participating, but the record is missing.</p>
         <div className="actions">
-          <button className="button" type="button" onClick={() => void ensureParticipation(activeParticipationJumper.id)}>
+          <button className="button" type="button" onClick={() => void ensureParticipation(activeParticipationParticipant.id)}>
             Create Record
           </button>
         </div>
       </article>
     ) : null;
 
-    const showParticipantRail = !simpleMode && (jumpParticipantJumpers.length > 1 || pendingFocusedJumper);
-    const participantSelector = jumpParticipantJumpers.length > 1 ? (
+    const showParticipantRail = !simpleMode && (jumpParticipants.length > 1 || pendingFocusedParticipant);
+    const participantSelector = jumpParticipants.length > 1 ? (
       <div className={showParticipantRail ? 'selection-list' : 'chip-grid'}>
-        {jumpParticipantJumpers.map((jumper) =>
+        {jumpParticipants.map((participant) =>
           showParticipantRail ? (
             <button
-              className={`selection-list__item${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
+              className={`selection-list__item${activeParticipationParticipant?.id === participant.id ? ' is-active' : ''}`}
               type="button"
-              key={jumper.id}
-              onClick={() => setFocusedParticipant(jumper.id)}
+              key={participant.id}
+              onClick={() => setFocusedParticipant(participant.id)}
             >
-              <strong>{jumper.name}</strong>
-              <span>{activeParticipationJumper?.id === jumper.id ? 'Current editor' : 'Open purchases'}</span>
+              <strong>{participant.name}</strong>
+              <span>{activeParticipationParticipant?.id === participant.id ? 'Current editor' : 'Open purchases'}</span>
             </button>
           ) : (
             <button
-              className={`choice-chip${activeParticipationJumper?.id === jumper.id ? ' is-active' : ''}`}
+              className={`choice-chip${activeParticipationParticipant?.id === participant.id ? ' is-active' : ''}`}
               type="button"
-              key={jumper.id}
-              onClick={() => setFocusedParticipant(jumper.id)}
+              key={participant.id}
+              onClick={() => setFocusedParticipant(participant.id)}
             >
-              <span>{jumper.name}</span>
+              <span>{participant.name}</span>
             </button>
           ),
         )}
@@ -737,15 +773,15 @@ export function JumpsPage() {
             <aside className="card stack">
               <div className="section-heading">
                 <h3>Participants</h3>
-                <span className="pill">{jumpParticipantJumpers.length} in jump</span>
+                <span className="pill">{jumpParticipants.length} in jump</span>
               </div>
               {participantSelector}
-              {pendingFocusedJumper ? (
+              {pendingFocusedParticipant ? (
                 <div className="jump-focus-callout">
-                  <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
+                  <strong>{pendingFocusedParticipant.name} is not in this jump yet.</strong>
                   <div className="actions">
-                    <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
-                      Add {pendingFocusedJumper.name} To This Jump
+                    <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedParticipant.id)}>
+                      Add {pendingFocusedParticipant.name} To This Jump
                     </button>
                   </div>
                 </div>
@@ -756,15 +792,15 @@ export function JumpsPage() {
           </section>
         ) : (
           <>
-            {participantSelector || pendingFocusedJumper ? (
+            {participantSelector || pendingFocusedParticipant ? (
               <section className="section-surface stack stack--compact">
                 {participantSelector}
-                {pendingFocusedJumper ? (
+                {pendingFocusedParticipant ? (
                   <div className="jump-focus-callout">
-                    <strong>{pendingFocusedJumper.name} is not in this jump yet.</strong>
+                    <strong>{pendingFocusedParticipant.name} is not in this jump yet.</strong>
                     <div className="actions">
-                      <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedJumper.id)}>
-                        Add {pendingFocusedJumper.name} To This Jump
+                      <button className="button" type="button" onClick={() => void ensureParticipation(pendingFocusedParticipant.id)}>
+                        Add {pendingFocusedParticipant.name} To This Jump
                       </button>
                     </div>
                   </div>
@@ -884,7 +920,7 @@ export function JumpsPage() {
                       <div className="inline-meta">
                         <span className="pill">{draftJump.status}</span>
                         <span className="pill">{draftJump.jumpType}</span>
-                        <span className="pill">{draftJump.participantJumperIds.length} participating</span>
+                        <span className="pill">{jumpParticipants.length} participating</span>
                       </div>
                     </div>
                     <div className="actions">
