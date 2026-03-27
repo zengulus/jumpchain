@@ -12,6 +12,7 @@ import {
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { COSMIC_BACKPACK_BP_CURRENCY_KEY } from '../cosmic-backpack/model';
+import { createBlankAltFormNoteEntry, readAltFormNoteFields, updateAltFormNoteEntry } from './altFormNotes';
 import { applyPurchaseStipends } from './budgetMath';
 
 type Workspace = ReturnType<typeof useChainWorkspace>['workspace'];
@@ -24,18 +25,24 @@ export interface ParticipationActor {
   kind: 'jumper' | 'companion';
 }
 
-type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'stipends' | 'drawbacks' | 'notes';
+type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'stipends' | 'drawbacks' | 'alt-forms' | 'notes';
 type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
 type DiscountLevel = 0 | 1 | 2;
 type BeginningSlotId = 'origin' | 'background' | 'race' | 'age';
 type PurchaseSubtypeSectionId = 'perks' | 'subsystems' | 'items' | 'other';
 type SectionStipendMap = Record<PurchaseSectionKey, number>;
 
+const participationTabs: ParticipationTab[] = ['beginnings', 'perks', 'subsystems', 'items', 'other', 'stipends', 'drawbacks', 'alt-forms', 'notes'];
+
 const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }> = [
   { level: 0, label: 'Full price', factor: 1 },
   { level: 1, label: 'Discounted', factor: 0.5 },
   { level: 2, label: 'Double discounted', factor: 0.25 },
 ];
+
+function isParticipationTab(value: string | null): value is ParticipationTab {
+  return value !== null && participationTabs.includes(value as ParticipationTab);
+}
 
 interface SummaryToken {
   label: string;
@@ -759,6 +766,15 @@ function getPurchaseSubtypeSection(
   }
 
   return 'subsystems';
+}
+
+function countPurchaseSubtypeDefinitionsInSection(
+  definitions: Record<string, PurchaseSubtypeDefinition>,
+  section: Extract<PurchaseSubtypeSectionId, 'subsystems' | 'items'>,
+) {
+  return Object.entries(definitions).filter(
+    ([subtypeKey, definition]) => getPurchaseSubtypeSection(subtypeKey, definition) === section,
+  ).length;
 }
 
 function getSectionLabel(sectionKey: PurchaseSectionKey) {
@@ -2129,6 +2145,112 @@ function PurchaseSubtypeDefinitionEditorSection(props: {
   );
 }
 
+function AltFormNotesSection(props: {
+  items: unknown[];
+  onChange: (nextItems: unknown[]) => void;
+}) {
+  return (
+    <section className="editor-section">
+      <div className="editor-section__header">
+        <h4>Alt-form notes</h4>
+        <span className="pill">{props.items.length}</span>
+      </div>
+
+      <p className="editor-section__copy">
+        Keep this lightweight: note the form name, where it comes from, and anything that matters in this jump.
+      </p>
+
+      {props.items.length === 0 ? <p className="editor-section__empty">No alt forms noted yet.</p> : null}
+
+      {props.items.length > 0 ? (
+        <div className="selection-editor-list">
+          {props.items.map((item, index) => {
+            const fields = readAltFormNoteFields(item);
+
+            return (
+              <div className="selection-editor" key={`alt-form-${index}`}>
+                <div className="selection-editor__header">
+                  <strong>{fields.name.trim() || `Alt form ${index + 1}`}</strong>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() =>
+                      props.onChange(props.items.filter((_, itemIndex) => itemIndex !== index))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="field-grid field-grid--two">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={fields.name}
+                      onChange={(event) =>
+                        props.onChange(
+                          props.items.map((entry, itemIndex) =>
+                            itemIndex === index
+                              ? updateAltFormNoteEntry(entry, { name: event.target.value })
+                              : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Source</span>
+                    <input
+                      value={fields.source}
+                      onChange={(event) =>
+                        props.onChange(
+                          props.items.map((entry, itemIndex) =>
+                            itemIndex === index
+                              ? updateAltFormNoteEntry(entry, { source: event.target.value })
+                              : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>Notes</span>
+                  <textarea
+                    rows={4}
+                    value={fields.notes}
+                    onChange={(event) =>
+                      props.onChange(
+                        props.items.map((entry, itemIndex) =>
+                          itemIndex === index
+                            ? updateAltFormNoteEntry(entry, { notes: event.target.value })
+                            : entry,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="actions">
+        <button
+          className="button"
+          type="button"
+          onClick={() => props.onChange([...props.items, createBlankAltFormNoteEntry()])}
+        >
+          Add Alt Form
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ParticipationEditorTabs(props: {
   tabs: Array<{ id: ParticipationTab; label: string; count?: number }>;
   activeTab: ParticipationTab;
@@ -2535,6 +2657,10 @@ export function ParticipationEditorCard(props: {
   );
   const showBudgetSummary = props.showBudgetSummary ?? true;
   const showBudgetHeader = props.showBudgetHeader ?? true;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = isParticipationTab(searchParams.get('participationTab'))
+    ? (searchParams.get('participationTab') as ParticipationTab)
+    : null;
   const cpBudgetEntry = useMemo(
     () => findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions),
     [currencyDefinitions, effectiveBudgetState.effectiveBudgets],
@@ -2551,7 +2677,7 @@ export function ParticipationEditorCard(props: {
     () => Array.from(new Set([...Object.keys(effectiveBudgetState.baseBudgets), ...Object.keys(draftParticipation.budgets)])),
     [draftParticipation.budgets, effectiveBudgetState.baseBudgets],
   );
-  const [activeTab, setActiveTab] = useState<ParticipationTab>('beginnings');
+  const [activeTab, setActiveTab] = useState<ParticipationTab>(requestedTab ?? 'beginnings');
 
   const perkPurchases = useMemo(
     () => filterPurchasesBySection(draftParticipation.purchases, 'perk', purchaseClassification),
@@ -2595,6 +2721,12 @@ export function ParticipationEditorCard(props: {
   const primaryBudgetLedgerEntry =
     budgetLedgerEntries.find((entry) => entry.currencyKey === primaryCurrencyKey) ?? budgetLedgerEntries[0] ?? null;
   const cpCurrentValue = primaryBudgetLedgerEntry?.remaining ?? cpBudgetValue;
+
+  useEffect(() => {
+    if (requestedTab && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [activeTab, requestedTab]);
 
   function updateParticipation(
     updater:
@@ -2645,6 +2777,21 @@ export function ParticipationEditorCard(props: {
         ...current,
         purchases: [...otherItems, ...normalizedNextItems],
       };
+    });
+  }
+
+  function handleParticipationTabChange(nextTab: ParticipationTab) {
+    setActiveTab(nextTab);
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+
+      if (nextTab === 'beginnings') {
+        nextParams.delete('participationTab');
+      } else {
+        nextParams.set('participationTab', nextTab);
+      }
+
+      return nextParams;
     });
   }
 
@@ -2844,6 +2991,7 @@ export function ParticipationEditorCard(props: {
     { id: 'other', label: 'Other', count: purchaseGroups.others.length },
     { id: 'stipends', label: 'Stipends', count: stipendRows.length },
     { id: 'drawbacks', label: 'Drawbacks', count: draftParticipation.drawbacks.length + draftParticipation.retainedDrawbacks.length },
+    { id: 'alt-forms', label: 'Alt Forms', count: draftParticipation.altForms.length },
     { id: 'notes', label: 'Notes' },
   ];
 
@@ -2869,7 +3017,7 @@ export function ParticipationEditorCard(props: {
         />
       ) : null}
 
-      <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+      <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={handleParticipationTabChange} />
 
       {activeTab === 'beginnings' ? (
         <div className="stack stack--compact">
@@ -2991,12 +3139,22 @@ export function ParticipationEditorCard(props: {
             sectionStipends={sectionStipends}
           />
 
-          <PurchaseSubtypeDefinitionEditorSection
-            title="Subsystem types"
-            section="subsystems"
-            definitions={purchaseSubtypeDefinitions}
-            onChange={updatePurchaseSubtypeDefinitions}
-          />
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional subtype templates</span>
+              <span className="pill">
+                {countPurchaseSubtypeDefinitionsInSection(purchaseSubtypeDefinitions, 'subsystems')}
+              </span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <PurchaseSubtypeDefinitionEditorSection
+                title="Subsystem types"
+                section="subsystems"
+                definitions={purchaseSubtypeDefinitions}
+                onChange={updatePurchaseSubtypeDefinitions}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 
@@ -3018,12 +3176,22 @@ export function ParticipationEditorCard(props: {
             sectionStipends={sectionStipends}
           />
 
-          <PurchaseSubtypeDefinitionEditorSection
-            title="Item types"
-            section="items"
-            definitions={purchaseSubtypeDefinitions}
-            onChange={updatePurchaseSubtypeDefinitions}
-          />
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional subtype templates</span>
+              <span className="pill">
+                {countPurchaseSubtypeDefinitionsInSection(purchaseSubtypeDefinitions, 'items')}
+              </span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <PurchaseSubtypeDefinitionEditorSection
+                title="Item types"
+                section="items"
+                definitions={purchaseSubtypeDefinitions}
+                onChange={updatePurchaseSubtypeDefinitions}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 
@@ -3093,6 +3261,20 @@ export function ParticipationEditorCard(props: {
               }))
             }
             currencyDefinitions={currencyDefinitions}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === 'alt-forms' ? (
+        <div className="stack stack--compact">
+          <AltFormNotesSection
+            items={draftParticipation.altForms}
+            onChange={(nextItems) =>
+              updateParticipation((current) => ({
+                ...current,
+                altForms: nextItems,
+              }))
+            }
           />
         </div>
       ) : null}

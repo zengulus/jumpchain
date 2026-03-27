@@ -3,6 +3,7 @@ import type { NativeChainBundle } from '../../domain/save';
 import type { ChainOverview } from '../../db/persistence';
 import { cosmicBackpackOptionCatalog } from '../cosmic-backpack/catalog';
 import { readCosmicBackpackState } from '../cosmic-backpack/model';
+import { readAltFormNoteFields } from '../participation/altFormNotes';
 
 export type UniversalSearchResultKind =
   | 'chain'
@@ -11,6 +12,8 @@ export type UniversalSearchResultKind =
   | 'companion'
   | 'jump'
   | 'participation'
+  | 'selection'
+  | 'alt-form'
   | 'effect'
   | 'note'
   | 'snapshot'
@@ -26,6 +29,7 @@ export interface UniversalSearchResult {
   subtitle: string;
   snippet: string;
   to: string;
+  tags: string[];
   score: number;
 }
 
@@ -36,6 +40,8 @@ const kindLabels: Record<UniversalSearchResultKind, string> = {
   companion: 'Companion',
   jump: 'Jump',
   participation: 'Participation & Purchases',
+  selection: 'Selection',
+  'alt-form': 'Alt Form',
   effect: 'Effect',
   note: 'Note',
   snapshot: 'Snapshot',
@@ -49,6 +55,8 @@ const kindPriority: Record<UniversalSearchResultKind, number> = {
   companion: 24,
   jump: 25,
   participation: 20,
+  selection: 23,
+  'alt-form': 19,
   effect: 22,
   note: 21,
   snapshot: 18,
@@ -62,6 +70,56 @@ function escapeRegExp(value: string) {
 function cleanLabel(value: string | null | undefined, fallback: string) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : fallback;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+    : [];
+}
+
+function getOptionalIdentifier(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return null;
+}
+
+function getOptionalNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function cleanTagList(tags: string[]) {
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0),
+    ),
+  );
 }
 
 export function normalizeSearchQuery(value: string | null | undefined) {
@@ -183,6 +241,7 @@ interface SearchResultSeed {
   subtitle: string;
   snippet: string;
   to: string;
+  tags?: string[];
   extraText?: unknown[];
   preferredChainOnly?: boolean;
 }
@@ -197,6 +256,7 @@ export interface UniversalSearchIndexEntry {
   subtitle: string;
   snippet: string;
   to: string;
+  tags: string[];
   searchableText: string;
   normalizedTitle: string;
   normalizedSubtitle: string;
@@ -205,7 +265,11 @@ export interface UniversalSearchIndexEntry {
 }
 
 function buildSearchableText(seed: SearchResultSeed) {
-  return normalizeSearchQuery([seed.title, seed.subtitle, seed.snippet, ...(seed.extraText ?? [])].map((value) => valueToSearchText(value)).join(' '));
+  return normalizeSearchQuery(
+    [seed.title, seed.subtitle, seed.snippet, seed.tags ?? [], ...(seed.extraText ?? [])]
+      .map((value) => valueToSearchText(value))
+      .join(' '),
+  );
 }
 
 function buildSearchIndexEntry(seed: SearchResultSeed): UniversalSearchIndexEntry {
@@ -219,6 +283,7 @@ function buildSearchIndexEntry(seed: SearchResultSeed): UniversalSearchIndexEntr
     subtitle: seed.subtitle,
     snippet: seed.snippet,
     to: seed.to,
+    tags: cleanTagList(seed.tags ?? []),
     searchableText: buildSearchableText(seed),
     normalizedTitle: normalizeSearchQuery(seed.title),
     normalizedSubtitle: normalizeSearchQuery(seed.subtitle),
@@ -263,6 +328,7 @@ export function queryUniversalSearchResults(input: {
       subtitle: entry.subtitle,
       snippet: entry.snippet,
       to: withQueryForSearchResult(entry.to, entry.kind, query),
+      tags: entry.tags,
       score: (() => {
         let score = kindPriority[entry.kind];
 
@@ -293,6 +359,205 @@ export function queryUniversalSearchResults(input: {
     }))
     .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
     .slice(0, 120);
+}
+
+interface SearchPurchaseSubtypeDefinition {
+  name: string;
+  type: number | null;
+}
+
+interface SearchPurchaseClassification {
+  perkSubtypeKeys: Set<string>;
+  itemSubtypeKeys: Set<string>;
+  subsystemSubtypeKeys: Set<string>;
+}
+
+function getSelectionTitle(value: unknown) {
+  const record = asRecord(value);
+
+  if (typeof record.name === 'string' && record.name.trim().length > 0) {
+    return record.name;
+  }
+
+  if (typeof record.summary === 'string' && record.summary.trim().length > 0) {
+    return record.summary;
+  }
+
+  if (typeof record.label === 'string' && record.label.trim().length > 0) {
+    return record.label;
+  }
+
+  if (typeof record.sourcePurchaseId === 'number') {
+    return `Selection ${record.sourcePurchaseId}`;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  return 'Untitled Selection';
+}
+
+function getSelectionKindTitle(record: Record<string, unknown>) {
+  switch (record.selectionKind) {
+    case 'drawback':
+      return 'Drawback';
+    case 'retained-drawback':
+      return 'Retained drawback';
+    default:
+      return 'Purchase';
+  }
+}
+
+function getSelectionTags(value: unknown) {
+  return cleanTagList(getStringList(asRecord(value).tags));
+}
+
+function getSelectionSubtypeKey(value: unknown) {
+  const record = asRecord(value);
+  return getOptionalIdentifier(record.subtype) ?? getOptionalIdentifier(record.subtypeKey);
+}
+
+function getSelectionPurchaseType(value: unknown) {
+  const record = asRecord(value);
+  return getOptionalNumber(record.purchaseType) ?? getOptionalNumber(record._type);
+}
+
+function getPurchaseSubtypeDefinitions(value: unknown): Record<string, SearchPurchaseSubtypeDefinition> {
+  return Object.fromEntries(
+    Object.entries(asRecord(value)).map(([key, definition]) => {
+      const record = asRecord(definition);
+
+      return [
+        key,
+        {
+          name:
+            typeof record.name === 'string' && record.name.trim().length > 0
+              ? record.name
+              : key === '0'
+                ? 'Perk'
+                : key === '1'
+                  ? 'Item'
+                  : key === '10'
+                    ? 'Subsystem'
+                    : `Subtype ${key}`,
+          type: getOptionalNumber(record.type),
+        },
+      ];
+    }),
+  );
+}
+
+function ensurePurchaseSubtypeDefinitions(
+  definitions: Record<string, SearchPurchaseSubtypeDefinition>,
+  subtypeKeys: string[],
+) {
+  const nextDefinitions: Record<string, SearchPurchaseSubtypeDefinition> = {
+    '0': { name: 'Perk', type: 0 },
+    '1': { name: 'Item', type: 1 },
+    '10': { name: 'Subsystem', type: 2 },
+    ...definitions,
+  };
+
+  for (const subtypeKey of subtypeKeys) {
+    if (!(subtypeKey in nextDefinitions)) {
+      nextDefinitions[subtypeKey] = {
+        name: `Subtype ${subtypeKey}`,
+        type: subtypeKey === '1' ? 1 : subtypeKey === '10' ? 2 : null,
+      };
+    }
+  }
+
+  return nextDefinitions;
+}
+
+function getPurchaseSubtypeSection(
+  subtypeKey: string,
+  definition: SearchPurchaseSubtypeDefinition,
+): 'perks' | 'subsystems' | 'items' | 'other' {
+  const lowerName = definition.name.toLowerCase();
+
+  if (definition.type === 1) {
+    return 'items';
+  }
+
+  if (definition.type === 2) {
+    return 'subsystems';
+  }
+
+  if (definition.type === 3) {
+    return 'other';
+  }
+
+  if (definition.type === 0 && (subtypeKey === '0' || lowerName.includes('perk'))) {
+    return 'perks';
+  }
+
+  return 'subsystems';
+}
+
+function getPurchaseClassification(
+  subtypeDefinitions: Record<string, SearchPurchaseSubtypeDefinition>,
+): SearchPurchaseClassification {
+  const perkSubtypeKeys = new Set(
+    Object.entries(subtypeDefinitions)
+      .filter(([key, definition]) => {
+        const lowerName = definition.name.toLowerCase();
+        return definition.type === 0 && (key === '0' || lowerName.includes('perk'));
+      })
+      .map(([key]) => key),
+  );
+  const itemSubtypeKeys = new Set(
+    Object.entries(subtypeDefinitions)
+      .filter(([, definition]) => definition.type === 1)
+      .map(([key]) => key),
+  );
+  const subsystemSubtypeKeys = new Set(
+    Object.keys(subtypeDefinitions).filter(
+      (key) => !perkSubtypeKeys.has(key) && !itemSubtypeKeys.has(key),
+    ),
+  );
+
+  return {
+    perkSubtypeKeys,
+    itemSubtypeKeys,
+    subsystemSubtypeKeys,
+  };
+}
+
+function getPurchaseTabForSelection(
+  value: unknown,
+  classification: SearchPurchaseClassification,
+): 'perks' | 'subsystems' | 'items' | 'other' {
+  const purchaseType = getSelectionPurchaseType(value);
+  const subtypeKey = getSelectionSubtypeKey(value);
+
+  if (purchaseType === 1 || (subtypeKey !== null && classification.itemSubtypeKeys.has(subtypeKey))) {
+    return 'items';
+  }
+
+  if (purchaseType === 0 && (subtypeKey === null || classification.perkSubtypeKeys.has(subtypeKey))) {
+    return 'perks';
+  }
+
+  if (purchaseType === 2 || (subtypeKey !== null && classification.subsystemSubtypeKeys.has(subtypeKey))) {
+    return 'subsystems';
+  }
+
+  return 'other';
+}
+
+function buildSelectionRoute(
+  chainId: string,
+  jumpId: string,
+  participantId: string,
+  tab: 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks' | 'alt-forms',
+) {
+  return withSearchParams(`/chains/${chainId}/jumps/${jumpId}`, {
+    jumper: participantId,
+    panel: 'participation',
+    participationTab: tab,
+  });
 }
 
 export function buildUniversalSearchIndex(input: {
@@ -390,17 +655,32 @@ export function buildUniversalSearchIndex(input: {
 
     for (const participation of workspace.participations) {
       const jump = jumpById.get(participation.jumpId);
-      const jumper = jumperById.get(participation.jumperId);
+      const participant =
+        jumperById.get(participation.jumperId) ??
+        companionById.get(participation.jumperId) ??
+        null;
+      const rawSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(participation.importSourceMetadata).purchaseSubtypes);
+      const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
+        rawSubtypeDefinitions,
+        participation.purchases
+          .map((purchase) => getSelectionSubtypeKey(purchase))
+          .filter((subtypeKey): subtypeKey is string => Boolean(subtypeKey)),
+      );
+      const purchaseClassification = getPurchaseClassification(purchaseSubtypeDefinitions);
 
       pushSearchIndexEntry(results, {
         kind: 'participation',
         chainId: bundle.chain.id,
         chainTitle,
-        title: `${cleanLabel(jumper?.name, 'Jumper')} @ ${cleanLabel(jump?.title, 'Jump')}`,
+        title: `${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')}`,
         subtitle: `Participation & Purchases | ${chainTitle}`,
         snippet: buildSearchSnippet(
           '',
           participation.notes,
+          participation.purchases,
+          participation.drawbacks,
+          participation.retainedDrawbacks,
+          participation.altForms,
           participation.narratives,
           participation.origins,
           participation.importSourceMetadata,
@@ -410,14 +690,74 @@ export function buildUniversalSearchIndex(input: {
           panel: 'participation',
         }),
         extraText: [
-          jumper?.name,
+          participant?.name,
           jump?.title,
           participation.notes,
+          participation.purchases,
+          participation.drawbacks,
+          participation.retainedDrawbacks,
+          participation.altForms,
           participation.narratives,
           participation.origins,
           participation.importSourceMetadata,
         ],
       });
+
+      for (const purchase of participation.purchases) {
+        const record = asRecord(purchase);
+        const title = cleanLabel(getSelectionTitle(purchase), 'Untitled Purchase');
+        const tags = getSelectionTags(purchase);
+
+        pushSearchIndexEntry(results, {
+          kind: 'selection',
+          chainId: bundle.chain.id,
+          chainTitle,
+          title,
+          subtitle: `${getSelectionKindTitle(record)} | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
+          snippet: buildSearchSnippet('', record.description, record.summary, tags),
+          to: buildSelectionRoute(
+            bundle.chain.id,
+            participation.jumpId,
+            participation.jumperId,
+            getPurchaseTabForSelection(purchase, purchaseClassification),
+          ),
+          tags,
+          extraText: [record.description, record.summary, record.source, tags],
+        });
+      }
+
+      for (const drawback of [...participation.drawbacks, ...participation.retainedDrawbacks]) {
+        const record = asRecord(drawback);
+        const title = cleanLabel(getSelectionTitle(drawback), 'Untitled Drawback');
+        const tags = getSelectionTags(drawback);
+
+        pushSearchIndexEntry(results, {
+          kind: 'selection',
+          chainId: bundle.chain.id,
+          chainTitle,
+          title,
+          subtitle: `${getSelectionKindTitle(record)} | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
+          snippet: buildSearchSnippet('', record.description, record.summary, tags),
+          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.jumperId, 'drawbacks'),
+          tags,
+          extraText: [record.description, record.summary, record.source, tags],
+        });
+      }
+
+      for (const altForm of participation.altForms) {
+        const fields = readAltFormNoteFields(altForm);
+
+        pushSearchIndexEntry(results, {
+          kind: 'alt-form',
+          chainId: bundle.chain.id,
+          chainTitle,
+          title: cleanLabel(fields.name, 'Alt form note'),
+          subtitle: `Alt form | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
+          snippet: buildSearchSnippet('', fields.notes, fields.source),
+          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.jumperId, 'alt-forms'),
+          extraText: [fields.source, fields.notes],
+        });
+      }
     }
 
     for (const effect of workspace.effects) {
@@ -472,6 +812,7 @@ export function buildUniversalSearchIndex(input: {
         to: withSearchParams(`/chains/${bundle.chain.id}/notes`, {
           note: note.id,
         }),
+        tags: cleanTagList(note.tags),
         extraText: [note.noteType, note.content, note.tags, ownerLabel],
       });
     }

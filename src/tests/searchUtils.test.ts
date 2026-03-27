@@ -142,7 +142,26 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
         jumperId: `${chainId}-jumper`,
         status: 'active',
         notes: 'Keeps a live expedition log.',
-        purchases: [],
+        purchases: [
+          {
+            name: 'Garage Drone',
+            summary: 'Garage Drone',
+            description: 'Mobile repair assistant for workshop and convoy maintenance.',
+            tags: ['garage', 'drone', 'support'],
+            purchaseType: 1,
+            subtype: 1,
+            selectionKind: 'purchase',
+          },
+          {
+            name: 'Archive Hack',
+            summary: 'Archive Hack',
+            description: 'Modular archive interface and utility rig.',
+            tags: ['archive', 'utility'],
+            purchaseType: 0,
+            subtype: 10,
+            selectionKind: 'purchase',
+          },
+        ],
         drawbacks: [],
         retainedDrawbacks: [],
         origins: {},
@@ -153,13 +172,25 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
           challenges: '',
           goals: 'Restore the library network.',
         },
-        altForms: [],
+        altForms: [
+          {
+            name: 'Courier Raven',
+            source: 'Feather cloak',
+            notes: 'Fast messenger form for archive districts and rooftop travel.',
+          },
+        ],
         bankDeposit: 0,
         currencyExchanges: [],
         supplementPurchases: {},
         supplementInvestments: {},
         drawbackOverrides: {},
-        importSourceMetadata: {},
+        importSourceMetadata: {
+          purchaseSubtypes: {
+            '0': { name: 'Perk', type: 0, essential: true },
+            '1': { name: 'Item', type: 1, essential: true },
+            '10': { name: 'Power', type: 0, essential: false },
+          },
+        },
       },
     ],
     effects: [
@@ -332,5 +363,62 @@ describe('search utilities', () => {
     });
 
     expect(results.some((result) => result.kind === 'cosmic-backpack' && result.title === 'Garage Annex')).toBe(true);
+  });
+
+  it('builds tagged selection cards and alt-form cards for participation data', () => {
+    const bundle = createBundle('chain-alpha', 'Alpha Chain');
+
+    const taggedSelectionResults = buildUniversalSearchResults({
+      query: 'garage drone',
+      overviews: [
+        {
+          chainId: bundle.chain.id,
+          title: bundle.chain.title,
+          updatedAt: now,
+          activeBranchId: bundle.chain.activeBranchId,
+          jumperCount: 1,
+          jumpCount: 1,
+          importReportCount: 0,
+        },
+      ],
+      bundles: [bundle],
+      preferredChainId: bundle.chain.id,
+    });
+
+    expect(
+      taggedSelectionResults.some(
+        (result) =>
+          result.kind === 'selection' &&
+          result.title === 'Garage Drone' &&
+          result.tags.includes('garage') &&
+          result.to.includes('participationTab=items'),
+      ),
+    ).toBe(true);
+
+    const altFormResults = buildUniversalSearchResults({
+      query: 'courier raven',
+      overviews: [
+        {
+          chainId: bundle.chain.id,
+          title: bundle.chain.title,
+          updatedAt: now,
+          activeBranchId: bundle.chain.activeBranchId,
+          jumperCount: 1,
+          jumpCount: 1,
+          importReportCount: 0,
+        },
+      ],
+      bundles: [bundle],
+      preferredChainId: bundle.chain.id,
+    });
+
+    expect(
+      altFormResults.some(
+        (result) =>
+          result.kind === 'alt-form' &&
+          result.title === 'Courier Raven' &&
+          result.to.includes('participationTab=alt-forms'),
+      ),
+    ).toBe(true);
   });
 });

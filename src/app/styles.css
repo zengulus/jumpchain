@@ -1048,12 +1048,18 @@ button {
     linear-gradient(180deg, rgba(11, 23, 33, 0.94), rgba(8, 16, 24, 0.9)),
     var(--color-bg-elevated);
   color: inherit;
-  text-decoration: none;
 }
 
 .search-page__result:hover {
   border-color: rgba(105, 210, 180, 0.24);
   background: rgba(105, 210, 180, 0.08);
+}
+
+.search-page__result-link {
+  display: grid;
+  gap: 0.5rem;
+  color: inherit;
+  text-decoration: none;
 }
 
 .search-page__result-topline {
@@ -1066,6 +1072,16 @@ button {
 .search-page__result-subtitle {
   color: var(--color-text-muted);
   font-size: 0.92rem;
+}
+
+.search-page__result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.search-page__result-tag {
+  text-decoration: none;
 }
 
 .search-highlight {
