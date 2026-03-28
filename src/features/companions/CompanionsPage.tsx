@@ -130,6 +130,7 @@ export function CompanionsPage() {
           isCompanionGuideStepComplete(draftCompanion, selectedCompanionGuideState, stepId as CompanionGuideStepId),
       ) as CompanionGuideStepId | null)
     : null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !selectedCompanionGuideState.dismissed;
 
   function updateSelectedCompanionGuideState(
     updater: (current: ReturnType<typeof getBranchGuideState>) => ReturnType<typeof getBranchGuideState>,
@@ -242,11 +243,11 @@ export function CompanionsPage() {
             : 'Roster, parent-jumper assignment, and continuity basics for branch-scoped companion records.'
         }
         badge={`${workspace.companions.length} total`}
-        actions={
+        actions={activeGuideVisible ? undefined : (
           <button className="button" type="button" onClick={() => void handleAddCompanion()}>
             Add Companion
           </button>
-        }
+        )}
       />
 
       <StatusNoticeBanner notice={notice} />
@@ -271,7 +272,7 @@ export function CompanionsPage() {
             </div>
             {simpleMode ? <p>Choose a companion, then start with name, role, and whether they are attached or independent.</p> : null}
 
-            {simpleMode ? (
+            {simpleMode && !activeGuideVisible ? (
               <details className="details-panel">
                 <summary className="details-panel__summary">
                   <span>More roster filters</span>
@@ -289,7 +290,7 @@ export function CompanionsPage() {
                   </label>
                 </div>
               </details>
-            ) : (
+            ) : !activeGuideVisible ? (
               <label className="field">
                 <span>Filter</span>
                 <select value={filter} onChange={(event) => setFilter(event.target.value as CompanionFilter)}>
@@ -299,28 +300,30 @@ export function CompanionsPage() {
                   <option value="inactive">inactive</option>
                 </select>
               </label>
+            ) : null}
+
+            {activeGuideVisible ? null : (
+              <label className="field">
+                <span>Search roster</span>
+                <input
+                  value={searchQuery}
+                  placeholder="name, role, status, parent jumper..."
+                  onChange={(event) =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
+
+                      if (event.target.value.trim()) {
+                        nextParams.set('search', event.target.value);
+                      } else {
+                        nextParams.delete('search');
+                      }
+
+                      return nextParams;
+                    })
+                  }
+                />
+              </label>
             )}
-
-            <label className="field">
-              <span>Search roster</span>
-              <input
-                value={searchQuery}
-                placeholder="name, role, status, parent jumper..."
-                onChange={(event) =>
-                  setSearchParams((currentParams) => {
-                    const nextParams = new URLSearchParams(currentParams);
-
-                    if (event.target.value.trim()) {
-                      nextParams.set('search', event.target.value);
-                    } else {
-                      nextParams.delete('search');
-                    }
-
-                    return nextParams;
-                  })
-                }
-              />
-            </label>
 
             <div className="selection-list">
               {filteredCompanions.map((companion) => {
@@ -366,18 +369,20 @@ export function CompanionsPage() {
                     <SearchHighlight text={draftCompanion.name} query={searchQuery} />
                   </h3>
                   <div className="actions">
-                    {simpleMode ? (
+                    {simpleMode && !activeGuideVisible ? (
                       <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
-                        {guideRequested ? 'Guide Open' : 'Reopen Setup'}
+                        {guideRequested && !selectedCompanionGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
                       </button>
                     ) : null}
-                    <Link
-                      className="button button--secondary"
-                      to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
-                    >
-                      Companion Notes
-                    </Link>
-                    {draftCompanion.parentJumperId ? (
+                    {!activeGuideVisible ? (
+                      <Link
+                        className="button button--secondary"
+                        to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
+                      >
+                        Companion Notes
+                      </Link>
+                    ) : null}
+                    {!activeGuideVisible && draftCompanion.parentJumperId ? (
                       <Link
                         className="button button--secondary"
                         to={`/chains/${chainId}/jumpers?jumper=${draftCompanion.parentJumperId}`}
@@ -385,7 +390,7 @@ export function CompanionsPage() {
                         Open Parent Jumper
                       </Link>
                     ) : null}
-                    {simpleMode ? (
+                    {simpleMode && !activeGuideVisible ? (
                       <details className="details-panel">
                         <summary className="details-panel__summary">
                           <span>More actions</span>
@@ -420,11 +425,11 @@ export function CompanionsPage() {
                 </div>
                 {simpleMode ? <p>Start with the relationship basics here. Optional holds origin and raw import details.</p> : null}
 
-                {simpleMode && guideRequested && currentGuideStepId ? (
+                {activeGuideVisible ? (
                   <SimpleModeGuideFrame
                     title={`${draftCompanion.name} setup`}
                     steps={[...companionGuideSteps]}
-                    currentStepId={currentGuideStepId}
+                    currentStepId={currentGuideStepId!}
                     acknowledgedStepIds={selectedCompanionGuideState.acknowledgedStepIds}
                     onStepChange={(stepId) => handleGuideStepChange(stepId as CompanionGuideStepId)}
                     onDismiss={handleGuideDismiss}

@@ -82,6 +82,7 @@ export function JumpersPage() {
         (stepId) => isJumperGuideStepComplete(draftJumper, selectedJumperGuideState, stepId as JumperGuideStepId),
       ) as JumperGuideStepId | null)
     : null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !selectedJumperGuideState.dismissed;
 
   function updateSelectedJumperGuideState(
     updater: (current: ReturnType<typeof getBranchGuideState>) => ReturnType<typeof getBranchGuideState>,
@@ -181,11 +182,11 @@ export function JumpersPage() {
             : 'Keep identity front and center, with profile details and source metadata grouped just behind it.'
         }
         badge={`${workspace.jumpers.length} total`}
-        actions={
+        actions={activeGuideVisible ? undefined : (
           <button className="button" type="button" onClick={() => void handleAddJumper()}>
             Add Jumper
           </button>
-        }
+        )}
       />
 
       <StatusNoticeBanner notice={notice} />
@@ -214,26 +215,28 @@ export function JumpersPage() {
                 <PlainLanguageHint term="Jumper" meaning="the character record this chain follows." />
               </>
             ) : null}
-            <label className="field">
-              <span>Search roster</span>
-              <input
-                value={searchQuery}
-                placeholder="name, notes, personality, background..."
-                onChange={(event) =>
-                  setSearchParams((currentParams) => {
-                    const nextParams = new URLSearchParams(currentParams);
+            {activeGuideVisible ? null : (
+              <label className="field">
+                <span>Search roster</span>
+                <input
+                  value={searchQuery}
+                  placeholder="name, notes, personality, background..."
+                  onChange={(event) =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
 
-                    if (event.target.value.trim()) {
-                      nextParams.set('search', event.target.value);
-                    } else {
-                      nextParams.delete('search');
-                    }
+                      if (event.target.value.trim()) {
+                        nextParams.set('search', event.target.value);
+                      } else {
+                        nextParams.delete('search');
+                      }
 
-                    return nextParams;
-                  })
-                }
-              />
-            </label>
+                      return nextParams;
+                    })
+                  }
+                />
+              </label>
+            )}
             <div className="selection-list">
               {filteredJumpers.map((jumper) => (
                 <button
@@ -278,23 +281,25 @@ export function JumpersPage() {
                     <SearchHighlight text={draftJumper.name} query={searchQuery} />
                   </h3>
                   <div className="actions">
-                    {simpleMode ? (
+                    {simpleMode && !activeGuideVisible ? (
                       <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
-                        {guideRequested ? 'Guide Open' : 'Reopen Setup'}
+                        {guideRequested && !selectedJumperGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
                       </button>
                     ) : null}
-                    <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
-                      {simpleMode ? 'Open Iconic (optional)' : 'Open Iconic'}
-                    </Link>
+                    {!activeGuideVisible ? (
+                      <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
+                        {simpleMode ? 'Open Iconic (optional)' : 'Open Iconic'}
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
                 {simpleMode ? <p>Start with identity and notes. Optional holds personality, background, and import cleanup.</p> : null}
 
-                {simpleMode && guideRequested && currentGuideStepId ? (
+                {activeGuideVisible ? (
                   <SimpleModeGuideFrame
                     title={`${draftJumper.name} setup`}
                     steps={[...jumperGuideSteps]}
-                    currentStepId={currentGuideStepId}
+                    currentStepId={currentGuideStepId!}
                     acknowledgedStepIds={selectedJumperGuideState.acknowledgedStepIds}
                     onStepChange={(stepId) => handleGuideStepChange(stepId as JumperGuideStepId)}
                     onDismiss={handleGuideDismiss}

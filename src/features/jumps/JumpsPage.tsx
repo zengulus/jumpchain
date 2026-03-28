@@ -171,6 +171,7 @@ export function JumpsPage() {
         (stepId) => isJumpGuideStepComplete(selectedJump, selectedJumpGuideState, stepId as JumpGuidedStage),
       ) as JumpGuidedStage | null)
     : null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentJumpGuideStep) && !selectedJumpGuideState.dismissed;
   const previousTabContextRef = useRef<{
     jumpId: string | undefined;
     simpleMode: boolean;
@@ -883,11 +884,11 @@ export function JumpsPage() {
             : 'Edit one jump at a time with fast access to basics, party, purchases, and metadata.'
         }
         badge={`${workspace.jumps.length} total`}
-        actions={
+        actions={activeGuideVisible ? undefined : (
           <button className="button" type="button" onClick={() => void handleAddJump()}>
             Add Jump
           </button>
-        }
+        )}
       />
 
       <StatusNoticeBanner notice={notice} />
@@ -911,22 +912,24 @@ export function JumpsPage() {
               <span className="pill">{filteredJumps.length} shown</span>
             </div>
 
-            <label className="field">
-              <span>Search jumps</span>
-              <input
-                value={searchQuery}
-                placeholder="title, status, jump type..."
-                onChange={(event) =>
-                  updateQuery((nextParams) => {
-                    if (event.target.value.trim()) {
-                      nextParams.set('search', event.target.value);
-                    } else {
-                      nextParams.delete('search');
-                    }
-                  })
-                }
-              />
-            </label>
+            {activeGuideVisible ? null : (
+              <label className="field">
+                <span>Search jumps</span>
+                <input
+                  value={searchQuery}
+                  placeholder="title, status, jump type..."
+                  onChange={(event) =>
+                    updateQuery((nextParams) => {
+                      if (event.target.value.trim()) {
+                        nextParams.set('search', event.target.value);
+                      } else {
+                        nextParams.delete('search');
+                      }
+                    })
+                  }
+                />
+              </label>
+            )}
 
             {filteredJumps.length === 0 ? (
               <p>No jumps match the current search.</p>
@@ -970,7 +973,7 @@ export function JumpsPage() {
                       </div>
                     </div>
                     <div className="actions">
-                      {simpleMode ? (
+                      {simpleMode && !activeGuideVisible ? (
                         <button
                           className="button button--secondary"
                           type="button"
@@ -986,19 +989,19 @@ export function JumpsPage() {
                           {guideRequested && !selectedJumpGuideState.dismissed ? 'Guide Open' : 'Reopen Jump Setup'}
                         </button>
                       ) : null}
-                      {workspace.currentJump?.id === draftJump.id ? (
+                      {!activeGuideVisible && workspace.currentJump?.id === draftJump.id ? (
                         <span className="pill">Current jump</span>
-                      ) : (
+                      ) : !activeGuideVisible ? (
                         <button className="button button--secondary" type="button" onClick={() => void handleMakeCurrentJump()}>
                           Make Current Jump
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
                   {simpleMode ? (
                     <>
-                      {guideRequested && currentJumpGuideStep && !selectedJumpGuideState.dismissed ? (
+                      {activeGuideVisible ? (
                         <SimpleModeGuideFrame
                           title={`${draftJump.title} setup`}
                           steps={JUMP_GUIDED_STAGES.map((stage) => ({
@@ -1011,7 +1014,7 @@ export function JumpsPage() {
                                   ? 'Choose who is actually in this jump before opening the purchases editor.'
                                   : 'Use the purchases pass below to review the active participant and the jump-level setup.'
                           }))}
-                          currentStepId={currentJumpGuideStep}
+                          currentStepId={currentJumpGuideStep!}
                           acknowledgedStepIds={selectedJumpGuideState.acknowledgedStepIds}
                           onStepChange={(stepId) => handleJumpGuideStepChange(stepId as JumpGuidedStage)}
                           onDismiss={() => {
@@ -1025,13 +1028,13 @@ export function JumpsPage() {
                                 className="button button--secondary"
                                 type="button"
                                 onClick={() =>
-                                  handleJumpGuideStepChange(currentJumpGuideStep === 'purchases' ? 'party' : 'basics')
+                                  handleJumpGuideStepChange(currentJumpGuideStep! === 'purchases' ? 'party' : 'basics')
                                 }
                               >
                                 Back
                               </button>
                             ) : null}
-                            <button className="button" type="button" onClick={() => markSimpleStageComplete(currentJumpGuideStep)}>
+                            <button className="button" type="button" onClick={() => markSimpleStageComplete(currentJumpGuideStep!)}>
                               {currentJumpGuideStep === 'purchases' ? 'Continue to Participation' : 'Continue'}
                             </button>
                           </div>

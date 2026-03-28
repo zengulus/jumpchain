@@ -8,10 +8,11 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { UiPreferencesProvider, useUiPreferences } from '../app/UiPreferencesContext';
 import { UniversalSearchProvider } from '../features/search/UniversalSearchContext';
 import { UniversalSearchBar } from '../features/search/UniversalSearchBar';
+import { readGuideRequested } from '../features/workspace/simpleModeGuides';
 
 interface PageShellNavContextValue {
   navOpen: boolean;
@@ -137,6 +138,10 @@ function PageShellContent() {
     [closeNav, navOpen, registerWorkspaceDrawer, toggleNav],
   );
   const activeDrawerId = workspaceDrawerRegistered ? 'workspace-sidebar' : 'page-shell-drawer';
+  const guidedSetupActive =
+    simpleMode
+    && Boolean(matchPath('/chains/:chainId/*', location.pathname))
+    && readGuideRequested(new URLSearchParams(location.search));
 
   return (
     <PageShellNavContext.Provider value={navContextValue}>
@@ -165,7 +170,7 @@ function PageShellContent() {
                   : 'Local-first continuity, imports, snapshots, and supplement planning.'}
               </p>
             </div>
-            <UniversalSearchBar />
+            {guidedSetupActive ? null : <UniversalSearchBar />}
             <div className="page-shell__header-controls">
               <ViewModeToggle simpleMode={simpleMode} onToggle={() => setSimpleMode(!simpleMode)} />
             </div>

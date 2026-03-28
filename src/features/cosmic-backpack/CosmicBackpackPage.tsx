@@ -541,6 +541,7 @@ export function CosmicBackpackPage() {
     backpackGuideState,
     (stepId) => isCosmicBackpackGuideStepComplete(state, backpackGuideState, stepId as CosmicBackpackGuideStepId),
   ) as CosmicBackpackGuideStepId | null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !backpackGuideState.dismissed;
 
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or restore a branch before using the Cosmic Backpack workspace." />;
@@ -643,29 +644,31 @@ export function CosmicBackpackPage() {
         }
         badge={workspace.activeBranch.title}
         actions={
-          <>
-            {simpleMode ? (
-              <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
-                {guideRequested && !backpackGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
-              </button>
-            ) : null}
-            <Link className="button button--secondary" to={`/chains/${chainId}/overview`}>
-              Chain Overview
-            </Link>
-            <Link className="button button--secondary" to={`/chains/${chainId}/notes?ownerType=chain&ownerId=${workspace.chain.id}`}>
-              Chain Notes
-            </Link>
-          </>
+          !activeGuideVisible ? (
+            <>
+              {simpleMode ? (
+                <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                  {guideRequested && !backpackGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+                </button>
+              ) : null}
+              <Link className="button button--secondary" to={`/chains/${chainId}/overview`}>
+                Chain Overview
+              </Link>
+              <Link className="button button--secondary" to={`/chains/${chainId}/notes?ownerType=chain&ownerId=${workspace.chain.id}`}>
+                Chain Notes
+              </Link>
+            </>
+          ) : undefined
         }
       />
 
       <StatusNoticeBanner notice={notice} />
 
-      {simpleMode && guideRequested && currentGuideStepId && !backpackGuideState.dismissed ? (
+      {activeGuideVisible ? (
         <SimpleModeGuideFrame
           title="Cosmic Backpack setup"
           steps={backpackGuideSteps}
-          currentStepId={currentGuideStepId}
+          currentStepId={currentGuideStepId!}
           acknowledgedStepIds={backpackGuideState.acknowledgedStepIds}
           onStepChange={(stepId) => handleGuideStepChange(stepId as CosmicBackpackGuideStepId)}
           onDismiss={handleGuideDismiss}
@@ -689,7 +692,7 @@ export function CosmicBackpackPage() {
         </SimpleModeGuideFrame>
       ) : null}
 
-      {simpleMode ? (
+      {simpleMode && !activeGuideVisible ? (
         <details className="details-panel">
           <summary className="details-panel__summary">
             <span>{cosmicBackpackSetupGuide.title}</span>

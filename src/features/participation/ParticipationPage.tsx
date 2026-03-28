@@ -2721,6 +2721,7 @@ export function ParticipationEditorCard(props: {
         stepId as ParticipationGuideStepId,
       ),
   ) as ParticipationGuideStepId | null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !participationGuideState.dismissed;
   const cpBudgetEntry = useMemo(
     () => findPrimaryCpBudget(effectiveBudgetState.effectiveBudgets, currencyDefinitions),
     [currencyDefinitions, effectiveBudgetState.effectiveBudgets],
@@ -3168,7 +3169,7 @@ export function ParticipationEditorCard(props: {
           <span className="pill pill--soft">{props.participant.kind}</span>
         </div>
         <div className="actions">
-          {simpleMode ? (
+          {simpleMode && !activeGuideVisible ? (
             <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
               {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
             </button>
@@ -3179,11 +3180,11 @@ export function ParticipationEditorCard(props: {
 
       <AutosaveStatusIndicator status={participationAutosave.status} />
 
-      {simpleMode && guideRequested && currentGuideStepId && !participationGuideState.dismissed ? (
+      {activeGuideVisible ? (
         <SimpleModeGuideFrame
           title={`${props.participant.name} setup`}
           steps={participationGuideSteps}
-          currentStepId={currentGuideStepId}
+          currentStepId={currentGuideStepId!}
           acknowledgedStepIds={participationGuideState.acknowledgedStepIds}
           onStepChange={(stepId) => handleGuideStepChange(stepId as ParticipationGuideStepId)}
           onDismiss={handleGuideDismiss}

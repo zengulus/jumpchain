@@ -90,6 +90,7 @@ export function BodymodPage() {
             isBodymodGuideStepComplete(draftProfile, bodymodGuideState, stepId as BodymodGuideStepId),
         ) as BodymodGuideStepId | null)
       : null;
+  const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !bodymodGuideState.dismissed;
 
   useEffect(() => {
     clearAffirmation();
@@ -208,7 +209,7 @@ export function BodymodPage() {
         }
         badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}
         actions={
-          selectedJumper ? (
+          selectedJumper && !activeGuideVisible ? (
             <>
               {simpleMode ? (
                 <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
@@ -227,11 +228,11 @@ export function BodymodPage() {
       <AutosaveStatusIndicator status={profileAutosave.status} />
       <SimpleModeAffirmation message={simpleAffirmation} />
 
-      {simpleMode && guideRequested && currentGuideStepId && !bodymodGuideState.dismissed ? (
+      {activeGuideVisible ? (
         <SimpleModeGuideFrame
           title={selectedJumper ? `${selectedJumper.name} Iconic setup` : 'Iconic setup'}
           steps={bodymodGuideSteps}
-          currentStepId={currentGuideStepId}
+          currentStepId={currentGuideStepId!}
           acknowledgedStepIds={bodymodGuideState.acknowledgedStepIds}
           onStepChange={(stepId) => handleGuideStepChange(stepId as BodymodGuideStepId)}
           onDismiss={handleGuideDismiss}
@@ -257,7 +258,7 @@ export function BodymodPage() {
         </SimpleModeGuideFrame>
       ) : null}
 
-      {simpleMode ? (
+      {simpleMode && !activeGuideVisible ? (
         <details className="details-panel" open={iconicStartedForSelectedJumper}>
           <summary className="details-panel__summary">
             <span>{iconicSetupGuide.title}</span>
