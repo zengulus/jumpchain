@@ -188,6 +188,14 @@ export function ChainWorkspaceLayout() {
   const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
   const [presentationOverride, setPresentationOverride] = useState<WorkspacePresentationOverride>(null);
   const activeModuleKey = getActiveModuleKey(location.pathname);
+  const basePresentation = useMemo(() => getDefaultWorkspacePresentation(activeModuleKey), [activeModuleKey]);
+  const presentation = useMemo<WorkspacePresentationPreferences>(
+    () => ({
+      ...basePresentation,
+      ...presentationOverride,
+    }),
+    [basePresentation, presentationOverride],
+  );
 
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
       if (!chainId) {
@@ -474,14 +482,6 @@ export function ChainWorkspaceLayout() {
   ];
   const nextCoreAction = quickActions[0];
   const primaryQuickAction = quickActions[0];
-  const basePresentation = useMemo(() => getDefaultWorkspacePresentation(activeModuleKey), [activeModuleKey]);
-  const presentation = useMemo<WorkspacePresentationPreferences>(
-    () => ({
-      ...basePresentation,
-      ...presentationOverride,
-    }),
-    [basePresentation, presentationOverride],
-  );
   const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
   const showHeroGuideAction = showGuidedSetup && !guidedSetupActive && activeModuleKey !== 'overview';
   const showQuickActions = presentation.showQuickActions && !guidedSetupActive && (!simpleMode || !showGuidedSetup);
