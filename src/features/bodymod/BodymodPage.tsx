@@ -259,7 +259,7 @@ export function BodymodPage() {
       {simpleMode && !activeGuideVisible ? (
         <details className="details-panel" open={iconicStartedForSelectedJumper}>
           <summary className="details-panel__summary">
-            <span>{iconicSetupGuide.title}</span>
+            <span>When to use this page</span>
             <div className="inline-meta">
               <ReadinessPill tone="optional" label={iconicStartedForSelectedJumper ? 'In progress' : 'Optional later'} />
               <span className="pill">Simple page guide</span>
@@ -270,7 +270,7 @@ export function BodymodPage() {
               term="Iconic"
               meaning="an optional continuity profile that helps a jumper stay recognizable through harsh resets or restrictions."
             />
-            <p>{iconicSetupGuide.summary}</p>
+            <p>Open Iconic when you want a continuity profile that can survive resets, gauntlets, or heavy identity restrictions.</p>
             <SetupGuidePanels guide={iconicSetupGuide} />
           </div>
         </details>

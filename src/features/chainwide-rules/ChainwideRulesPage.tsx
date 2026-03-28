@@ -101,6 +101,7 @@ export function ChainwideRulesPage() {
     (total, contribution) => total + (contribution.budgetGrants['0'] ?? 0),
     0,
   );
+  const showCategoryFilter = chainwideEffects.length > 1 || categoryFilter !== 'all';
 
   function updateChainSetting<K extends keyof typeof draftChain.chainSettings>(key: K, value: (typeof draftChain.chainSettings)[K]) {
     chainAutosave.updateDraft({
@@ -201,11 +202,11 @@ export function ChainwideRulesPage() {
       {simpleMode ? (
         <section className="section-surface stack stack--compact">
           <div className="section-heading">
-            <h3>How this fits</h3>
+            <h3>When to use this page</h3>
             <ReadinessPill tone="advanced" />
           </div>
           <PlainLanguageHint term="Chainwide rule" meaning="a rule or drawback that follows the whole active branch instead of one jump." />
-          <p>You can leave this alone during ordinary setup. Use it when the whole branch needs a standing drawback, a standing rule entry, or a chain-level flag change.</p>
+          <p>Open Chainwide Rules when the whole branch needs a standing drawback, a standing rule entry, or a chain-level flag change.</p>
         </section>
       ) : null}
 
@@ -278,7 +279,7 @@ export function ChainwideRulesPage() {
           title="No chainwide entries yet"
           body={
             simpleMode
-              ? 'No chainwide entries yet. That is fine unless the whole branch needs standing drawbacks or rule entries.'
+              ? 'Add a chainwide drawback or rule when the whole branch needs it to persist across jumps.'
               : 'Create chain drawbacks or chain-owned rule effects here, then use Current Jump Rules for per-jump overrides.'
           }
           action={
@@ -297,10 +298,10 @@ export function ChainwideRulesPage() {
           <aside className="card stack">
             <div className="section-heading">
               <h3>Entries</h3>
-              <span className="pill">{filteredEffects.length} shown</span>
+              {categoryFilter !== 'all' ? <span className="pill">{filteredEffects.length} shown</span> : null}
             </div>
 
-            {simpleMode ? (
+            {simpleMode && showCategoryFilter ? (
               <details className="details-panel">
                 <summary className="details-panel__summary">
                   <span>Category filter</span>
@@ -323,7 +324,7 @@ export function ChainwideRulesPage() {
                   </label>
                 </div>
               </details>
-            ) : (
+            ) : showCategoryFilter ? (
               <label className="field">
                 <span>Category</span>
                 <select
@@ -338,7 +339,7 @@ export function ChainwideRulesPage() {
                   ))}
                 </select>
               </label>
-            )}
+            ) : null}
 
             <div className="selection-list">
               {filteredEffects.map((effect) => (

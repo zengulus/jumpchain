@@ -693,7 +693,7 @@ export function CosmicBackpackPage() {
       {simpleMode && !activeGuideVisible ? (
         <details className="details-panel">
           <summary className="details-panel__summary">
-            <span>{cosmicBackpackSetupGuide.title}</span>
+            <span>When to use this page</span>
             <div className="inline-meta">
               <ReadinessPill tone="optional" label={hasStarted ? 'In progress' : 'Optional later'} />
               <span className="pill">Simple page guide</span>
@@ -704,7 +704,7 @@ export function CosmicBackpackPage() {
               term="Cosmic Backpack"
               meaning="an optional warehouse replacement built around one indestructible bag and a short list of upgrades."
             />
-            <p>{cosmicBackpackSetupGuide.summary}</p>
+            <p>Open Cosmic Backpack when this chain is using the bag-based warehouse replacement instead of the full warehouse setup.</p>
             <SetupGuidePanels guide={cosmicBackpackSetupGuide} />
           </div>
         </details>

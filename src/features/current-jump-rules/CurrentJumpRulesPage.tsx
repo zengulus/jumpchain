@@ -268,11 +268,11 @@ export function CurrentJumpRulesPage() {
       {simpleMode ? (
         <section className="section-surface stack stack--compact">
           <div className="section-heading">
-            <h3>How this fits</h3>
+            <h3>When to use this page</h3>
             <ReadinessPill tone="advanced" />
           </div>
           <PlainLanguageHint term="Current jump rules" meaning="rule overrides that only apply to the active jump." />
-          <p>You can ignore this while learning the core flow. Open it when the active jump needs explicit rule exceptions beyond the normal branch defaults.</p>
+          <p>Open Current Jump Rules when the active jump needs explicit rule exceptions beyond the usual branch defaults.</p>
         </section>
       ) : null}
 

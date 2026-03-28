@@ -1,10 +1,10 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import { ParticipationBudgetShellAttachment, ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
+import { ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
@@ -23,7 +23,7 @@ import {
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-import { useWorkspaceHeaderAttachment } from '../workspace/ChainWorkspaceLayout';
+import { useWorkspacePresentation } from '../workspace/ChainWorkspaceLayout';
 import {
   createBranchGuideScopeKey,
   createParticipationGuideKey,
@@ -146,12 +146,6 @@ export function JumpsPage() {
           (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationParticipant.id,
         ) ?? null
       : null;
-  const [liveParticipationDraft, setLiveParticipationDraft] = useState<(typeof workspace.participations)[number] | null>(null);
-  const visibleParticipation =
-    liveParticipationDraft && activeParticipation && liveParticipationDraft.id === activeParticipation.id
-      ? liveParticipationDraft
-      : activeParticipation;
-  const deferredVisibleParticipation = useDeferredValue(visibleParticipation);
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
@@ -181,22 +175,27 @@ export function JumpsPage() {
     simpleMode,
     participationPanelRequested,
   });
-  const purchaseBudgetAttachment = useMemo(() => {
-    if (activeTab !== 'purchases' || !draftJump || !activeParticipationParticipant || !deferredVisibleParticipation) {
-      return null;
-    }
+  const presentation = useMemo(
+    () =>
+      selectedJump
+        ? {
+            mode: 'deep-task' as const,
+            showHeroStats: false,
+            showQuickActions: false,
+          }
+        : {
+            mode: 'editor' as const,
+            showHeroStats: true,
+            showQuickActions: false,
+          },
+    [selectedJump],
+  );
+  const hasJumpSearch = searchQuery.trim().length > 0;
+  const showJumpChooser = workspace.jumps.length > 1 || hasJumpSearch || !selectedJump;
+  const showJumpChooserCount = workspace.jumps.length > 1 && hasJumpSearch;
+  const showJumpSearch = !activeGuideVisible && (workspace.jumps.length > 1 || hasJumpSearch || !selectedJump);
 
-    return (
-      <ParticipationBudgetShellAttachment
-        jump={draftJump}
-        participant={activeParticipationParticipant}
-        participation={deferredVisibleParticipation}
-        workspace={workspace}
-      />
-    );
-  }, [activeParticipationParticipant, activeTab, deferredVisibleParticipation, draftJump, workspace]);
-
-  useWorkspaceHeaderAttachment(purchaseBudgetAttachment);
+  useWorkspacePresentation(presentation);
 
   function getFirstIncompleteStage(reviewState: Partial<Record<JumpGuidedStage, true>>) {
     return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
@@ -746,7 +745,7 @@ export function JumpsPage() {
     if (jumpParticipants.length === 0) {
       return (
         <article className="card editor-sheet stack">
-                  <div className="section-heading">
+          <div className="section-heading">
             <h3>No participants yet</h3>
             <span className="pill">Start in Party</span>
           </div>
@@ -767,8 +766,7 @@ export function JumpsPage() {
         participation={activeParticipation}
         workspace={workspace}
         showBudgetSummary={false}
-        showBudgetHeader={false}
-        onDraftChange={setLiveParticipationDraft}
+        showBudgetHeader
       />
     ) : activeParticipationParticipant ? (
       <article className="card editor-sheet stack">
@@ -880,7 +878,7 @@ export function JumpsPage() {
         title="Jumps"
         description={
           simpleMode
-            ? 'Work through each jump in order: basics, party, then purchases.'
+            ? 'Select a jump and edit its basics, party, or purchases.'
             : 'Edit one jump at a time with fast access to basics, party, purchases, and metadata.'
         }
         badge={`${workspace.jumps.length} total`}
@@ -906,74 +904,76 @@ export function JumpsPage() {
         />
       ) : (
         <div className="stack">
-          <section className="card stack jump-switcher">
-            <div className="section-heading">
-              <h3>Choose jump</h3>
-              <span className="pill">{filteredJumps.length} shown</span>
-            </div>
-
-            {activeGuideVisible ? null : (
-              <label className="field">
-                <span>Search jumps</span>
-                <input
-                  value={searchQuery}
-                  placeholder="title, status, jump type..."
-                  onChange={(event) =>
-                    updateQuery((nextParams) => {
-                      if (event.target.value.trim()) {
-                        nextParams.set('search', event.target.value);
-                      } else {
-                        nextParams.delete('search');
-                      }
-                    })
-                  }
-                />
-              </label>
-            )}
-
-            {filteredJumps.length === 0 ? (
-              <p>No jumps match the current search.</p>
-            ) : (
-              <div className="jump-switcher__list">
-                {filteredJumps.map((jump) => (
-                  <button
-                    className={`jump-switcher__item${selectedJump?.id === jump.id ? ' is-active' : ''}`}
-                    key={jump.id}
-                    type="button"
-                    onClick={() => navigate(getJumpPath(jump.id))}
-                  >
-                    <strong>
-                      {jump.orderIndex + 1}. <SearchHighlight text={jump.title} query={searchQuery} />
-                    </strong>
-                    <span>
-                      <SearchHighlight
-                        text={jump.id === workspace.currentJump?.id ? 'Current jump' : `${jump.status} • ${jump.jumpType}`}
-                        query={searchQuery}
-                      />
-                    </span>
-                  </button>
-                ))}
+          {showJumpChooser ? (
+            <section className="card stack jump-switcher">
+              <div className="section-heading">
+                <h3>Choose jump</h3>
+                {showJumpChooserCount ? <span className="pill">{filteredJumps.length} shown</span> : null}
               </div>
-            )}
-          </section>
+
+              {showJumpSearch ? (
+                <label className="field">
+                  <span>Search jumps</span>
+                  <input
+                    value={searchQuery}
+                    placeholder="title, status, jump type..."
+                    onChange={(event) =>
+                      updateQuery((nextParams) => {
+                        if (event.target.value.trim()) {
+                          nextParams.set('search', event.target.value);
+                        } else {
+                          nextParams.delete('search');
+                        }
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+
+              {filteredJumps.length === 0 ? (
+                <p>No jumps match the current search.</p>
+              ) : (
+                <div className="jump-switcher__list">
+                  {filteredJumps.map((jump) => (
+                    <button
+                      className={`jump-switcher__item${selectedJump?.id === jump.id ? ' is-active' : ''}`}
+                      key={jump.id}
+                      type="button"
+                      onClick={() => navigate(getJumpPath(jump.id))}
+                    >
+                      <strong>
+                        {jump.orderIndex + 1}. <SearchHighlight text={jump.title} query={searchQuery} />
+                      </strong>
+                      <span>
+                        <SearchHighlight
+                          text={jump.id === workspace.currentJump?.id ? 'Current jump' : `${jump.status} • ${jump.jumpType}`}
+                          query={searchQuery}
+                        />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section className="jump-workspace">
             <article className="card stack jump-editor-shell">
               {draftJump ? (
                 <>
-                <div className="section-heading">
-                  <div className="stack stack--compact">
-                    <h3>
-                      <SearchHighlight text={draftJump.title} query={searchQuery} />
-                    </h3>
+                  <div className="section-heading">
+                    <div className="stack stack--compact">
+                      <h3>
+                        <SearchHighlight text={draftJump.title} query={searchQuery} />
+                      </h3>
                       <div className="inline-meta">
                         <span className="pill">{draftJump.status}</span>
                         <span className="pill">{draftJump.jumpType}</span>
-                        <span className="pill">{jumpParticipants.length} participating</span>
+                        {activeTab === 'purchases' ? null : <span className="pill">{jumpParticipants.length} participating</span>}
                       </div>
                     </div>
                     <div className="actions">
-                      {simpleMode && !activeGuideVisible ? (
+                      {simpleMode && !activeGuideVisible && activeTab !== 'purchases' ? (
                         <button
                           className="button button--secondary"
                           type="button"

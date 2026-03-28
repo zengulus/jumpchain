@@ -10,7 +10,6 @@ import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   JsonEditorField,
-  PlainLanguageHint,
   SimpleModeGuideFrame,
   StatusNoticeBanner,
   type StatusNotice,
@@ -83,6 +82,9 @@ export function JumpersPage() {
       ) as JumperGuideStepId | null)
     : null;
   const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !selectedJumperGuideState.dismissed;
+  const hasRosterSearch = searchQuery.trim().length > 0;
+  const showRosterSearch = !activeGuideVisible && (workspace.jumpers.length > 1 || hasRosterSearch);
+  const showRosterCount = workspace.jumpers.length > 1 && hasRosterSearch;
 
   function updateSelectedJumperGuideState(
     updater: (current: ReturnType<typeof getBranchGuideState>) => ReturnType<typeof getBranchGuideState>,
@@ -207,15 +209,10 @@ export function JumpersPage() {
           <aside className="card stack">
             <div className="section-heading">
               <h3>Roster</h3>
-              <span className="pill">{workspace.activeBranch.title}</span>
+              {showRosterCount ? <span className="pill">{filteredJumpers.length} shown</span> : null}
             </div>
-            {simpleMode ? (
-              <>
-                <p>Choose who you want to work on, then start with name, age, and notes.</p>
-                <PlainLanguageHint term="Jumper" meaning="the character record this chain follows." />
-              </>
-            ) : null}
-            {activeGuideVisible ? null : (
+            {simpleMode && workspace.jumpers.length > 1 ? <p>Choose a jumper, then edit identity first.</p> : null}
+            {showRosterSearch ? (
               <label className="field">
                 <span>Search roster</span>
                 <input
@@ -236,7 +233,7 @@ export function JumpersPage() {
                   }
                 />
               </label>
-            )}
+            ) : null}
             <div className="selection-list">
               {filteredJumpers.map((jumper) => (
                 <button
@@ -256,15 +253,7 @@ export function JumpersPage() {
                   </strong>
                   <span>
                     <SearchHighlight
-                        text={
-                          simpleMode
-                            ? jumper.isPrimary
-                              ? 'Primary jumper'
-                              : jumper.gender.trim() || 'Jumper record'
-                          : jumper.isPrimary
-                            ? 'Primary jumper'
-                            : jumper.gender.trim() || 'Jumper record'
-                        }
+                      text={jumper.isPrimary ? 'Primary jumper' : jumper.gender.trim() || 'Jumper record'}
                       query={searchQuery}
                     />
                   </span>
@@ -286,14 +275,26 @@ export function JumpersPage() {
                         {guideRequested && !selectedJumperGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
                       </button>
                     ) : null}
-                    {!activeGuideVisible ? (
+                    {simpleMode && !activeGuideVisible ? (
+                      <details className="details-panel">
+                        <summary className="details-panel__summary">
+                          <span>More actions</span>
+                          <span className="pill">Optional</span>
+                        </summary>
+                        <div className="details-panel__body actions">
+                          <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
+                            Open Iconic
+                          </Link>
+                        </div>
+                      </details>
+                    ) : !activeGuideVisible ? (
                       <Link className="button button--secondary" to={withSearchParams(`/chains/${chainId}/bodymod`, { jumper: draftJumper.id, search: searchQuery })}>
-                        {simpleMode ? 'Open Iconic (optional)' : 'Open Iconic'}
+                        Open Iconic
                       </Link>
                     ) : null}
                   </div>
                 </div>
-                {simpleMode ? <p>Start with identity and notes. Optional holds personality, background, and import cleanup.</p> : null}
+                {simpleMode ? <p>Start with identity and notes. Open Optional for profile details or import cleanup.</p> : null}
 
                 {activeGuideVisible ? (
                   <SimpleModeGuideFrame

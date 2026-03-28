@@ -131,6 +131,10 @@ export function CompanionsPage() {
       ) as CompanionGuideStepId | null)
     : null;
   const activeGuideVisible = simpleMode && guideRequested && Boolean(currentGuideStepId) && !selectedCompanionGuideState.dismissed;
+  const hasRosterSearch = searchQuery.trim().length > 0;
+  const showRosterFilter = !activeGuideVisible && (workspace.companions.length > 1 || filter !== 'all');
+  const showRosterSearch = !activeGuideVisible && (workspace.companions.length > 1 || hasRosterSearch);
+  const showRosterCount = filter !== 'all' || hasRosterSearch;
 
   function updateSelectedCompanionGuideState(
     updater: (current: ReturnType<typeof getBranchGuideState>) => ReturnType<typeof getBranchGuideState>,
@@ -268,14 +272,14 @@ export function CompanionsPage() {
           <aside className="card stack">
             <div className="section-heading">
               <h3>Roster</h3>
-              <span className="pill">{filteredCompanions.length} shown</span>
+              {showRosterCount ? <span className="pill">{filteredCompanions.length} shown</span> : null}
             </div>
-            {simpleMode ? <p>Choose a companion, then start with name, role, and whether they are attached or independent.</p> : null}
+            {simpleMode && workspace.companions.length > 1 ? <p>Choose a companion, then edit relationship basics first.</p> : null}
 
-            {simpleMode && !activeGuideVisible ? (
+            {simpleMode && showRosterFilter ? (
               <details className="details-panel">
                 <summary className="details-panel__summary">
-                  <span>More roster filters</span>
+                  <span>Roster filters</span>
                   <span className="pill">Optional</span>
                 </summary>
                 <div className="details-panel__body">
@@ -290,7 +294,7 @@ export function CompanionsPage() {
                   </label>
                 </div>
               </details>
-            ) : !activeGuideVisible ? (
+            ) : showRosterFilter ? (
               <label className="field">
                 <span>Filter</span>
                 <select value={filter} onChange={(event) => setFilter(event.target.value as CompanionFilter)}>
@@ -302,7 +306,7 @@ export function CompanionsPage() {
               </label>
             ) : null}
 
-            {activeGuideVisible ? null : (
+            {showRosterSearch ? (
               <label className="field">
                 <span>Search roster</span>
                 <input
@@ -323,7 +327,7 @@ export function CompanionsPage() {
                   }
                 />
               </label>
-            )}
+            ) : null}
 
             <div className="selection-list">
               {filteredCompanions.map((companion) => {
@@ -374,22 +378,6 @@ export function CompanionsPage() {
                         {guideRequested && !selectedCompanionGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
                       </button>
                     ) : null}
-                    {!activeGuideVisible ? (
-                      <Link
-                        className="button button--secondary"
-                        to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
-                      >
-                        Companion Notes
-                      </Link>
-                    ) : null}
-                    {!activeGuideVisible && draftCompanion.parentJumperId ? (
-                      <Link
-                        className="button button--secondary"
-                        to={`/chains/${chainId}/jumpers?jumper=${draftCompanion.parentJumperId}`}
-                      >
-                        Open Parent Jumper
-                      </Link>
-                    ) : null}
                     {simpleMode && !activeGuideVisible ? (
                       <details className="details-panel">
                         <summary className="details-panel__summary">
@@ -397,6 +385,20 @@ export function CompanionsPage() {
                           <span className="pill">Optional</span>
                         </summary>
                         <div className="details-panel__body actions">
+                          <Link
+                            className="button button--secondary"
+                            to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
+                          >
+                            Companion Notes
+                          </Link>
+                          {draftCompanion.parentJumperId ? (
+                            <Link
+                              className="button button--secondary"
+                              to={`/chains/${chainId}/jumpers?jumper=${draftCompanion.parentJumperId}`}
+                            >
+                              Open Parent Jumper
+                            </Link>
+                          ) : null}
                           <Link
                             className="button button--secondary"
                             to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
@@ -408,8 +410,22 @@ export function CompanionsPage() {
                           </button>
                         </div>
                       </details>
-                    ) : (
+                    ) : !activeGuideVisible ? (
                       <>
+                        <Link
+                          className="button button--secondary"
+                          to={`/chains/${chainId}/notes?ownerType=companion&ownerId=${draftCompanion.id}`}
+                        >
+                          Companion Notes
+                        </Link>
+                        {draftCompanion.parentJumperId ? (
+                          <Link
+                            className="button button--secondary"
+                            to={`/chains/${chainId}/jumpers?jumper=${draftCompanion.parentJumperId}`}
+                          >
+                            Open Parent Jumper
+                          </Link>
+                        ) : null}
                         <Link
                           className="button button--secondary"
                           to={`/chains/${chainId}/effects?ownerType=companion&ownerId=${draftCompanion.id}`}
@@ -420,10 +436,10 @@ export function CompanionsPage() {
                           Delete
                         </button>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </div>
-                {simpleMode ? <p>Start with the relationship basics here. Optional holds origin and raw import details.</p> : null}
+                {simpleMode ? <p>Start with relationship basics here. Open Optional for origin or import details.</p> : null}
 
                 {activeGuideVisible ? (
                   <SimpleModeGuideFrame

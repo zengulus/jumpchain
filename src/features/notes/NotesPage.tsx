@@ -133,6 +133,10 @@ export function NotesPage() {
     draftNote && draftNote.ownerEntityType in ownerOptions
       ? ownerOptions[draftNote.ownerEntityType as keyof typeof ownerOptions]
       : [];
+  const hasNoteSearch = searchQuery.trim().length > 0;
+  const showNoteSearch = focusedNotes.length > 1 || hasNoteSearch;
+  const showNoteTypeFilter = focusedNotes.length > 1 || noteFilter !== 'all';
+  const showNoteFilterCount = hasNoteSearch || noteFilter !== 'all';
 
   async function handleCreateNote() {
     if (!workspace.activeBranch) {
@@ -232,11 +236,11 @@ export function NotesPage() {
       {simpleMode ? (
         <section className="section-surface stack stack--compact">
           <div className="section-heading">
-            <h3>How this fits</h3>
+            <h3>When to use this page</h3>
             <ReadinessPill tone="optional" />
           </div>
           <PlainLanguageHint term="Note" meaning="a saved reminder, ruling, or journal entry attached to part of the chain." />
-          <p>You do not need notes to get the core chain working. Add them when you want to capture reminders, rulings, or extra context for future-you.</p>
+          <p>Open Notes when you want a saved reminder, ruling, or journal entry tied to the chain or a specific record.</p>
         </section>
       ) : null}
 
@@ -245,7 +249,7 @@ export function NotesPage() {
           title="No notes yet"
           body={
             simpleMode
-              ? 'No notes yet. That is fine until you want to save reminders, rulings, or journal-style context.'
+              ? 'Add a note when you want to save a reminder, ruling, or journal entry for this chain.'
               : 'Create the first chain note or attach notes directly to jumps, jumpers, participations, and snapshots.'
           }
           action={
@@ -258,40 +262,44 @@ export function NotesPage() {
         <section className="workspace-two-column">
           <aside className="card stack">
             <div className="section-heading">
-              <h3>Filters</h3>
-              <span className="pill">{filteredNotes.length} shown</span>
+              <h3>{showNoteSearch || showNoteTypeFilter ? 'Filters' : 'Notes'}</h3>
+              {showNoteFilterCount ? <span className="pill">{filteredNotes.length} shown</span> : null}
             </div>
-            <label className="field">
-              <span>Search notes</span>
-              <input
-                value={searchQuery}
-                placeholder="title, content, tags..."
-                onChange={(event) =>
-                  setSearchParams((currentParams) => {
-                    const nextParams = new URLSearchParams(currentParams);
+            {showNoteSearch ? (
+              <label className="field">
+                <span>Search notes</span>
+                <input
+                  value={searchQuery}
+                  placeholder="title, content, tags..."
+                  onChange={(event) =>
+                    setSearchParams((currentParams) => {
+                      const nextParams = new URLSearchParams(currentParams);
 
-                    if (event.target.value.trim()) {
-                      nextParams.set('search', event.target.value);
-                    } else {
-                      nextParams.delete('search');
-                    }
+                      if (event.target.value.trim()) {
+                        nextParams.set('search', event.target.value);
+                      } else {
+                        nextParams.delete('search');
+                      }
 
-                    return nextParams;
-                  })
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Note type</span>
-              <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
-                <option value="all">all</option>
-                {noteTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
+                      return nextParams;
+                    })
+                  }
+                />
+              </label>
+            ) : null}
+            {showNoteTypeFilter ? (
+              <label className="field">
+                <span>Note type</span>
+                <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
+                  <option value="all">all</option>
+                  {noteTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <div className="selection-list">
               {filteredNotes.map((note) => (

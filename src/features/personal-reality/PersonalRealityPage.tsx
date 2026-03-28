@@ -1380,7 +1380,7 @@ export function PersonalRealityPage() {
       {simpleMode ? (
         <details className="details-panel" open={hasPersonalRealityStarted}>
           <summary className="details-panel__summary">
-            <span>{personalRealitySetupGuide.title}</span>
+            <span>When to use this page</span>
             <div className="inline-meta">
               <ReadinessPill tone="optional" label={hasPersonalRealityStarted ? 'In progress' : 'Optional later'} />
               <span className="pill">Simple page guide</span>
@@ -1391,7 +1391,7 @@ export function PersonalRealityPage() {
               term="Personal Reality"
               meaning="an optional warehouse-style supplement workspace for long-term housing, facilities, and budget planning."
             />
-            <p>{personalRealitySetupGuide.summary}</p>
+            <p>Open Personal Reality when this chain is using the full warehouse-style supplement and you want to budget it page by page.</p>
             <SetupGuidePanels guide={personalRealitySetupGuide} />
           </div>
         </details>

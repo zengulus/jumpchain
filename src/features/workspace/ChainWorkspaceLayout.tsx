@@ -55,6 +55,33 @@ interface WorkspaceQuickAction {
 }
 
 const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
+type WorkspacePresentationMode = 'overview' | 'editor' | 'deep-task';
+
+interface WorkspacePresentationPreferences {
+  mode: WorkspacePresentationMode;
+  showHeroStats: boolean;
+  showQuickActions: boolean;
+}
+
+type WorkspacePresentationOverride = Partial<WorkspacePresentationPreferences> | null;
+
+const WorkspacePresentationContext = createContext<Dispatch<SetStateAction<WorkspacePresentationOverride>> | null>(null);
+
+function getDefaultWorkspacePresentation(activeModuleKey: ModuleKey): WorkspacePresentationPreferences {
+  if (activeModuleKey === 'overview' || activeModuleKey === 'timeline' || activeModuleKey === 'backups') {
+    return {
+      mode: 'overview',
+      showHeroStats: true,
+      showQuickActions: true,
+    };
+  }
+
+  return {
+    mode: 'editor',
+    showHeroStats: true,
+    showQuickActions: false,
+  };
+}
 
 export function useWorkspaceHeaderAttachment(attachment: ReactNode | null) {
   const setHeaderAttachment = useContext(WorkspaceHeaderAttachmentContext);
@@ -70,6 +97,22 @@ export function useWorkspaceHeaderAttachment(attachment: ReactNode | null) {
       setHeaderAttachment((currentAttachment) => (currentAttachment === attachment ? null : currentAttachment));
     };
   }, [attachment, setHeaderAttachment]);
+}
+
+export function useWorkspacePresentation(override: WorkspacePresentationOverride) {
+  const setPresentationOverride = useContext(WorkspacePresentationContext);
+
+  if (!setPresentationOverride) {
+    throw new Error('useWorkspacePresentation must be used inside ChainWorkspaceLayout.');
+  }
+
+  useEffect(() => {
+    setPresentationOverride(override);
+
+    return () => {
+      setPresentationOverride(null);
+    };
+  }, [override, setPresentationOverride]);
 }
 
 function formatCount(value: number, singular: string, plural = `${singular}s`) {
@@ -143,6 +186,7 @@ export function ChainWorkspaceLayout() {
   const { simpleMode } = useUiPreferences();
   const { navOpen: sidebarOpen, closeNav, registerWorkspaceDrawer } = usePageShellNav();
   const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
+  const [presentationOverride, setPresentationOverride] = useState<WorkspacePresentationOverride>(null);
   const activeModuleKey = getActiveModuleKey(location.pathname);
 
   const state = useLiveQuery(async (): Promise<WorkspaceState> => {
@@ -430,16 +474,28 @@ export function ChainWorkspaceLayout() {
   ];
   const nextCoreAction = quickActions[0];
   const primaryQuickAction = quickActions[0];
+  const basePresentation = useMemo(() => getDefaultWorkspacePresentation(activeModuleKey), [activeModuleKey]);
+  const presentation = useMemo<WorkspacePresentationPreferences>(
+    () => ({
+      ...basePresentation,
+      ...presentationOverride,
+    }),
+    [basePresentation, presentationOverride],
+  );
   const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
   const showHeroGuideAction = showGuidedSetup && !guidedSetupActive && activeModuleKey !== 'overview';
-  const showQuickActions = !guidedSetupActive && (!simpleMode || !showGuidedSetup);
+  const showQuickActions = presentation.showQuickActions && !guidedSetupActive && (!simpleMode || !showGuidedSetup);
   const simpleHeroSummary = guidedSetupActive
     ? 'Setup guide is open on this page.'
     : showGuidedSetup
       ? activeModuleKey === 'overview'
         ? 'Finish the next setup step below.'
         : 'Setup is still in progress. Overview will take you to the next unfinished step.'
-      : 'Core setup is in place. Pick the module you want to work in.';
+      : presentation.mode === 'overview'
+        ? 'Core setup is in place. Pick the module you want to work in.'
+        : presentation.mode === 'editor'
+          ? 'Editing inside the active branch.'
+          : null;
   const simpleNavigatorLabel = guidedSetupActive ? 'Guide open' : showGuidedSetup ? 'Setup in progress' : 'Ready';
   const simpleNavigatorCopy = guidedSetupActive
     ? 'Use the page content below to finish the current step.'
@@ -565,68 +621,83 @@ export function ChainWorkspaceLayout() {
 
     return `${READINESS_OPTION_LABELS[item.readiness]} - ${item.label}`;
   }
+
   return (
-    <WorkspaceHeaderAttachmentContext.Provider value={setHeaderAttachment}>
-      <div className="workspace-shell stack">
-        <section className="workspace-hero">
-          <div className="workspace-hero__top">
-            <div className="stack stack--compact workspace-hero__leading">
-              <div className="workspace-hero__toolbar">
-                <div className="inline-meta">
-                  {simpleMode ? null : <span className="pill">Active workspace</span>}
-                  <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
-                  <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
+    <WorkspacePresentationContext.Provider value={setPresentationOverride}>
+      <WorkspaceHeaderAttachmentContext.Provider value={setHeaderAttachment}>
+        <div className="workspace-shell stack" data-workspace-mode={presentation.mode}>
+          <section className="workspace-hero">
+            <div className="workspace-hero__top">
+              <div className="stack stack--compact workspace-hero__leading">
+                <div className="workspace-hero__toolbar">
+                  <div className="inline-meta">
+                    {simpleMode ? null : <span className="pill">Active workspace</span>}
+                    <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
+                    {presentation.mode === 'deep-task' ? null : <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>}
+                  </div>
                 </div>
+                <h2>{state.bundle.chain.title}</h2>
+                {simpleMode ? simpleHeroSummary ? <p className="workspace-hero__summary">{simpleHeroSummary}</p> : null : presentation.mode === 'overview' ? (
+                  <p className="workspace-hero__summary">
+                    {`${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
+                  </p>
+                ) : null}
+                {showHeroGuideAction ? (
+                  <div className="actions workspace-hero__actions">
+                    <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
+                      Continue setup
+                    </button>
+                  </div>
+                ) : null}
               </div>
-              <h2>{state.bundle.chain.title}</h2>
-              <p className="workspace-hero__summary">
-                {simpleMode
-                  ? simpleHeroSummary
-                  : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
-              </p>
-              {showHeroGuideAction ? (
-                <div className="actions workspace-hero__actions">
-                  <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
-                    Continue setup
-                  </button>
+              {presentation.showHeroStats ? (
+                <div className="workspace-hero__stats">
+                  {simpleMode && guidedSetupActive ? null : presentation.mode === 'editor' ? (
+                    <>
+                      <span className="metric">
+                        <strong>{workspace.jumpers.length}</strong>
+                        Jumpers
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.jumps.length}</strong>
+                        Jumps
+                      </span>
+                    </>
+                  ) : simpleMode ? (
+                    <>
+                      <span className="metric">
+                        <strong>{workspace.jumpers.length}</strong>
+                        Jumpers ready
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.jumps.length}</strong>
+                        Jumps in branch
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="metric">
+                        <strong>{workspace.jumpers.length}</strong>
+                        Jumpers
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.jumps.length}</strong>
+                        Jumps
+                      </span>
+                      <span className="metric">
+                        <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
+                        Current jump
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.snapshots.length}</strong>
+                        Snapshots
+                      </span>
+                    </>
+                  )}
                 </div>
               ) : null}
             </div>
-            <div className="workspace-hero__stats">
-              {simpleMode && guidedSetupActive ? null : simpleMode ? (
-                <>
-                  <span className="metric">
-                    <strong>{workspace.jumpers.length}</strong>
-                    Jumpers ready
-                  </span>
-                  <span className="metric">
-                    <strong>{workspace.jumps.length}</strong>
-                    Jumps in branch
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="metric">
-                    <strong>{workspace.jumpers.length}</strong>
-                    Jumpers
-                  </span>
-                  <span className="metric">
-                    <strong>{workspace.jumps.length}</strong>
-                    Jumps
-                  </span>
-                  <span className="metric">
-                    <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
-                    Current jump
-                  </span>
-                  <span className="metric">
-                    <strong>{workspace.snapshots.length}</strong>
-                    Snapshots
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </section>
+          </section>
 
         {sidebarOpen ? (
           <button
@@ -913,6 +984,7 @@ export function ChainWorkspaceLayout() {
           </section>
         </div>
       </div>
-    </WorkspaceHeaderAttachmentContext.Provider>
+      </WorkspaceHeaderAttachmentContext.Provider>
+    </WorkspacePresentationContext.Provider>
   );
 }

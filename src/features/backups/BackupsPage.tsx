@@ -30,6 +30,8 @@ export function BackupsPage() {
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
   const searchQuery = searchParams.get('search') ?? '';
   const selectedSnapshotId = searchParams.get('snapshot');
+  const hasBackupSearch = searchQuery.trim().length > 0;
+  const showBackupSearch = workspace.branches.length + workspace.snapshots.length > 1 || hasBackupSearch;
   const filteredBranches = workspace.branches.filter((branch) => matchesSearchQuery(searchQuery, branch.title, branch.notes));
   const filteredSnapshots = workspace.snapshots
     .filter((snapshot) => matchesSearchQuery(searchQuery, snapshot.title, snapshot.description, snapshot.summary))
@@ -182,7 +184,7 @@ export function BackupsPage() {
 
       <StatusNoticeBanner notice={notice} />
 
-      {simpleMode ? (
+      {simpleMode && showBackupSearch ? (
         <details className="details-panel">
           <summary className="details-panel__summary">
             <span>Find a branch or snapshot</span>
@@ -211,7 +213,7 @@ export function BackupsPage() {
             </label>
           </div>
         </details>
-      ) : (
+      ) : !simpleMode && showBackupSearch ? (
         <section className="card stack stack--compact">
           <label className="field">
             <span>Search branches and snapshots</span>
@@ -234,7 +236,7 @@ export function BackupsPage() {
             />
           </label>
         </section>
-      )}
+      ) : null}
 
       <section className="grid grid--two">
         <article className="card stack">
