@@ -637,9 +637,7 @@ export function CosmicBackpackPage() {
         title="Cosmic Backpack"
         description={
           simpleMode
-            ? hasStarted
-              ? 'Optional supplement workspace in progress. Build a lighter warehouse alternative around one bag and a short list of upgrades.'
-              : 'Optional supplement workspace. Use it when you want a compact warehouse replacement instead of a large infrastructure planner.'
+            ? 'Plan a compact warehouse replacement around one bag, its notes, and its upgrades.'
             : 'A compact supplement workbench for the Cosmic Backpack warehouse alternative.'
         }
         badge={workspace.activeBranch.title}

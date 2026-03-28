@@ -176,7 +176,7 @@ export function ChainwideRulesPage() {
         title="Chainwide Rules"
         description={
           simpleMode
-            ? 'Advanced rules tool. Change chain-wide flags here only when the whole branch should inherit the same drawback or rule behavior.'
+            ? 'Manage rules and drawbacks that should follow the whole branch.'
             : 'Chain-level rule flags, chainwide drawbacks, and branch-visible chain-owned rule effects live here.'
         }
         badge={`${chainwideEffects.length} entries`}

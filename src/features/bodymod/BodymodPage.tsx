@@ -202,9 +202,7 @@ export function BodymodPage() {
         title="Iconic"
         description={
           simpleMode
-            ? iconicStartedForSelectedJumper
-              ? 'Optional continuity workspace in progress for this jumper. Keep shaping the signature package here whenever you want.'
-              : 'Optional continuity workspace. You can skip Iconic until you want a stable signature package through harsh resets or restrictions.'
+            ? 'Build and revise the selected jumper\'s Iconic profile here.'
             : 'Structured Iconic bodymod replacer profiles with tier-based packages, concept notes, and preserved imported forms.'
         }
         badge={selectedJumper ? `${selectedJumper.name} | ${workspace.bodymodProfiles.length} profiles` : `${workspace.bodymodProfiles.length} profiles`}

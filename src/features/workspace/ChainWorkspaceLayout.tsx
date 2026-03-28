@@ -429,22 +429,25 @@ export function ChainWorkspaceLayout() {
         },
   ];
   const nextCoreAction = quickActions[0];
-  const guidedSetupAction: WorkspaceQuickAction | null = showGuidedSetup
-    ? {
-        id: 'guided-setup',
-        title: 'Open Guided Setup',
-        description: 'Overview is still the recommended path while this chain is missing its first jumper or jump.',
-        to: `/chains/${resolvedChainId}/overview`,
-        tone: 'accent',
-        readiness: 'start',
-      }
-    : null;
-  const primaryQuickAction = guidedSetupAction ?? quickActions[0];
-  const visibleQuickActions = simpleMode
-    ? guidedSetupAction
-      ? [guidedSetupAction, ...quickActions.slice(0, 2)]
-      : quickActions.slice(0, 3)
-    : quickActions;
+  const primaryQuickAction = quickActions[0];
+  const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
+  const showHeroGuideAction = showGuidedSetup && !guidedSetupActive && activeModuleKey !== 'overview';
+  const showQuickActions = !guidedSetupActive && (!simpleMode || !showGuidedSetup);
+  const simpleHeroSummary = guidedSetupActive
+    ? 'Setup guide is open on this page.'
+    : showGuidedSetup
+      ? activeModuleKey === 'overview'
+        ? 'Finish the next setup step below.'
+        : 'Setup is still in progress. Overview will take you to the next unfinished step.'
+      : 'Core setup is in place. Pick the module you want to work in.';
+  const simpleNavigatorLabel = guidedSetupActive ? 'Guide open' : showGuidedSetup ? 'Setup in progress' : 'Ready';
+  const simpleNavigatorCopy = guidedSetupActive
+    ? 'Use the page content below to finish the current step.'
+    : showGuidedSetup
+      ? activeModuleKey === 'overview'
+        ? 'Overview is already showing the next setup step.'
+        : `Next core step: ${nextCoreAction.title}.`
+      : `Quickest route back in: ${primaryQuickAction.title}.`;
 
   const moduleGroups: Array<{
     id: string;
@@ -578,25 +581,18 @@ export function ChainWorkspaceLayout() {
               <h2>{state.bundle.chain.title}</h2>
               <p className="workspace-hero__summary">
                 {simpleMode
-                  ? guidedSetupActive
-                    ? 'Guided setup is open below. Finish the current step or dismiss setup before jumping elsewhere.'
-                    : showGuidedSetup
-                    ? `Guided setup is still the recommended path. ${nextCoreAction.title} is the next core step it will point you toward.`
-                    : 'Core setup is in place. You can keep using Overview for orientation or jump straight into the module you want.'
+                  ? simpleHeroSummary
                   : `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
               </p>
-              {showGuidedSetup && !guidedSetupActive ? (
+              {showHeroGuideAction ? (
                 <div className="actions workspace-hero__actions">
                   <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
-                    Open Guided Setup
-                  </button>
-                  <button className="button button--secondary" type="button" onClick={() => navigate(nextCoreAction.to)}>
-                    Go to {nextCoreAction.title}
+                    Continue setup
                   </button>
                 </div>
               ) : null}
             </div>
-              <div className="workspace-hero__stats">
+            <div className="workspace-hero__stats">
               {simpleMode && guidedSetupActive ? null : simpleMode ? (
                 <>
                   <span className="metric">
@@ -650,40 +646,18 @@ export function ChainWorkspaceLayout() {
             <nav className="workspace-menu-list" aria-label="App pages">
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/" end onClick={closeNav}>
                 <strong>Home</strong>
-                <span>{simpleMode ? 'Start, reopen, or resume guided setup for a chain.' : 'Chains, creation, imports, and exports.'}</span>
+                <span>{simpleMode ? 'Open a chain or start a new one.' : 'Chains, creation, imports, and exports.'}</span>
               </NavLink>
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/search" onClick={closeNav}>
                 <strong>Search</strong>
-                <span>{simpleMode ? 'Find something you already created.' : 'Find records across chains and modules.'}</span>
+                <span>{simpleMode ? 'Find an existing record.' : 'Find records across chains and modules.'}</span>
               </NavLink>
               <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
                 <strong>Import Review</strong>
-                <span>{simpleMode ? 'Review outside JSON before it becomes part of the app.' : 'Review and convert external jump data.'}</span>
+                <span>{simpleMode ? 'Review external JSON before importing it.' : 'Review and convert external jump data.'}</span>
               </NavLink>
             </nav>
           </section>
-
-          {showGuidedSetup && !guidedSetupActive ? (
-            <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-              <div className="section-heading">
-                <h3>Guided setup</h3>
-                <ReadinessPill tone="start" />
-              </div>
-              <p className="workspace-sidebar-copy">
-                Overview is still the recommended path while this chain is missing its first jumper or jump.
-              </p>
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  closeNav();
-                  navigate(`/chains/${resolvedChainId}/overview`);
-                }}
-              >
-                Open Guided Setup
-              </button>
-            </section>
-          ) : null}
 
           <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
             <div className="section-heading">
@@ -706,38 +680,20 @@ export function ChainWorkspaceLayout() {
               <span className="pill">{simpleMode ? 'Guided' : 'Menus'}</span>
             </div>
 
-            {simpleMode && guidedSetupActive ? (
+            {simpleMode ? (
               <div className="section-surface stack stack--compact">
-                <strong>Guide in progress</strong>
-                <p className="workspace-sidebar-copy">
-                  The current setup guide is already open on the page. Finish that step or dismiss it before using the wider shortcut menu again.
-                </p>
-              </div>
-            ) : simpleMode ? (
-              <div className="section-surface stack stack--compact">
-                <strong>{showGuidedSetup ? 'Recommended next move' : 'Quickest route back in'}</strong>
-                <p className="workspace-sidebar-copy">
-                  {showGuidedSetup
-                    ? `Use Guided Setup when you want the calmest route. ${nextCoreAction.title} is the next core task if you would rather jump there directly.`
-                    : `${primaryQuickAction.title} is the fastest way back into the active branch from here.`}
-                </p>
-                <button
-                  className="button"
-                  type="button"
-                  onClick={() => {
-                    closeNav();
-                    navigate(primaryQuickAction.to);
-                  }}
-                >
-                  {primaryQuickAction.title}
-                </button>
+                <div className="section-heading">
+                  <strong>Focus</strong>
+                  <ReadinessPill tone={showGuidedSetup ? 'start' : 'core'} label={simpleNavigatorLabel} />
+                </div>
+                <p className="workspace-sidebar-copy">{simpleNavigatorCopy}</p>
               </div>
             ) : null}
 
             {simpleMode && guidedSetupActive ? null : simpleMode ? (
               <details className="details-panel">
                 <summary className="details-panel__summary">
-                  <span>More navigation</span>
+                  <span>Jump to another page</span>
                   <span className="pill">Optional</span>
                 </summary>
                 <div className="details-panel__body stack stack--compact">
@@ -914,39 +870,39 @@ export function ChainWorkspaceLayout() {
               </>
             )}
 
-          {simpleMode && guidedSetupActive ? null : (
-            <>
-              <div className="section-heading">
-                <h4>{simpleMode ? 'Next steps' : 'Suggested Next Steps'}</h4>
-                <span className="pill">Context aware</span>
-              </div>
+            {!showQuickActions ? null : (
+              <>
+                <div className="section-heading">
+                  <h4>{simpleMode ? 'Shortcuts' : 'Suggested Next Steps'}</h4>
+                  <span className="pill">Context aware</span>
+                </div>
 
-              <div className="workspace-action-grid">
-                {visibleQuickActions.map((action) => (
-                  <TooltipFrame
-                    key={action.id}
-                    tooltip={!simpleMode ? action.description : undefined}
-                    placement="right"
-                  >
-                    <button
-                      className={`workspace-action-card${action.tone === 'accent' ? ' is-accent' : ''}`}
-                      type="button"
-                      onClick={() => {
-                        closeNav();
-                        navigate(action.to);
-                      }}
+                <div className="workspace-action-grid">
+                  {visibleQuickActions.map((action) => (
+                    <TooltipFrame
+                      key={action.id}
+                      tooltip={!simpleMode ? action.description : undefined}
+                      placement="right"
                     >
-                      <div className="workspace-action-card__top">
-                        <strong>{action.title}</strong>
-                        {simpleMode && action.readiness ? <ReadinessPill tone={action.readiness} /> : null}
-                      </div>
-                      {simpleMode ? <span>{action.description}</span> : null}
-                    </button>
-                  </TooltipFrame>
-                ))}
-              </div>
-            </>
-          )}
+                      <button
+                        className={`workspace-action-card${action.tone === 'accent' ? ' is-accent' : ''}`}
+                        type="button"
+                        onClick={() => {
+                          closeNav();
+                          navigate(action.to);
+                        }}
+                      >
+                        <div className="workspace-action-card__top">
+                          <strong>{action.title}</strong>
+                          {simpleMode && action.readiness ? <ReadinessPill tone={action.readiness} /> : null}
+                        </div>
+                        {simpleMode ? <span>{action.description}</span> : null}
+                      </button>
+                    </TooltipFrame>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
         </aside>
 

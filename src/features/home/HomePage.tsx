@@ -19,23 +19,23 @@ function getSimpleChainStatus(chain: ChainOverview) {
   if (chain.jumperCount === 0) {
     return {
       tone: 'start' as const,
-      label: 'Start here',
-      message: 'Guided setup is still waiting for the first jumper.',
+      label: 'Needs jumper',
+      message: 'Add the first jumper before the character-focused pages have anyone to work with.',
     };
   }
 
   if (chain.jumpCount === 0) {
     return {
       tone: 'core' as const,
-      label: 'Core setup',
-      message: 'Guided setup can help create the first jump and set current context.',
+      label: 'Needs jump',
+      message: 'Add the first jump to unlock current context and participation work.',
     };
   }
 
   return {
     tone: 'optional' as const,
-    label: 'Ready to explore',
-    message: 'Overview is still the calmest place to re-enter this chain when you want a refresher.',
+    label: 'Ready',
+    message: 'Open the chain and jump back into whichever module you want next.',
   };
 }
 
@@ -154,18 +154,18 @@ export function HomePage() {
             <h2>Jumpchain Tracker</h2>
             <p>
               {simpleMode
-                ? 'Start fresh if you are learning, or return to guided setup for a chain that already exists here. The more technical import tools can wait.'
+                ? 'Open a stored chain, create a new one, or import a trusted save.'
                 : 'Local-first continuity tracking with wide module workspaces, snapshots, imports, and page-by-page supplement planning.'}
             </p>
             <div className="actions">
               {simpleMode ? (
                 <>
                   <button className="button" type="button" onClick={() => draftTitleInputRef.current?.focus()} disabled={isBusy}>
-                    Start Blank Chain
+                    Create Chain
                   </button>
                   {latestChain ? (
                     <Link className="button button--secondary" to={`/chains/${latestChain.chainId}/overview`}>
-                      Continue Guided Setup
+                      Resume Latest Chain
                     </Link>
                   ) : null}
                 </>
@@ -194,8 +194,8 @@ export function HomePage() {
                   Stored chains
                 </div>
                 <div className="metric">
-                  <strong>{latestChain ? latestChain.title : 'Start here'}</strong>
-                  {latestChain ? 'Latest guided setup' : 'Create or open a chain'}
+                  <strong>{latestChain ? latestChain.title : 'No chain yet'}</strong>
+                  Latest chain
                 </div>
               </>
             ) : (
@@ -225,10 +225,8 @@ export function HomePage() {
       <section className="home-dashboard-grid">
         <article className="card stack">
           <div className="section-heading">
-            <h3>{simpleMode ? 'Create a new chain' : 'New Chain'}</h3>
-            {simpleMode ? <ReadinessPill tone="start" /> : null}
+            <h3>{simpleMode ? 'New chain' : 'New Chain'}</h3>
           </div>
-          {simpleMode ? <p>Give the chain a name. You can change the details later once the workspace exists.</p> : null}
           <label className="field">
             <span>Chain title</span>
             <input
@@ -239,15 +237,14 @@ export function HomePage() {
             />
           </label>
           <button className="button" type="button" onClick={handleCreateBlankChain} disabled={isBusy}>
-            Create Blank Chain
+            Create Chain
           </button>
         </article>
 
         <article className="card stack">
           <div className="section-heading">
-            <h3>{simpleMode ? 'Already have data?' : 'Native Save'}</h3>
+            <h3>{simpleMode ? 'Import a save' : 'Native Save'}</h3>
           </div>
-          {simpleMode ? <p>Bring in a native save when you already trust the file. More technical import cleanup can stay tucked away.</p> : null}
           <button
             className="button button--secondary"
             type="button"
@@ -266,7 +263,7 @@ export function HomePage() {
           {simpleMode ? (
             <details className="details-panel">
               <summary className="details-panel__summary">
-                <span>Other import tools</span>
+                <span>Import other JSON</span>
                 <span className="pill">Optional</span>
               </summary>
               <div className="details-panel__body stack stack--compact">
@@ -294,7 +291,7 @@ export function HomePage() {
         </div>
 
         {chains.length === 0 ? (
-          <p>No chains are stored yet. Create a blank chain or import one from the review flow.</p>
+          <p>No chains yet. Create one or import a save.</p>
         ) : (
           <div className="entity-grid entity-grid--two">
             {chains.map((chain) => {
@@ -337,7 +334,7 @@ export function HomePage() {
                   {!simpleMode ? <p>Last updated {formatTimestamp(chain.updatedAt)}</p> : null}
                   <div className="entity-actions">
                     <Link className="button" to={`/chains/${chain.chainId}/overview`}>
-                      {simpleMode ? 'Open Guided Setup' : 'Open Workspace'}
+                      {simpleMode ? 'Open Chain' : 'Open Workspace'}
                     </Link>
                     {simpleMode ? (
                       <details className="details-panel">

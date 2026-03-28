@@ -75,10 +75,10 @@ function AppNavigationLinks({ onNavigate, simpleMode }: { onNavigate: () => void
           <span>
             {simpleMode
               ? item.to === '/'
-                ? 'Start, reopen, or resume guided setup for a chain.'
+                ? 'Open a chain or start a new one.'
                 : item.to === '/search'
-                  ? 'Find something you already created.'
-                  : 'Review outside JSON before it becomes part of the app.'
+                  ? 'Find an existing record.'
+                  : 'Review external JSON before importing it.'
               : item.description}
           </span>
         </NavLink>
@@ -166,7 +166,7 @@ function PageShellContent() {
               <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
               <p className="page-shell__subtitle">
                 {simpleMode
-                  ? 'Calmer continuity tracking with guided setup kept close.'
+                  ? 'Resume a chain or start a new one.'
                   : 'Local-first continuity, imports, snapshots, and supplement planning.'}
               </p>
             </div>
@@ -200,7 +200,7 @@ function PageShellContent() {
 
           <div className="page-shell__desktop-note" role="note">
             {simpleMode
-              ? 'Simple mode is calmest on desktop or a wider window.'
+              ? 'Simple mode works best on desktop or a wider window.'
               : 'Normal mode keeps more data visible at once on desktop or a wider window.'}
           </div>
           <main className="page-shell__main">

@@ -251,7 +251,7 @@ export function CurrentJumpRulesPage() {
         title="Current Jump Rules"
         description={
           simpleMode
-            ? 'Advanced rules tool. Check the live rule state here and only create overrides when this jump needs exceptions.'
+            ? 'Review the active jump\'s rule state and add overrides when needed.'
             : 'Branch defaults and per-jump overrides live here. Chainwide drawbacks and chain-owned rule effects live in Chainwide Rules.'
         }
         badge={currentJump.title}

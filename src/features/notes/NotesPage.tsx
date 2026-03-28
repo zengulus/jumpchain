@@ -197,7 +197,7 @@ export function NotesPage() {
         title="Notes"
         description={
           simpleMode
-            ? 'Optional support tool. Use notes when you want reminders or rulings attached to part of the chain.'
+            ? 'Capture reminders, rulings, and freeform context tied to the chain.'
             : 'Chain, jump, jumper, companion, participation, and snapshot notes from one place, with live filters and autosave.'
         }
         badge={`${workspace.notes.length} total`}

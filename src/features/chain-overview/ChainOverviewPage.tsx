@@ -444,7 +444,7 @@ export function ChainOverviewPage() {
         title="Overview"
         description={
           simpleMode
-            ? 'Guided setup now routes you to the next unfinished page instead of editing everything here.'
+            ? 'Status, recent context, and quick links for this branch.'
             : 'Workspace summary with quick links into the main chain setup surfaces.'
         }
         badge={workspace.activeBranch.title}
@@ -569,7 +569,7 @@ export function ChainOverviewPage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>Current Branch</h3>
-            <ReadinessPill tone="core" label={workspace.activeBranch.title} />
+            <span className="pill">Active</span>
           </div>
           <p>The active branch is the working version of this chain. Everything below is scoped to {workspace.activeBranch.title}.</p>
           <div className="inline-meta">

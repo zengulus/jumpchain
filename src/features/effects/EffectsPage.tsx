@@ -258,7 +258,7 @@ export function EffectsPage() {
         title="Active Effects"
         description={
           simpleMode
-            ? 'Advanced rules tool. Use it when you need a custom effect or rule-state record attached to part of the chain.'
+            ? 'Create custom effect records tied to the chain, a jump, or a jumper.'
             : 'Filterable branch-visible effects with chain, jump, and jumper ownership plus rule override metadata.'
         }
         badge={`${workspace.effects.length} total`}

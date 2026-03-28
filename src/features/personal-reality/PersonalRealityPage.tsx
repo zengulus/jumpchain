@@ -1361,9 +1361,7 @@ export function PersonalRealityPage() {
         title="Personal Reality"
         description={
           simpleMode
-            ? hasPersonalRealityStarted
-              ? 'Optional supplement workspace in progress. Work through it one page at a time without losing track of the budget model.'
-              : 'Optional supplement workspace. You can leave it alone until you want to plan warehouse-style housing, facilities, or long-term chain infrastructure.'
+            ? 'Plan warehouse-style housing, facilities, and long-term infrastructure here.'
             : 'A denser supplement workbench for planning the full Personal Reality build page by page.'
         }
         badge={workspace.activeBranch.title}
