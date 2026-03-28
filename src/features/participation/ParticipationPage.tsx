@@ -3163,19 +3163,33 @@ export function ParticipationEditorCard(props: {
 
   return (
     <article className="card editor-sheet stack" key={props.participant.id}>
-      <div className="section-heading">
-        <div className="inline-meta">
-          <h3>{props.participant.name}</h3>
-          <span className="pill pill--soft">{props.participant.kind}</span>
+      <div className="participation-editor__sticky-header stack stack--compact">
+        <div className="section-heading">
+          <div className="inline-meta">
+            <h3>{props.participant.name}</h3>
+            <span className="pill pill--soft">{props.participant.kind}</span>
+          </div>
+          <div className="actions">
+            {simpleMode && !activeGuideVisible ? (
+              <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+              </button>
+            ) : null}
+            <span className="pill">{draftParticipation.status}</span>
+          </div>
         </div>
-        <div className="actions">
-          {simpleMode && !activeGuideVisible ? (
-            <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
-              {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
-            </button>
-          ) : null}
-          <span className="pill">{draftParticipation.status}</span>
-        </div>
+
+        {showBudgetHeader ? (
+          <ParticipationBudgetSummaryGrid
+            cpBaseValue={cpBaseValue}
+            cpBudgetLabel={cpBudgetLabel}
+            cpBudgetValue={cpCurrentValue}
+            cpJumpDrawbackGrant={cpJumpDrawbackGrant}
+            cpChainDrawbackGrant={cpChainDrawbackGrant}
+          />
+        ) : null}
+
+        <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={handleParticipationTabChange} />
       </div>
 
       <AutosaveStatusIndicator status={participationAutosave.status} />
@@ -3207,18 +3221,6 @@ export function ParticipationEditorCard(props: {
           </div>
         </SimpleModeGuideFrame>
       ) : null}
-
-      {showBudgetHeader ? (
-        <ParticipationBudgetSummaryGrid
-          cpBaseValue={cpBaseValue}
-          cpBudgetLabel={cpBudgetLabel}
-          cpBudgetValue={cpCurrentValue}
-          cpJumpDrawbackGrant={cpJumpDrawbackGrant}
-          cpChainDrawbackGrant={cpChainDrawbackGrant}
-        />
-      ) : null}
-
-      <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={handleParticipationTabChange} />
 
       {activeTab === 'beginnings' ? (
         <div className="stack stack--compact">
