@@ -16,7 +16,7 @@ export const COSMIC_BACKPACK_BASE_VOLUME_M3 = 14.5;
 export const cosmicBackpackMandatoryOptionIds = ['everythings-an-item', 'if-you-cant-hold-it'] as const;
 
 export const cosmicBackpackBaseDescription =
-  'A cosmic backpack with an indestructible 8x8x8 foot interior. If it is lost or stolen, it returns within a day. Items can be stored near the mouth of the bag and retrieved by willing for them.';
+  'A cosmic backpack with an indestructible 3m x 3m x 3m interior. If it is lost or stolen, it returns within a day. Items can be stored near the mouth of the bag and retrieved by willing for them.';
 
 export const cosmicBackpackOptionCatalog: CosmicBackpackOption[] = [
   {
