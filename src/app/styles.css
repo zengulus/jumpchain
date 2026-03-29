@@ -2779,6 +2779,12 @@ body::before {
   gap: 0.8rem;
 }
 
+.workspace-main {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
 .workspace-sidebar {
   position: fixed;
   top: calc(var(--page-shell-sticky-offset) + 0.1rem);
@@ -3040,9 +3046,33 @@ body::before {
   gap: 0.22rem;
 }
 
+.workspace-nav-groups {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.workspace-nav-group {
+  gap: 0.3rem;
+}
+
+.workspace-nav-group__label {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .workspace-menu-item {
   padding: 0.52rem 0.6rem;
   border-radius: 0.68rem;
+}
+
+.workspace-menu-item__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
 }
 
 .workspace-menu-item strong {
@@ -3051,6 +3081,16 @@ body::before {
 
 .workspace-menu-item span {
   font-size: 0.78rem;
+}
+
+.workspace-menu-item.is-compact {
+  gap: 0;
+  padding-top: 0.48rem;
+  padding-bottom: 0.48rem;
+}
+
+.workspace-menu-item.is-compact span {
+  display: none;
 }
 
 .editor-sheet {
@@ -3472,6 +3512,41 @@ span {
 
   .personal-reality-summary-strip {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1161px) {
+  .page-shell[data-has-workspace-nav='true'] .page-shell__nav-toggle {
+    display: none;
+  }
+
+  .page-shell[data-has-workspace-nav='true'][data-ui-mode='simple'] .page-shell__header {
+    grid-template-columns: minmax(180px, 0.5fr) minmax(520px, 1.9fr) auto;
+  }
+
+  .page-shell[data-has-workspace-nav='true'][data-ui-mode='advanced'] .page-shell__header {
+    grid-template-columns: minmax(220px, 0.56fr) minmax(640px, 2.15fr) auto;
+  }
+
+  .workspace-frame {
+    grid-template-columns: minmax(250px, 285px) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .workspace-sidebar {
+    position: sticky;
+    top: calc(var(--page-shell-sticky-offset) + 0.45rem);
+    left: auto;
+    z-index: 8;
+    width: auto;
+    max-height: calc(100vh - (var(--page-shell-sticky-offset) + 0.8rem));
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .workspace-sidebar-backdrop {
+    display: none;
   }
 }
 

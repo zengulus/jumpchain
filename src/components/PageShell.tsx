@@ -146,7 +146,11 @@ function PageShellContent() {
   return (
     <PageShellNavContext.Provider value={navContextValue}>
       <UniversalSearchProvider>
-        <div className="page-shell" data-ui-mode={simpleMode ? 'simple' : 'advanced'}>
+        <div
+          className="page-shell"
+          data-ui-mode={simpleMode ? 'simple' : 'advanced'}
+          data-has-workspace-nav={workspaceDrawerRegistered ? 'true' : 'false'}
+        >
           <header className="page-shell__header">
             <button
               className={`page-shell__nav-toggle${navOpen ? ' is-active' : ''}`}
