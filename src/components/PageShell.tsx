@@ -8,7 +8,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { UiPreferencesProvider, useUiPreferences } from '../app/UiPreferencesContext';
 import { UniversalSearchProvider } from '../features/search/UniversalSearchContext';
 import { UniversalSearchBar } from '../features/search/UniversalSearchBar';
@@ -167,7 +167,11 @@ function PageShellContent() {
               <span>Navigation</span>
             </button>
             <div className="page-shell__brand">
-              <h1 className="page-shell__title">Local-First Jumpchain Tracker</h1>
+              <h1 className="page-shell__title">
+                <Link className="page-shell__title-link" to="/">
+                  Local-First Jumpchain Tracker
+                </Link>
+              </h1>
               <p className="page-shell__subtitle">
                 {simpleMode
                   ? 'Resume a chain or start a new one.'

@@ -60,13 +60,6 @@ interface WorkspaceQuickAction {
   readiness?: ReadinessTone;
 }
 
-interface AppNavItem {
-  to: string;
-  label: string;
-  description: string;
-  end?: boolean;
-}
-
 const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
 type WorkspacePresentationMode = 'overview' | 'editor' | 'deep-task';
 
@@ -128,10 +121,6 @@ export function useWorkspacePresentation(override: WorkspacePresentationOverride
   }, [override, setPresentationOverride]);
 }
 
-function formatCount(value: number, singular: string, plural = `${singular}s`) {
-  return `${value} ${value === 1 ? singular : plural}`;
-}
-
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
     return 'jumps';
@@ -182,54 +171,6 @@ function getActiveModuleKey(pathname: string): ModuleKey {
   }
 
   return 'overview';
-}
-
-const APP_NAV_ITEMS: AppNavItem[] = [
-  {
-    to: '/',
-    label: 'Home',
-    description: 'Chains, creation, imports, and exports.',
-    end: true,
-  },
-  {
-    to: '/search',
-    label: 'Search',
-    description: 'Find records across chains and modules.',
-  },
-  {
-    to: '/import',
-    label: 'Import Review',
-    description: 'Review and convert external jump data.',
-  },
-] as const;
-
-function AppNavigationLinks(props: { onNavigate: () => void; simpleMode: boolean; showDescriptions?: boolean }) {
-  return (
-    <nav className="workspace-menu-list" aria-label="App">
-      {APP_NAV_ITEMS.map((item) => (
-        <NavLink
-          key={item.to}
-          className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`}
-          to={item.to}
-          end={item.end}
-          onClick={props.onNavigate}
-        >
-          <strong>{item.label}</strong>
-          {props.showDescriptions === false ? null : (
-            <span>
-              {props.simpleMode
-                ? item.to === '/'
-                  ? 'Open a chain or start a new one.'
-                  : item.to === '/search'
-                    ? 'Find an existing record.'
-                    : 'Review external JSON before importing it.'
-                : item.description}
-            </span>
-          )}
-        </NavLink>
-      ))}
-    </nav>
-  );
 }
 
 function WorkspaceModuleLinks(props: {
@@ -739,62 +680,6 @@ export function ChainWorkspaceLayout() {
             ) : null}
 
             <aside className={`workspace-sidebar${sidebarOpen ? ' is-open' : ''}`} id="workspace-sidebar">
-              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                <div className="section-heading">
-                  <h3>{simpleMode ? 'Workspace' : 'Active Chain'}</h3>
-                  <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
-                </div>
-                <div className="workspace-context-title">
-                  <strong>{state.bundle.chain.title}</strong>
-                  <span>{currentJump ? `Current jump: ${currentJump.orderIndex + 1}. ${currentJump.title}` : 'No current jump selected'}</span>
-                </div>
-                <div className="workspace-context-meta" aria-label="Workspace totals">
-                  <span>{formatCount(workspace.jumpers.length, 'jumper')}</span>
-                  <span>{formatCount(workspace.jumps.length, 'jump')}</span>
-                </div>
-              </section>
-
-              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                <div className="section-heading">
-                  <h3>App</h3>
-                  <span className="pill">Global</span>
-                </div>
-                <AppNavigationLinks onNavigate={closeNav} simpleMode={simpleMode} showDescriptions={simpleMode} />
-              </section>
-
-              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                <div className="section-heading">
-                  <div className="field-label-row">
-                    <h3>Workspace</h3>
-                    <AssistiveHint
-                      placement="right"
-                      text="These links jump directly between major workspace modules. Each destination still applies the same setup-aware defaults as before."
-                      triggerLabel="Explain workspace navigation"
-                    />
-                  </div>
-                  <span className="pill">{simpleMode ? 'Guided' : 'Browse'}</span>
-                </div>
-
-                {simpleMode ? (
-                  <div className="section-surface stack stack--compact">
-                    <div className="section-heading">
-                      <strong>Focus</strong>
-                      <ReadinessPill tone={showGuidedSetup ? 'start' : 'core'} label={simpleNavigatorLabel} />
-                    </div>
-                    <p className="workspace-sidebar-copy">{simpleNavigatorCopy}</p>
-                  </div>
-                ) : (
-                  <p className="workspace-sidebar-copy">Move between setup, systems, and reference pages without opening a chooser first.</p>
-                )}
-
-                <WorkspaceModuleLinks
-                  groups={moduleGroups}
-                  activeModuleKey={activeModuleKey}
-                  onNavigate={closeNav}
-                  simpleMode={simpleMode}
-                />
-              </section>
-
               {!showQuickActions ? null : (
                 <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
                   <div className="section-heading">
@@ -828,6 +713,53 @@ export function ChainWorkspaceLayout() {
                   </div>
                 </section>
               )}
+
+              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+                <div className="section-heading">
+                  <div className="field-label-row">
+                    <h3>Workspace</h3>
+                    <AssistiveHint
+                      placement="right"
+                      text="These links jump directly between major workspace modules. Each destination still applies the same setup-aware defaults as before."
+                      triggerLabel="Explain workspace navigation"
+                    />
+                  </div>
+                  <span className="pill">{simpleMode ? 'Guided' : 'Browse'}</span>
+                </div>
+
+                {simpleMode ? (
+                  <div className="section-surface stack stack--compact">
+                    <div className="section-heading">
+                      <strong>Focus</strong>
+                      <ReadinessPill tone={showGuidedSetup ? 'start' : 'core'} label={simpleNavigatorLabel} />
+                    </div>
+                    <p className="workspace-sidebar-copy">{simpleNavigatorCopy}</p>
+                  </div>
+                ) : (
+                  <p className="workspace-sidebar-copy">Move between setup, systems, and reference pages without opening a chooser first.</p>
+                )}
+
+                <WorkspaceModuleLinks
+                  groups={moduleGroups}
+                  activeModuleKey={activeModuleKey}
+                  onNavigate={closeNav}
+                  simpleMode={simpleMode}
+                />
+
+                <details className="details-panel">
+                  <summary className="details-panel__summary">
+                    <span>Legacy features</span>
+                    <span className="pill">Low use</span>
+                  </summary>
+                  <div className="details-panel__body stack stack--compact">
+                    <p className="workspace-sidebar-copy">Import Review is still available for older external JSON flows.</p>
+                    <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
+                      <strong>Import Review</strong>
+                      <span>Review and convert external jump data.</span>
+                    </NavLink>
+                  </div>
+                </details>
+              </section>
             </aside>
 
             <div className="workspace-main">
