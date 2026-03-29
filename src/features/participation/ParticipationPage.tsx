@@ -3297,17 +3297,19 @@ export function ParticipationEditorCard(props: {
             />
           ) : null}
 
-          {renderBudgetLinesSection()}
-
           <details className="details-panel">
             <summary className="details-panel__summary">
-              <span>Optional currency labels</span>
-              <span className="pill">{Object.keys(currencyDefinitions).length}</span>
+              <span>Optional budget tools</span>
+              <div className="inline-meta">
+                <span className="pill">{budgetRows.length} lines</span>
+                <span className="pill">{Object.keys(currencyDefinitions).length} labels</span>
+              </div>
             </summary>
             <div className="details-panel__body stack stack--compact">
               <p className="editor-section__copy">
-                Only open this if you need to rename currencies or add a special one for this jump.
+                Only open this if you need to override starting budget lines or rename currencies for this jump.
               </p>
+              {renderBudgetLinesSection()}
               <CurrencyDefinitionEditorSection
                 definitions={currencyDefinitions}
                 onChange={updateCurrencyDefinitions}
