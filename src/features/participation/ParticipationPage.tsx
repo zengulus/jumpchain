@@ -1957,6 +1957,7 @@ function CurrencyExchangeEditorSection(props: {
 function CurrencyDefinitionEditorSection(props: {
   definitions: Record<string, CurrencyDefinition>;
   onChange: (nextDefinitions: Record<string, CurrencyDefinition>) => void;
+  compact?: boolean;
 }) {
   const definitionKeys = Object.keys(props.definitions).sort((left, right) => {
     if (left === '0') {
@@ -1979,10 +1980,10 @@ function CurrencyDefinitionEditorSection(props: {
   });
 
   return (
-    <section className="editor-section">
-      <div className="editor-section__header">
-        <h4>Currencies</h4>
-        <span className="pill">{definitionKeys.length}</span>
+    <section className={props.compact ? 'stack stack--compact' : 'editor-section'}>
+      <div className={props.compact ? 'section-heading' : 'editor-section__header'}>
+        <h4>Currency labels</h4>
+        {props.compact ? null : <span className="pill">{definitionKeys.length}</span>}
       </div>
 
       <div className="selection-editor-list">
@@ -2961,14 +2962,14 @@ export function ParticipationEditorCard(props: {
     setGuideRequestedState(false);
   }
 
-  function renderBudgetLinesSection() {
+  function renderBudgetLinesSection(compact = false) {
     return (
-      <section className="editor-section">
-        <div className="editor-section__header">
+      <section className={compact ? 'stack stack--compact' : 'editor-section'}>
+        <div className={compact ? 'section-heading' : 'editor-section__header'}>
           <div className="stack stack--compact">
-            <h4>Starting budget lines</h4>
+            <h4>Starting pools</h4>
           </div>
-          <span className="pill">{budgetRows.length}</span>
+          {compact ? null : <span className="pill">{budgetRows.length}</span>}
         </div>
 
         <div className="selection-editor-list">
@@ -3092,7 +3093,7 @@ export function ParticipationEditorCard(props: {
               })
             }
           >
-            Add Budget Line
+            Add Starting Pool
           </button>
         </div>
       </section>
@@ -3179,6 +3180,8 @@ export function ParticipationEditorCard(props: {
           </div>
         </div>
 
+        <AutosaveStatusIndicator status={participationAutosave.status} />
+
         {showBudgetHeader ? (
           <ParticipationBudgetSummaryGrid
             cpBaseValue={cpBaseValue}
@@ -3191,8 +3194,6 @@ export function ParticipationEditorCard(props: {
 
         <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={handleParticipationTabChange} />
       </div>
-
-      <AutosaveStatusIndicator status={participationAutosave.status} />
 
       {activeGuideVisible ? (
         <SimpleModeGuideFrame
@@ -3299,20 +3300,18 @@ export function ParticipationEditorCard(props: {
 
           <details className="details-panel">
             <summary className="details-panel__summary">
-              <span>Optional budget tools</span>
-              <div className="inline-meta">
-                <span className="pill">{budgetRows.length} lines</span>
-                <span className="pill">{Object.keys(currencyDefinitions).length} labels</span>
-              </div>
+              <span>Budget overrides</span>
+              <span className="pill">Optional</span>
             </summary>
             <div className="details-panel__body stack stack--compact">
               <p className="editor-section__copy">
-                Only open this if you need to override starting budget lines or rename currencies for this jump.
+                Only open this if this jump needs custom starting pools or renamed currency labels.
               </p>
-              {renderBudgetLinesSection()}
+              {renderBudgetLinesSection(true)}
               <CurrencyDefinitionEditorSection
                 definitions={currencyDefinitions}
                 onChange={updateCurrencyDefinitions}
+                compact
               />
             </div>
           </details>

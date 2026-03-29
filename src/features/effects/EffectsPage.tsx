@@ -170,6 +170,7 @@ export function EffectsPage() {
   const showCategoryFilter = workspace.effects.length > 1 || categoryFilter !== 'all';
   const showSecondaryFilters = workspace.effects.length > 1 || hasSecondaryFilters;
   const showEffectCount = hasEffectSearch || categoryFilter !== 'all' || hasSecondaryFilters;
+  const showEffectSelectionRail = filteredEffects.length > 1 || hasEffectSearch || categoryFilter !== 'all' || hasSecondaryFilters;
 
   async function handleCreateEffect() {
     if (!workspace.activeBranch) {
@@ -322,194 +323,196 @@ export function EffectsPage() {
           }
         />
       ) : (
-        <section className="workspace-two-column">
-          <aside className="card stack">
-            <div className="section-heading">
-              <h3>{showEffectSearch || showCategoryFilter || showSecondaryFilters ? 'Filters' : 'Effects'}</h3>
-              {showEffectCount ? <span className="pill">{filteredEffects.length} shown</span> : null}
-            </div>
-            {showEffectSearch ? (
-              <label className="field">
-                <span>Search effects</span>
-                <input
-                  value={searchQuery}
-                  placeholder="title, description, category, state..."
-                  onChange={(event) =>
-                    setSearchParams((currentParams) => {
-                      const nextParams = new URLSearchParams(currentParams);
-
-                      if (event.target.value.trim()) {
-                        nextParams.set('search', event.target.value);
-                      } else {
-                        nextParams.delete('search');
-                      }
-
-                      return nextParams;
-                    })
-                  }
-                />
-              </label>
-            ) : null}
-            {simpleMode ? (
-              <>
-                {showCategoryFilter ? (
-                  <label className="field">
-                    <span>Category</span>
-                    <select
-                      value={categoryFilter}
-                      onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
-                    >
-                      <option value="all">all</option>
-                      {effectCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {showSecondaryFilters ? (
-                  <details className="details-panel">
-                    <summary className="details-panel__summary">
-                      <span>More filters</span>
-                      <span className="pill">Optional</span>
-                    </summary>
-                    <div className="details-panel__body">
-                      <div className="field-grid field-grid--two">
-                        <label className="field">
-                          <span>Scope</span>
-                          <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
-                            <option value="all">all</option>
-                            {scopeTypes.map((scope) => (
-                              <option key={scope} value={scope}>
-                                {scope}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>State</span>
-                          <select
-                            value={stateFilter}
-                            onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
-                          >
-                            <option value="all">all</option>
-                            {effectStates.map((state) => (
-                              <option key={state} value={state}>
-                                {state}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Owner type</span>
-                          <select
-                            value={ownerTypeFilter}
-                            onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
-                          >
-                            <option value="all">all</option>
-                            {ownerEntityTypes.map((ownerType) => (
-                              <option key={ownerType} value={ownerType}>
-                                {ownerType}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    </div>
-                  </details>
-                ) : null}
-              </>
-            ) : (
-              <div className="field-grid field-grid--two">
-                {showSecondaryFilters || scopeFilter !== 'all' ? (
-                  <label className="field">
-                    <span>Scope</span>
-                    <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
-                      <option value="all">all</option>
-                      {scopeTypes.map((scope) => (
-                        <option key={scope} value={scope}>
-                          {scope}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {showCategoryFilter ? (
-                  <label className="field">
-                    <span>Category</span>
-                    <select
-                      value={categoryFilter}
-                      onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
-                    >
-                      <option value="all">all</option>
-                      {effectCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {showSecondaryFilters || stateFilter !== 'all' ? (
-                  <label className="field">
-                    <span>State</span>
-                    <select
-                      value={stateFilter}
-                      onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
-                    >
-                      <option value="all">all</option>
-                      {effectStates.map((state) => (
-                        <option key={state} value={state}>
-                          {state}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {showSecondaryFilters || ownerTypeFilter !== 'all' ? (
-                  <label className="field">
-                    <span>Owner type</span>
-                    <select
-                      value={ownerTypeFilter}
-                      onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
-                    >
-                      <option value="all">all</option>
-                      {ownerEntityTypes.map((ownerType) => (
-                        <option key={ownerType} value={ownerType}>
-                          {ownerType}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
+        <section className={showEffectSelectionRail ? 'workspace-two-column' : 'stack'}>
+          {showEffectSelectionRail ? (
+            <aside className="card stack">
+              <div className="section-heading">
+                <h3>{showEffectSearch || showCategoryFilter || showSecondaryFilters ? 'Filters' : 'Effects'}</h3>
+                {showEffectCount ? <span className="pill">{filteredEffects.length} shown</span> : null}
               </div>
-            )}
+              {showEffectSearch ? (
+                <label className="field">
+                  <span>Search effects</span>
+                  <input
+                    value={searchQuery}
+                    placeholder="title, description, category, state..."
+                    onChange={(event) =>
+                      setSearchParams((currentParams) => {
+                        const nextParams = new URLSearchParams(currentParams);
 
-            <div className="selection-list">
-              {filteredEffects.map((effect) => (
-                <button
-                  key={effect.id}
-                  className={`selection-list__item${selectedEffect?.id === effect.id ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((currentParams) => {
-                      const nextParams = new URLSearchParams(currentParams);
-                      nextParams.set('effect', effect.id);
-                      return nextParams;
-                    })
-                  }
-                >
-                  <strong>
-                    <SearchHighlight text={effect.title} query={searchQuery} />
-                  </strong>
-                  <span>
-                    <SearchHighlight text={`${effect.category} | ${effect.state}`} query={searchQuery} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          </aside>
+                        if (event.target.value.trim()) {
+                          nextParams.set('search', event.target.value);
+                        } else {
+                          nextParams.delete('search');
+                        }
+
+                        return nextParams;
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+              {simpleMode ? (
+                <>
+                  {showCategoryFilter ? (
+                    <label className="field">
+                      <span>Category</span>
+                      <select
+                        value={categoryFilter}
+                        onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
+                      >
+                        <option value="all">all</option>
+                        {effectCategories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {showSecondaryFilters ? (
+                    <details className="details-panel">
+                      <summary className="details-panel__summary">
+                        <span>More filters</span>
+                        <span className="pill">Optional</span>
+                      </summary>
+                      <div className="details-panel__body">
+                        <div className="field-grid field-grid--two">
+                          <label className="field">
+                            <span>Scope</span>
+                            <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
+                              <option value="all">all</option>
+                              {scopeTypes.map((scope) => (
+                                <option key={scope} value={scope}>
+                                  {scope}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>State</span>
+                            <select
+                              value={stateFilter}
+                              onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
+                            >
+                              <option value="all">all</option>
+                              {effectStates.map((state) => (
+                                <option key={state} value={state}>
+                                  {state}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Owner type</span>
+                            <select
+                              value={ownerTypeFilter}
+                              onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
+                            >
+                              <option value="all">all</option>
+                              {ownerEntityTypes.map((ownerType) => (
+                                <option key={ownerType} value={ownerType}>
+                                  {ownerType}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
+                </>
+              ) : (
+                <div className="field-grid field-grid--two">
+                  {showSecondaryFilters || scopeFilter !== 'all' ? (
+                    <label className="field">
+                      <span>Scope</span>
+                      <select value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as FilterValue<ScopeType>)}>
+                        <option value="all">all</option>
+                        {scopeTypes.map((scope) => (
+                          <option key={scope} value={scope}>
+                            {scope}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {showCategoryFilter ? (
+                    <label className="field">
+                      <span>Category</span>
+                      <select
+                        value={categoryFilter}
+                        onChange={(event) => setCategoryFilter(event.target.value as FilterValue<(typeof effectCategories)[number]>)}
+                      >
+                        <option value="all">all</option>
+                        {effectCategories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {showSecondaryFilters || stateFilter !== 'all' ? (
+                    <label className="field">
+                      <span>State</span>
+                      <select
+                        value={stateFilter}
+                        onChange={(event) => setStateFilter(event.target.value as FilterValue<(typeof effectStates)[number]>)}
+                      >
+                        <option value="all">all</option>
+                        {effectStates.map((state) => (
+                          <option key={state} value={state}>
+                            {state}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {showSecondaryFilters || ownerTypeFilter !== 'all' ? (
+                    <label className="field">
+                      <span>Owner type</span>
+                      <select
+                        value={ownerTypeFilter}
+                        onChange={(event) => setOwnerTypeFilter(event.target.value as FilterValue<OwnerEntityType>)}
+                      >
+                        <option value="all">all</option>
+                        {ownerEntityTypes.map((ownerType) => (
+                          <option key={ownerType} value={ownerType}>
+                            {ownerType}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="selection-list">
+                {filteredEffects.map((effect) => (
+                  <button
+                    key={effect.id}
+                    className={`selection-list__item${selectedEffect?.id === effect.id ? ' is-active' : ''}`}
+                    type="button"
+                    onClick={() =>
+                      setSearchParams((currentParams) => {
+                        const nextParams = new URLSearchParams(currentParams);
+                        nextParams.set('effect', effect.id);
+                        return nextParams;
+                      })
+                    }
+                  >
+                    <strong>
+                      <SearchHighlight text={effect.title} query={searchQuery} />
+                    </strong>
+                    <span>
+                      <SearchHighlight text={`${effect.category} | ${effect.state}`} query={searchQuery} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          ) : null}
 
           <article className="card stack">
             {draftEffect ? (

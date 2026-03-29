@@ -137,6 +137,7 @@ export function NotesPage() {
   const showNoteSearch = focusedNotes.length > 1 || hasNoteSearch;
   const showNoteTypeFilter = focusedNotes.length > 1 || noteFilter !== 'all';
   const showNoteFilterCount = hasNoteSearch || noteFilter !== 'all';
+  const showNoteSelectionRail = filteredNotes.length > 1 || hasNoteSearch || noteFilter !== 'all';
 
   async function handleCreateNote() {
     if (!workspace.activeBranch) {
@@ -259,72 +260,74 @@ export function NotesPage() {
           }
         />
       ) : (
-        <section className="workspace-two-column">
-          <aside className="card stack">
-            <div className="section-heading">
-              <h3>{showNoteSearch || showNoteTypeFilter ? 'Filters' : 'Notes'}</h3>
-              {showNoteFilterCount ? <span className="pill">{filteredNotes.length} shown</span> : null}
-            </div>
-            {showNoteSearch ? (
-              <label className="field">
-                <span>Search notes</span>
-                <input
-                  value={searchQuery}
-                  placeholder="title, content, tags..."
-                  onChange={(event) =>
-                    setSearchParams((currentParams) => {
-                      const nextParams = new URLSearchParams(currentParams);
+        <section className={showNoteSelectionRail ? 'workspace-two-column' : 'stack'}>
+          {showNoteSelectionRail ? (
+            <aside className="card stack">
+              <div className="section-heading">
+                <h3>{showNoteSearch || showNoteTypeFilter ? 'Filters' : 'Notes'}</h3>
+                {showNoteFilterCount ? <span className="pill">{filteredNotes.length} shown</span> : null}
+              </div>
+              {showNoteSearch ? (
+                <label className="field">
+                  <span>Search notes</span>
+                  <input
+                    value={searchQuery}
+                    placeholder="title, content, tags..."
+                    onChange={(event) =>
+                      setSearchParams((currentParams) => {
+                        const nextParams = new URLSearchParams(currentParams);
 
-                      if (event.target.value.trim()) {
-                        nextParams.set('search', event.target.value);
-                      } else {
-                        nextParams.delete('search');
-                      }
+                        if (event.target.value.trim()) {
+                          nextParams.set('search', event.target.value);
+                        } else {
+                          nextParams.delete('search');
+                        }
 
-                      return nextParams;
-                    })
-                  }
-                />
-              </label>
-            ) : null}
-            {showNoteTypeFilter ? (
-              <label className="field">
-                <span>Note type</span>
-                <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
-                  <option value="all">all</option>
-                  {noteTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
+                        return nextParams;
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+              {showNoteTypeFilter ? (
+                <label className="field">
+                  <span>Note type</span>
+                  <select value={noteFilter} onChange={(event) => setNoteFilter(event.target.value as NoteFilter)}>
+                    <option value="all">all</option>
+                    {noteTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
-            <div className="selection-list">
-              {filteredNotes.map((note) => (
-                <button
-                  key={note.id}
-                  className={`selection-list__item${selectedNote?.id === note.id ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() =>
-                    setSearchParams((currentParams) => {
-                      const nextParams = new URLSearchParams(currentParams);
-                      nextParams.set('note', note.id);
-                      return nextParams;
-                    })
-                  }
-                >
-                  <strong>
-                    <SearchHighlight text={note.title} query={searchQuery} />
-                  </strong>
-                  <span>
-                    <SearchHighlight text={note.noteType} query={searchQuery} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          </aside>
+              <div className="selection-list">
+                {filteredNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    className={`selection-list__item${selectedNote?.id === note.id ? ' is-active' : ''}`}
+                    type="button"
+                    onClick={() =>
+                      setSearchParams((currentParams) => {
+                        const nextParams = new URLSearchParams(currentParams);
+                        nextParams.set('note', note.id);
+                        return nextParams;
+                      })
+                    }
+                  >
+                    <strong>
+                      <SearchHighlight text={note.title} query={searchQuery} />
+                    </strong>
+                    <span>
+                      <SearchHighlight text={note.noteType} query={searchQuery} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+          ) : null}
 
           <article className="card stack">
             {selectedNote ? (

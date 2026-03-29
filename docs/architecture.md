@@ -14,6 +14,14 @@ Additional planning docs:
 
 - `docs/companion-management-suite.md` outlines the next-step companion management suite.
 
+## Supported Viewport Widths
+
+The current app deliberately targets desktop and laptop widths.
+
+- Mobile widths are not a supported UX target.
+- Tablet widths are not a supported UX target.
+- Narrow-screen behavior should be treated as best-effort fallback, not as a polished or guaranteed layout.
+
 ## GitHub Pages
 
 This app is intended to run on GitHub Pages as built static assets, not by serving the source tree directly.
