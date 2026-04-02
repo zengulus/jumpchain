@@ -83,6 +83,7 @@ function createEmptyChainGuideScopeState() {
   return {
     'cosmic-backpack': {},
     'chainwide-rules': {},
+    'alt-chain-builder': {},
   };
 }
 
@@ -129,6 +130,7 @@ function readChainGuideScopeState(value: unknown) {
   return {
     'cosmic-backpack': readPageGuideMap(record['cosmic-backpack']),
     'chainwide-rules': readPageGuideMap(record['chainwide-rules']),
+    'alt-chain-builder': readPageGuideMap(record['alt-chain-builder']),
   };
 }
 

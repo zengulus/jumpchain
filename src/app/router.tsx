@@ -71,6 +71,10 @@ export const appRouter = createHashRouter([
             lazy: lazyRoute(() => import('../features/chainwide-rules/ChainwideRulesPage'), 'ChainwideRulesPage'),
           },
           {
+            path: 'alt-chain-builder',
+            lazy: lazyRoute(() => import('../features/chainwide-rules/AltChainBuilderPage'), 'AltChainBuilderPage'),
+          },
+          {
             path: 'current-jump-rules',
             lazy: lazyRoute(() => import('../features/current-jump-rules/CurrentJumpRulesPage'), 'CurrentJumpRulesPage'),
           },

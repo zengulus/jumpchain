@@ -9,7 +9,7 @@ export const SIMPLE_MODE_GUIDE_DEFAULT_KEY = 'default';
 export type SimpleModeSupplementDecision = 'undecided' | 'yes' | 'not-now' | 'skip-future';
 export type SimpleModeGuidePromptState = 'pending' | 'accepted' | 'dismissed';
 export type BranchGuideSurface = 'overview' | 'jumpers' | 'companions' | 'jumps' | 'participation' | 'bodymod';
-export type ChainGuideSurface = 'cosmic-backpack' | 'chainwide-rules';
+export type ChainGuideSurface = 'cosmic-backpack' | 'chainwide-rules' | 'alt-chain-builder';
 export type SimpleModeGuideSurface = BranchGuideSurface | ChainGuideSurface;
 export type OverviewGuideStepId = 'jumper' | 'jump' | 'participation';
 export type JumperGuideStepId = 'identity' | 'details';
@@ -50,6 +50,7 @@ export interface SimpleModeGuideRegistryState {
     {
       'cosmic-backpack': Record<string, SimpleModePageGuideState>;
       'chainwide-rules': Record<string, SimpleModePageGuideState>;
+      'alt-chain-builder': Record<string, SimpleModePageGuideState>;
     }
   >;
 }

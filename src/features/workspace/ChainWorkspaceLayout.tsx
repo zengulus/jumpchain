@@ -29,6 +29,7 @@ type ModuleKey =
   | 'jumps'
   | 'participation'
   | 'effects'
+  | 'alt-chain-builder'
   | 'chainwide-rules'
   | 'current-jump-rules'
   | 'bodymod'
@@ -140,6 +141,10 @@ function getActiveModuleKey(pathname: string): ModuleKey {
 
   if (pathname.includes('/effects')) {
     return 'effects';
+  }
+
+  if (pathname.includes('/alt-chain-builder')) {
+    return 'alt-chain-builder';
   }
 
   if (pathname.includes('/current-jump-rules')) {
@@ -376,6 +381,8 @@ export function ChainWorkspaceLayout() {
         return getParticipationPath();
       case 'effects':
         return `/chains/${resolvedChainId}/effects`;
+      case 'alt-chain-builder':
+        return `/chains/${resolvedChainId}/alt-chain-builder`;
       case 'chainwide-rules':
         return `/chains/${resolvedChainId}/rules`;
       case 'current-jump-rules':
@@ -575,10 +582,17 @@ export function ChainWorkspaceLayout() {
           readiness: 'advanced',
         },
         {
+          key: 'alt-chain-builder',
+          label: 'Alt-Chain Builder',
+          to: getModulePath('alt-chain-builder'),
+          description: 'Work through the Alt-Chain worksheet and generate chainwide rule entries from it.',
+          readiness: 'advanced',
+        },
+        {
           key: 'chainwide-rules',
           label: 'Chainwide Rules',
           to: getModulePath('chainwide-rules'),
-          description: 'Chain-level rule flags, drawbacks, and always-on rule entries.',
+          description: 'Edit chainwide rule effects, drawbacks, and branch-level rule flags after the builder posts into them.',
           readiness: 'advanced',
         },
         {
