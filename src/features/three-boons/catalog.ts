@@ -4,6 +4,7 @@ export interface ThreeBoonsOption {
   title: string;
   description: string;
   note?: string;
+  repeatable?: boolean;
   maxSelections?: number;
   rollOnly?: boolean;
   extraRolls?: number;
@@ -14,7 +15,7 @@ function boon(
   id: string,
   title: string,
   description: string,
-  extras: Pick<Partial<ThreeBoonsOption>, 'note' | 'maxSelections' | 'rollOnly' | 'extraRolls'> = {},
+  extras: Pick<Partial<ThreeBoonsOption>, 'note' | 'repeatable' | 'maxSelections' | 'rollOnly' | 'extraRolls'> = {},
 ): ThreeBoonsOption {
   return {
     id,
@@ -160,7 +161,7 @@ export const threeBoonsCatalog: ThreeBoonsOption[] = [
     'savings-boon',
     'Savings Boon',
     'Carry unused CP forward into later jumps through a savings account.',
-    { note: 'Each extra purchase makes the saved pool duplicate itself once at the end of every jump.' },
+    { note: 'Each extra purchase makes the saved pool duplicate itself once at the end of every jump.', repeatable: true },
   ),
   boon(
     18,
@@ -210,7 +211,7 @@ export const threeBoonsCatalog: ThreeBoonsOption[] = [
     'universal-supplement',
     'Universal Supplement',
     'Attach any jump or supplement to any other jump once per jump for each purchase of this boon.',
-    { note: 'The source explicitly says there is no roll-side cap on how many times this can be gained.' },
+    { note: 'The source explicitly says there is no roll-side cap on how many times this can be gained.', repeatable: true },
   ),
   boon(
     25,
@@ -263,3 +264,26 @@ export const threeBoonsOptionsByNumber = Object.fromEntries(
   threeBoonsCatalog.map((entry) => [entry.number, entry]),
 ) as Record<number, ThreeBoonsOption>;
 
+export function isThreeBoonsOptionRepeatable(option: ThreeBoonsOption | undefined) {
+  if (!option) {
+    return false;
+  }
+
+  return option.repeatable === true || (typeof option.maxSelections === 'number' && option.maxSelections > 1);
+}
+
+export function getThreeBoonsSelectionLimit(option: ThreeBoonsOption | undefined, allowRollOnly = true) {
+  if (!option) {
+    return 1;
+  }
+
+  if (!allowRollOnly && option.rollOnly) {
+    return 0;
+  }
+
+  if (typeof option.maxSelections === 'number' && Number.isFinite(option.maxSelections)) {
+    return option.maxSelections;
+  }
+
+  return isThreeBoonsOptionRepeatable(option) ? undefined : 1;
+}

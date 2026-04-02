@@ -1,7 +1,13 @@
 import type { Chain } from '../../domain/chain/types';
 import type { JsonMap } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
-import { threeBoonsCatalog, threeBoonsOptionsById, threeBoonsOptionsByNumber, type ThreeBoonsOption } from './catalog';
+import {
+  getThreeBoonsSelectionLimit,
+  threeBoonsCatalog,
+  threeBoonsOptionsById,
+  threeBoonsOptionsByNumber,
+  type ThreeBoonsOption,
+} from './catalog';
 
 export const THREE_BOONS_METADATA_KEY = 'threeBoons';
 export const THREE_BOONS_EFFECT_SOURCE = 'three-boons';
@@ -94,14 +100,6 @@ function clampWholeNumber(value: number) {
   return Math.max(0, Math.floor(value));
 }
 
-function getSelectionLimit(option: ThreeBoonsOption, allowRollOnly: boolean) {
-  if (!allowRollOnly && option.rollOnly) {
-    return 0;
-  }
-
-  return typeof option.maxSelections === 'number' ? option.maxSelections : undefined;
-}
-
 function normalizeSelectionCounts(value: unknown, allowRollOnly: boolean): ThreeBoonsSelectionCounts {
   const record = asRecord(value);
 
@@ -117,7 +115,7 @@ function normalizeSelectionCounts(value: unknown, allowRollOnly: boolean): Three
         return [];
       }
 
-      const selectionLimit = getSelectionLimit(option, allowRollOnly);
+      const selectionLimit = getThreeBoonsSelectionLimit(option, allowRollOnly);
       const normalizedCount = clampWholeNumber(readFiniteNumber(rawCount));
 
       if (selectionLimit === 0 || normalizedCount <= 0) {
@@ -292,7 +290,7 @@ export function setThreeBoonsManualSelectionCount(
   const currentCounts = normalizeSelectionCounts(state.manualSelectionCounts, false);
   const otherSelectedCount = countSelections(currentCounts) - (currentCounts[boonId] ?? 0);
   const manualSlotsRemaining = Math.max(0, THREE_BOONS_CHOOSE_LIMIT - otherSelectedCount);
-  const selectionLimit = typeof option.maxSelections === 'number' ? option.maxSelections : manualSlotsRemaining;
+  const selectionLimit = getThreeBoonsSelectionLimit(option, false) ?? manualSlotsRemaining;
   const normalizedCount = Math.max(0, Math.min(clampWholeNumber(requestedCount), selectionLimit, manualSlotsRemaining));
   const nextCounts = { ...currentCounts };
 
@@ -343,7 +341,7 @@ export function rollThreeBoonsBoonSet(random: () => number = Math.random, rolled
     }
 
     const currentCount = selectionCounts[option.id] ?? 0;
-    const selectionLimit = typeof option.maxSelections === 'number' ? option.maxSelections : undefined;
+    const selectionLimit = getThreeBoonsSelectionLimit(option, true);
 
     if (typeof selectionLimit === 'number' && currentCount >= selectionLimit) {
       rerollCount += 1;

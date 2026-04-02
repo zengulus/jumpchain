@@ -91,18 +91,33 @@ describe('three boons helper model', () => {
   it('enforces the choose-three limit and blocks manual selection of roll-only boons', () => {
     let state = createDefaultThreeBoonsState();
 
+    state = setThreeBoonsManualSelectionCount(state, 'broken-limiter', 2);
     state = setThreeBoonsManualSelectionCount(state, 'multiplayer-chain', 2);
     state = setThreeBoonsManualSelectionCount(state, 'another-boon', 1);
     state = setThreeBoonsManualSelectionCount(state, 'maximum-rewards', 2);
 
     expect(state.manualSelectionCounts).toEqual({
+      'broken-limiter': 1,
       'multiplayer-chain': 2,
-      'maximum-rewards': 1,
     });
 
     const summary = buildThreeBoonsSummary(state);
     expect(summary.manualSelectionTotal).toBe(3);
     expect(summary.warnings).toHaveLength(0);
+  });
+
+  it('rerolls duplicate hits for boons that are not explicitly repeatable', () => {
+    const result = rollThreeBoonsBoonSet(
+      createRandomSequence(4, 4, 1, 2, 3),
+      '2026-04-03T00:00:00.000Z',
+    );
+
+    expect(result.selectionCounts['broken-limiter']).toBe(1);
+    expect(result.selectionCounts['multiplayer-chain']).toBe(1);
+    expect(result.selectionCounts['maximum-rewards']).toBe(1);
+    expect(result.selectionCounts['drawback-booster']).toBe(1);
+    expect(result.rerollCount).toBe(1);
+    expect(result.acceptedRolls.map((entry) => entry.number)).toEqual([4, 1, 2, 3]);
   });
 
   it('resolves extra rolls and rerolls capped boons automatically', () => {

@@ -17,7 +17,13 @@ import {
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-import { threeBoonsCatalog, threeBoonsOptionsById, type ThreeBoonsOption } from './catalog';
+import {
+  getThreeBoonsSelectionLimit,
+  isThreeBoonsOptionRepeatable,
+  threeBoonsCatalog,
+  threeBoonsOptionsById,
+  type ThreeBoonsOption,
+} from './catalog';
 import {
   applyThreeBoonsRoll,
   buildThreeBoonsSummary,
@@ -68,11 +74,13 @@ function getSelectionLimitLabel(option: ThreeBoonsOption) {
     return 'Roll only';
   }
 
-  if (typeof option.maxSelections === 'number') {
-    return option.maxSelections === 1 ? 'Single pick' : `Up to ${option.maxSelections} picks`;
+  const selectionLimit = getThreeBoonsSelectionLimit(option, false);
+
+  if (typeof selectionLimit === 'number') {
+    return selectionLimit === 1 ? 'Single pick' : `Up to ${selectionLimit} picks`;
   }
 
-  return 'Repeatable';
+  return isThreeBoonsOptionRepeatable(option) ? 'Repeatable' : 'Single pick';
 }
 
 export function ThreeBoonsPage() {
@@ -501,7 +509,7 @@ export function ThreeBoonsPage() {
           {filteredBoons.map((option) => {
             const manualCount = getThreeBoonsSelectionCount(state.manualSelectionCounts, option.id);
             const activeCount = getThreeBoonsSelectionCount(summary.activeSelectionCounts, option.id);
-            const selectionLimit = option.maxSelections;
+            const selectionLimit = getThreeBoonsSelectionLimit(option, false);
             const canIncrease =
               !option.rollOnly
               && manualSlotsRemaining > 0
