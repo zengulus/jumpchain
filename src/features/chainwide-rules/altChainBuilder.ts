@@ -1,3 +1,4 @@
+import type { Chain } from '../../domain/chain/types';
 import type { JsonMap } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
 import {
@@ -9,6 +10,9 @@ import {
 
 export const ALT_CHAIN_BUILDER_METADATA_KEY = 'altChainBuilder';
 export const ALT_CHAIN_BUILDER_EFFECT_SOURCE = 'alt-chain-builder';
+export const altChainTrackedSupplementIds = ['iconic', 'cosmic-backpack', 'three-boons'] as const;
+
+export type AltChainTrackedSupplementId = (typeof altChainTrackedSupplementIds)[number];
 
 export const altChainStartingPoints = ['chosen', 'stranded', 'cocksure'] as const;
 export type AltChainStartingPoint = (typeof altChainStartingPoints)[number];
@@ -16,12 +20,20 @@ export type AltChainStartingPoint = (typeof altChainStartingPoints)[number];
 export const altChainExchangeRates = ['favored', 'survivor', 'masochist'] as const;
 export type AltChainExchangeRate = (typeof altChainExchangeRates)[number];
 
+export interface AltChainSupplementSelections {
+  iconic: boolean;
+  cosmicBackpack: boolean;
+  threeBoons: boolean;
+  extraSelections: number;
+}
+
 export interface AltChainBuilderState {
-  version: 4;
+  version: 5;
   enabled: boolean;
   startingPoint: AltChainStartingPoint;
   exchangeRate: AltChainExchangeRate;
   selectionCounts: Record<string, number>;
+  supplementSelections: AltChainSupplementSelections;
   notes: string;
   lastSyncedAt: string | null;
 }
@@ -73,6 +85,18 @@ export interface AltChainBuilderGeneratedEffectSpec {
   importSourceMetadata: JsonMap;
 }
 
+const ALT_CHAIN_SUPPLEMENT_SELECTION_KEY_BY_ID: Record<AltChainTrackedSupplementId, keyof AltChainSupplementSelections> = {
+  iconic: 'iconic',
+  'cosmic-backpack': 'cosmicBackpack',
+  'three-boons': 'threeBoons',
+};
+
+const ALT_CHAIN_SUPPLEMENT_LABELS: Record<AltChainTrackedSupplementId, string> = {
+  iconic: 'Iconic',
+  'cosmic-backpack': 'Cosmic Backpack',
+  'three-boons': 'Three Boons',
+};
+
 export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, AltChainStartingPointConfig> = {
   chosen: {
     title: 'Chosen',
@@ -109,7 +133,6 @@ export const ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> =
   'look-before-you-jump': 1,
   'nothing-happened-while-you-were-out': 1,
   'spark-end-jump': 1,
-  supplements: 2,
   'alt-form-armoire': 1,
   'before-babel': 1,
   'under-warranty': 3,
@@ -120,6 +143,8 @@ export const ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> =
   'entertain-me': 1,
   'diminishing-returns': 1,
 };
+
+export const ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT = 2;
 
 export const ALT_CHAIN_EXCHANGE_RATE_CONFIGS: Record<AltChainExchangeRate, AltChainExchangeRateConfig> = {
   favored: {
@@ -180,6 +205,14 @@ function normalizeSelectionCount(value: unknown, maxSelections?: number) {
   return normalizedValue;
 }
 
+function readLegacySupplementSelectionCount(value: unknown) {
+  if (!isRecord(value)) {
+    return 0;
+  }
+
+  return normalizeSelectionCount(value.supplements);
+}
+
 function readSelectionCounts(value: unknown) {
   if (!isRecord(value)) {
     return {};
@@ -189,7 +222,7 @@ function readSelectionCounts(value: unknown) {
     Object.entries(value).flatMap(([optionId, count]) => {
       const option = altChainBuilderOptionsById[optionId];
 
-      if (!option) {
+      if (!option || optionId === 'supplements') {
         return [];
       }
 
@@ -202,6 +235,29 @@ function readSelectionCounts(value: unknown) {
 
 function normalizeSelectionCounts(selectionCounts: Record<string, number>) {
   return readSelectionCounts(selectionCounts);
+}
+
+function normalizeSupplementSelections(
+  value: unknown,
+  legacySupplementCount = 0,
+): AltChainSupplementSelections {
+  const record = isRecord(value) ? value : {};
+
+  return {
+    iconic: record.iconic === true,
+    cosmicBackpack: record.cosmicBackpack === true,
+    threeBoons: record.threeBoons === true,
+    extraSelections: normalizeSelectionCount(record.extraSelections ?? legacySupplementCount),
+  };
+}
+
+function countTrackedSupplementSelections(selections: AltChainSupplementSelections) {
+  return (
+    Number(selections.iconic)
+    + Number(selections.cosmicBackpack)
+    + Number(selections.threeBoons)
+    + selections.extraSelections
+  );
 }
 
 function migrateLegacySelectionCounts(
@@ -240,13 +296,23 @@ export function createAltChainChosenStarterSelectionCounts() {
   return normalizeSelectionCounts(ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS);
 }
 
+export function createDefaultAltChainSupplementSelections(): AltChainSupplementSelections {
+  return {
+    iconic: false,
+    cosmicBackpack: false,
+    threeBoons: false,
+    extraSelections: 0,
+  };
+}
+
 export function createDefaultAltChainBuilderState(): AltChainBuilderState {
   return {
-    version: 4,
+    version: 5,
     enabled: false,
     startingPoint: 'chosen',
     exchangeRate: 'favored',
     selectionCounts: {},
+    supplementSelections: createDefaultAltChainSupplementSelections(),
     notes: '',
     lastSyncedAt: null,
   };
@@ -257,9 +323,12 @@ export function parseAltChainBuilderState(raw: unknown): AltChainBuilderState {
   const record = isRecord(raw) ? raw : {};
   const parsedStartingPoint = isAltChainStartingPoint(record.startingPoint) ? record.startingPoint : fallback.startingPoint;
   const parsedVersion = typeof record.version === 'number' && Number.isFinite(record.version) ? record.version : 0;
+  const legacySupplementCount =
+    readLegacySupplementSelectionCount(record.selectionCounts)
+    + (parsedVersion === 3 && parsedStartingPoint === 'chosen' ? ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT : 0);
 
   return {
-    version: 4,
+    version: 5,
     enabled: record.enabled === true,
     startingPoint: parsedStartingPoint,
     exchangeRate: isAltChainExchangeRate(record.exchangeRate) ? record.exchangeRate : fallback.exchangeRate,
@@ -268,6 +337,7 @@ export function parseAltChainBuilderState(raw: unknown): AltChainBuilderState {
       parsedStartingPoint,
       parsedVersion,
     ),
+    supplementSelections: normalizeSupplementSelections(record.supplementSelections, legacySupplementCount),
     notes: typeof record.notes === 'string' ? record.notes : fallback.notes,
     lastSyncedAt: typeof record.lastSyncedAt === 'string' && record.lastSyncedAt.trim().length > 0 ? record.lastSyncedAt : null,
   };
@@ -277,11 +347,12 @@ export function updateAltChainBuilderMetadata(importSourceMetadata: JsonMap, nex
   return {
     ...importSourceMetadata,
     [ALT_CHAIN_BUILDER_METADATA_KEY]: {
-      version: 4,
+      version: 5,
       enabled: nextState.enabled,
       startingPoint: nextState.startingPoint,
       exchangeRate: nextState.exchangeRate,
       selectionCounts: normalizeSelectionCounts(nextState.selectionCounts),
+      supplementSelections: normalizeSupplementSelections(nextState.supplementSelections),
       notes: nextState.notes,
       lastSyncedAt: nextState.lastSyncedAt,
     },
@@ -289,6 +360,10 @@ export function updateAltChainBuilderMetadata(importSourceMetadata: JsonMap, nex
 }
 
 export function getAltChainBuilderSelectionCount(state: AltChainBuilderState, optionId: string) {
+  if (optionId === 'supplements') {
+    return countTrackedSupplementSelections(normalizeSupplementSelections(state.supplementSelections));
+  }
+
   return normalizeSelectionCount(state.selectionCounts[optionId], getAltChainBuilderSelectionLimit(altChainBuilderOptionsById[optionId]));
 }
 
@@ -297,6 +372,23 @@ export function setAltChainBuilderSelectionCount(state: AltChainBuilderState, op
 
   if (!option) {
     return state;
+  }
+
+  if (optionId === 'supplements') {
+    const normalizedSupplementSelections = normalizeSupplementSelections(state.supplementSelections);
+    const trackedSelectionCount =
+      Number(normalizedSupplementSelections.iconic)
+      + Number(normalizedSupplementSelections.cosmicBackpack)
+      + Number(normalizedSupplementSelections.threeBoons);
+    const normalizedCount = normalizeSelectionCount(count);
+
+    return {
+      ...state,
+      supplementSelections: {
+        ...normalizedSupplementSelections,
+        extraSelections: Math.max(0, normalizedCount - trackedSelectionCount),
+      },
+    };
   }
 
   const selectionLimit = getAltChainBuilderSelectionLimit(option);
@@ -320,6 +412,10 @@ export function applyAltChainBuilderChosenStarterPackage(state: AltChainBuilderS
     ...state,
     startingPoint: 'chosen',
     selectionCounts: createAltChainChosenStarterSelectionCounts(),
+    supplementSelections: {
+      ...createDefaultAltChainSupplementSelections(),
+      extraSelections: ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT,
+    },
   };
 }
 
@@ -427,8 +523,84 @@ export function hasAltChainBuilderBeenUsed(state: AltChainBuilderState) {
     state.enabled ||
     state.notes.trim().length > 0 ||
     Object.keys(normalizeSelectionCounts(state.selectionCounts)).length > 0 ||
+    countTrackedSupplementSelections(normalizeSupplementSelections(state.supplementSelections)) > 0 ||
     state.lastSyncedAt !== null
   );
+}
+
+export function getAltChainTrackedSupplementLabel(id: AltChainTrackedSupplementId) {
+  return ALT_CHAIN_SUPPLEMENT_LABELS[id];
+}
+
+export function isAltChainTrackedSupplementSelected(
+  selections: AltChainSupplementSelections,
+  id: AltChainTrackedSupplementId,
+) {
+  return selections[ALT_CHAIN_SUPPLEMENT_SELECTION_KEY_BY_ID[id]] === true;
+}
+
+export function setAltChainTrackedSupplementSelected(
+  state: AltChainBuilderState,
+  id: AltChainTrackedSupplementId,
+  selected: boolean,
+): AltChainBuilderState {
+  const normalizedSelections = normalizeSupplementSelections(state.supplementSelections);
+
+  return {
+    ...state,
+    supplementSelections: {
+      ...normalizedSelections,
+      [ALT_CHAIN_SUPPLEMENT_SELECTION_KEY_BY_ID[id]]: selected,
+    },
+  };
+}
+
+export function setAltChainSupplementExtraSelectionCount(state: AltChainBuilderState, count: unknown): AltChainBuilderState {
+  return {
+    ...state,
+    supplementSelections: {
+      ...normalizeSupplementSelections(state.supplementSelections),
+      extraSelections: normalizeSelectionCount(count),
+    },
+  };
+}
+
+export function getAltChainSupplementSelectionSummary(state: AltChainBuilderState) {
+  const selections = normalizeSupplementSelections(state.supplementSelections);
+  const unlockedSupplementIds = altChainTrackedSupplementIds.filter((id) => isAltChainTrackedSupplementSelected(selections, id));
+
+  return {
+    selections,
+    unlockedSupplementIds,
+    trackedSelectionCount: unlockedSupplementIds.length,
+    extraSelectionCount: selections.extraSelections,
+    totalSelectionCount: countTrackedSupplementSelections(selections),
+  };
+}
+
+export function isAltChainTrackedSupplementUnlocked(state: AltChainBuilderState, id: AltChainTrackedSupplementId) {
+  if (!state.enabled) {
+    return true;
+  }
+
+  return isAltChainTrackedSupplementSelected(normalizeSupplementSelections(state.supplementSelections), id);
+}
+
+export function getAltChainTrackedSupplementAvailability(
+  chain: Pick<Chain, 'importSourceMetadata'>,
+  id: AltChainTrackedSupplementId,
+) {
+  const root = isRecord(chain.importSourceMetadata) ? chain.importSourceMetadata : {};
+  const state = parseAltChainBuilderState(root[ALT_CHAIN_BUILDER_METADATA_KEY]);
+  const builderControlsSupplements = state.enabled;
+  const unlocked = isAltChainTrackedSupplementUnlocked(state, id);
+
+  return {
+    builderControlsSupplements,
+    unlocked,
+    locked: builderControlsSupplements && !unlocked,
+    state,
+  };
 }
 
 export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderState): AltChainBuilderGeneratedEffectSpec[] {
@@ -441,6 +613,7 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
 
     const countSuffix = count > 1 ? ` x${count}` : '';
     const category = option.kind === 'complication' ? 'drawback' : 'rule';
+    const supplementSummary = option.id === 'supplements' ? getAltChainSupplementSelectionSummary(state) : null;
     const budgetGrants =
       option.id === 'grant'
         ? {
@@ -452,6 +625,12 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
       option.description,
       option.note ? `Builder note: ${option.note}` : null,
       count > 1 ? `Selected ${count} times in the builder.` : null,
+      supplementSummary && supplementSummary.unlockedSupplementIds.length > 0
+        ? `Tracked supplement unlocks: ${supplementSummary.unlockedSupplementIds.map((id) => getAltChainTrackedSupplementLabel(id)).join(', ')}.`
+        : null,
+      supplementSummary && supplementSummary.extraSelectionCount > 0
+        ? `Additional unnamed supplement picks: ${supplementSummary.extraSelectionCount}.`
+        : null,
     ].filter((part): part is string => Boolean(part));
 
     return [
@@ -468,6 +647,12 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
           altChainBuilderOptionKind: option.kind,
           altChainBuilderOptionGroup: option.group,
           altChainBuilderSelectionCount: count,
+          ...(supplementSummary
+            ? {
+                altChainTrackedSupplementIds: supplementSummary.unlockedSupplementIds,
+                altChainTrackedSupplementExtraSelections: supplementSummary.extraSelectionCount,
+              }
+            : {}),
           ...(budgetGrants ? { budgetGrants } : {}),
         },
       },
@@ -486,4 +671,29 @@ export function getAltChainBuilderGeneratedEffectOptionId(effect: Pick<Effect, '
 
   const value = effect.importSourceMetadata.altChainBuilderOptionId;
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+export function getEffectTrackedSupplementId(effect: Pick<Effect, 'importSourceMetadata'>): AltChainTrackedSupplementId | null {
+  if (!isRecord(effect.importSourceMetadata)) {
+    return null;
+  }
+
+  const value = effect.importSourceMetadata.trackedSupplementId;
+
+  return typeof value === 'string' && altChainTrackedSupplementIds.includes(value as AltChainTrackedSupplementId)
+    ? (value as AltChainTrackedSupplementId)
+    : null;
+}
+
+export function isEffectHiddenByAltChainSupplementLock(
+  chain: Pick<Chain, 'importSourceMetadata'>,
+  effect: Pick<Effect, 'importSourceMetadata'>,
+) {
+  const supplementId = getEffectTrackedSupplementId(effect);
+
+  if (!supplementId) {
+    return false;
+  }
+
+  return getAltChainTrackedSupplementAvailability(chain, supplementId).locked;
 }

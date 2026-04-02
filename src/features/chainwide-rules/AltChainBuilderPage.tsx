@@ -38,6 +38,7 @@ import {
   ALT_CHAIN_BUILDER_METADATA_KEY,
   ALT_CHAIN_EXCHANGE_RATE_CONFIGS,
   ALT_CHAIN_STARTING_POINT_CONFIGS,
+  altChainTrackedSupplementIds,
   applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
@@ -45,12 +46,17 @@ import {
   formatAltChainBuilderSelection,
   getAltChainBuilderGeneratedEffectOptionId,
   getAltChainBuilderSelectionCount,
+  getAltChainSupplementSelectionSummary,
+  getAltChainTrackedSupplementLabel,
   hasAltChainBuilderBeenUsed,
   isAltChainBuilderGeneratedEffect,
   markAltChainBuilderSynced,
   parseAltChainBuilderState,
+  setAltChainSupplementExtraSelectionCount,
   setAltChainBuilderSelectionCount,
+  setAltChainTrackedSupplementSelected,
   updateAltChainBuilderMetadata,
+  type AltChainTrackedSupplementId,
   type AltChainBuilderState,
   type AltChainExchangeRate,
   type AltChainStartingPoint,
@@ -154,6 +160,8 @@ function AltChainOptionSection(props: {
   searchQuery: string;
   hideSelected: boolean;
   onCountChange: (optionId: string, nextValue: unknown) => void;
+  onSupplementToggle: (supplementId: AltChainTrackedSupplementId, selected: boolean) => void;
+  onSupplementExtraCountChange: (nextValue: unknown) => void;
 }) {
   const matchingOptions = props.options
     .map((option, index) => ({
@@ -194,6 +202,7 @@ function AltChainOptionSection(props: {
           const isRepeatable = isAltChainBuilderOptionRepeatable(option);
           const selectionLimit = getAltChainBuilderSelectionLimit(option);
           const isSelected = count > 0;
+          const supplementSummary = option.id === 'supplements' ? getAltChainSupplementSelectionSummary(props.state) : null;
 
           return (
             <article
@@ -216,7 +225,56 @@ function AltChainOptionSection(props: {
 
               {option.note ? <p className="field-hint">{option.note}</p> : null}
 
-              {isRepeatable ? (
+              {option.id === 'supplements' && supplementSummary ? (
+                <div className="stack stack--compact alt-chain-supplement-picker">
+                  <p className="field-hint">
+                    Each tracked unlock below spends one Supplements pick. Anything beyond those three can still be counted as an extra unnamed supplement pick.
+                  </p>
+
+                  <div className="checkbox-list">
+                    {altChainTrackedSupplementIds.map((supplementId) => {
+                      const checked = supplementSummary.unlockedSupplementIds.includes(supplementId);
+
+                      return (
+                        <label className="checkbox-row" key={supplementId}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => props.onSupplementToggle(supplementId, event.target.checked)}
+                          />
+                          <span>{getAltChainTrackedSupplementLabel(supplementId)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="alt-chain-option__counter">
+                    <div className="alt-chain-option__counter-row">
+                      <button
+                        aria-label="Decrease extra supplement count"
+                        className="button button--secondary alt-chain-option__stepper"
+                        disabled={supplementSummary.extraSelectionCount <= 0}
+                        type="button"
+                        onClick={() => props.onSupplementExtraCountChange(supplementSummary.extraSelectionCount - 1)}
+                      >
+                        -
+                      </button>
+                      <span className="pill pill--soft alt-chain-option__count">{supplementSummary.extraSelectionCount}</span>
+                      <button
+                        aria-label="Increase extra supplement count"
+                        className="button button--secondary alt-chain-option__stepper"
+                        type="button"
+                        onClick={() => props.onSupplementExtraCountChange(supplementSummary.extraSelectionCount + 1)}
+                      >
+                        +
+                      </button>
+                      <span className="alt-chain-option__selection-summary">
+                        {supplementSummary.totalSelectionCount} total selections | {supplementSummary.extraSelectionCount} extra
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : isRepeatable ? (
                 <div className="alt-chain-option__counter">
                   <div className="alt-chain-option__counter-row">
                     <button
@@ -683,6 +741,12 @@ export function AltChainBuilderPage() {
             searchQuery={searchQuery}
             hideSelected={hideSelected}
             onCountChange={handleCountChange}
+            onSupplementToggle={(supplementId, selected) =>
+              updateBuilder(setAltChainTrackedSupplementSelected(builder, supplementId, selected))
+            }
+            onSupplementExtraCountChange={(nextValue) =>
+              updateBuilder(setAltChainSupplementExtraSelectionCount(builder, nextValue))
+            }
           />
         ))}
       </div>

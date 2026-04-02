@@ -46,7 +46,7 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
   option('nothing-happened-while-you-were-out', 'Nothing Happened While You Were Out', 'accommodation', 'chain', 'Pause visited worlds while the jumper is away so they do not advance until revisited or the chain ends.'),
   option('spark-end-jump', 'Spark/End-Jump', 'accommodation', 'chain', 'Make the end of the chain culminate in a rare Spark and the kind of multiversal apotheosis associated with it.'),
   option('supplements', 'Supplements', 'accommodation', 'chain', 'Open the door to hotels, arenas, rivals, warehouses, body mods, and other supplement-side systems.', {
-    note: 'Chosen starts with two purchases of this option.',
+    note: 'Chosen starts with two purchases of this option. This builder also uses it to unlock Iconic, Cosmic Backpack, and Three Boons.',
     repeatable: true,
   }),
   option('combine-jumps', 'Combine Jumps', 'accommodation', 'chain', 'Merge multiple jumps together into one blended setting while each jump keeps its own background and option structure.'),

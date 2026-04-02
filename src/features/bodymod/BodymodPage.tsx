@@ -8,6 +8,7 @@ import { SetupGuidePanels, iconicSetupGuide } from '../supplement-guides/SetupGu
 import { IconicEditor } from './IconicEditor';
 import { getProfileStatusLabel } from './iconicSetup';
 import { createBlankBodymodProfile, saveChainRecord } from '../workspace/records';
+import { getAltChainTrackedSupplementAvailability } from '../chainwide-rules/altChainBuilder';
 import {
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
@@ -60,6 +61,7 @@ export function BodymodPage() {
   const iconicStartedForSelectedJumper = Boolean(draftProfile);
   const guideRequested = simpleMode && readGuideRequested(searchParams);
   const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
+  const iconicAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'iconic');
   const bodymodGuideState =
     branchGuideScopeKey && selectedJumperId
       ? getBranchGuideState(branchGuideScopeKey, 'bodymod', selectedJumperId)
@@ -194,6 +196,37 @@ export function BodymodPage() {
 
   if (workspace.jumpers.length === 0) {
     return <EmptyWorkspaceCard title="No jumpers available" body="Create a jumper first, then define an Iconic profile." />;
+  }
+
+  if (iconicAvailability.locked) {
+    return (
+      <div className="stack">
+        <WorkspaceModuleHeader
+          title="Iconic"
+          description="This page is currently gated by the Alt-Chain Builder's Supplements picks for this branch."
+          badge={selectedJumper ? `${selectedJumper.name} | locked` : 'Locked'}
+          actions={
+            <>
+              <Link className="button button--secondary" to={`/chains/${chainId}/alt-chain-builder`}>
+                Open Alt-Chain Builder
+              </Link>
+              <Link className="button button--secondary" to={`/chains/${chainId}/overview`}>
+                Chain Overview
+              </Link>
+            </>
+          }
+        />
+
+        <section className="card stack">
+          <div className="section-heading">
+            <h3>Iconic is locked for this branch</h3>
+            <ReadinessPill tone="advanced" label="Builder-controlled" />
+          </div>
+          <p>Spend a Supplements pick on Iconic in Alt-Chain Builder before editing this page again.</p>
+          <p>Any saved Iconic profiles are still preserved. They are just not active for this branch while the supplement is locked.</p>
+        </section>
+      </div>
+    );
   }
 
   return (

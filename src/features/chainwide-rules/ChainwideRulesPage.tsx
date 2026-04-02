@@ -239,6 +239,9 @@ export function ChainwideRulesPage() {
             <Link className="button button--secondary" to={`/chains/${chainId}/alt-chain-builder`}>
               Open Alt-Chain Builder
             </Link>
+            <Link className="button button--secondary" to={`/chains/${chainId}/three-boons`}>
+              Open Three Boons
+            </Link>
             <Link className="button button--secondary" to={`/chains/${chainId}/current-jump-rules`}>
               Open Current Jump Rules
             </Link>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
+import { getAltChainTrackedSupplementAvailability } from '../chainwide-rules/altChainBuilder';
 import { saveChainEntity } from '../workspace/records';
 import {
   ConfirmActionDialog,
@@ -492,6 +493,7 @@ export function CosmicBackpackPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save Cosmic Backpack changes.'),
   });
   const draftChain = chainAutosave.draft ?? workspace.chain;
+  const cosmicBackpackAvailability = getAltChainTrackedSupplementAvailability(draftChain, 'cosmic-backpack');
   const state = readCosmicBackpackState(draftChain);
   const transferredBp = workspace.participations.reduce<number>(
     (total, participation) =>
@@ -549,6 +551,37 @@ export function CosmicBackpackPage() {
 
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or restore a branch before using the Cosmic Backpack workspace." />;
+  }
+
+  if (cosmicBackpackAvailability.locked) {
+    return (
+      <div className="stack">
+        <WorkspaceModuleHeader
+          title="Cosmic Backpack"
+          description="This page is currently gated by the Alt-Chain Builder's Supplements picks for this branch."
+          badge="Locked"
+          actions={
+            <>
+              <Link className="button button--secondary" to={`/chains/${chainId}/alt-chain-builder`}>
+                Open Alt-Chain Builder
+              </Link>
+              <Link className="button button--secondary" to={`/chains/${chainId}/overview`}>
+                Chain Overview
+              </Link>
+            </>
+          }
+        />
+
+        <section className="card stack">
+          <div className="section-heading">
+            <h3>Cosmic Backpack is locked for this branch</h3>
+            <ReadinessPill tone="advanced" label="Builder-controlled" />
+          </div>
+          <p>Spend a Supplements pick on Cosmic Backpack in Alt-Chain Builder before editing this page again.</p>
+          <p>Any saved Backpack plan is still preserved. It just stays inactive for this branch while the supplement is locked.</p>
+        </section>
+      </div>
+    );
   }
 
   function updateState(

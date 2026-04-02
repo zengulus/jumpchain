@@ -75,6 +75,10 @@ export const appRouter = createHashRouter([
             lazy: lazyRoute(() => import('../features/chainwide-rules/AltChainBuilderPage'), 'AltChainBuilderPage'),
           },
           {
+            path: 'three-boons',
+            lazy: lazyRoute(() => import('../features/three-boons/ThreeBoonsPage'), 'ThreeBoonsPage'),
+          },
+          {
             path: 'current-jump-rules',
             lazy: lazyRoute(() => import('../features/current-jump-rules/CurrentJumpRulesPage'), 'CurrentJumpRulesPage'),
           },

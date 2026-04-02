@@ -232,6 +232,82 @@ describe('workspace selectors', () => {
     expect(budgetState.effectiveBudgets['0']).toBe((baseParticipation.budgets['0'] ?? 0) + 200);
   });
 
+  it('hides tracked supplement effects when Alt-Chain Builder locks that supplement', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const now = new Date().toISOString();
+
+    const lockedBundle = validateNativeChainBundle({
+      ...session.bundle,
+      chain: {
+        ...session.bundle.chain,
+        importSourceMetadata: {
+          ...session.bundle.chain.importSourceMetadata,
+          altChainBuilder: {
+            version: 5,
+            enabled: true,
+            startingPoint: 'chosen',
+            exchangeRate: 'favored',
+            selectionCounts: {},
+            supplementSelections: {
+              iconic: false,
+              cosmicBackpack: false,
+              threeBoons: false,
+              extraSelections: 0,
+            },
+            notes: '',
+            lastSyncedAt: null,
+          },
+        },
+      },
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-three-boons-hidden',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Double CP',
+          description: '',
+          category: 'rule',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            threeBoonsGenerated: true,
+            threeBoonsBoonId: 'double-cp',
+            trackedSupplementId: 'three-boons',
+          },
+        },
+      ],
+    });
+
+    const unlockedBundle = validateNativeChainBundle({
+      ...lockedBundle,
+      chain: {
+        ...lockedBundle.chain,
+        importSourceMetadata: {
+          ...lockedBundle.chain.importSourceMetadata,
+          altChainBuilder: {
+            ...(lockedBundle.chain.importSourceMetadata.altChainBuilder as Record<string, unknown>),
+            supplementSelections: {
+              iconic: false,
+              cosmicBackpack: false,
+              threeBoons: true,
+              extraSelections: 0,
+            },
+          },
+        },
+      },
+    });
+
+    expect(buildBranchWorkspace(lockedBundle, branchId).effects.some((effect) => effect.id === 'effect-three-boons-hidden')).toBe(false);
+    expect(buildBranchWorkspace(unlockedBundle, branchId).effects.some((effect) => effect.id === 'effect-three-boons-hidden')).toBe(true);
+  });
+
   it('uses imported currency budgets when a participation has no explicit budget overrides', () => {
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const branchId = session.bundle.chain.activeBranchId;

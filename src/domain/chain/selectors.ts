@@ -18,6 +18,7 @@ import type { HouseRuleProfile, JumpRulesContext } from '../rules/types';
 import type { NativeChainBundle } from '../save';
 import type { Snapshot } from '../snapshot/types';
 import type { AccessMode } from '../common';
+import { isEffectHiddenByAltChainSupplementLock } from '../../features/chainwide-rules/altChainBuilder';
 
 export interface BranchWorkspace {
   chain: Chain;
@@ -282,7 +283,7 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
   }
 
   for (const effect of bundle.effects) {
-    if (effect.branchId === branchId) {
+    if (effect.branchId === branchId && !isEffectHiddenByAltChainSupplementLock(bundle.chain, effect)) {
       effects.push(effect);
     }
   }

@@ -7,6 +7,7 @@ import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import { getChainBundle } from '../../db/persistence';
+import { getAltChainTrackedSupplementAvailability } from '../chainwide-rules/altChainBuilder';
 import { readGuideRequested } from './simpleModeGuides';
 import { AssistiveHint, ReadinessPill, TooltipFrame, WorkspaceFocusBar, type ReadinessTone } from './shared';
 
@@ -30,6 +31,7 @@ type ModuleKey =
   | 'participation'
   | 'effects'
   | 'alt-chain-builder'
+  | 'three-boons'
   | 'chainwide-rules'
   | 'current-jump-rules'
   | 'bodymod'
@@ -72,6 +74,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   participation: 'Participation',
   effects: 'Effects',
   'alt-chain-builder': 'Alt-Chain Builder',
+  'three-boons': 'Three Boons',
   'chainwide-rules': 'Chainwide Rules',
   'current-jump-rules': 'Current Jump Rules',
   bodymod: 'Iconic',
@@ -162,6 +165,10 @@ function getActiveModuleKey(pathname: string): ModuleKey {
 
   if (pathname.includes('/alt-chain-builder')) {
     return 'alt-chain-builder';
+  }
+
+  if (pathname.includes('/three-boons')) {
+    return 'three-boons';
   }
 
   if (pathname.includes('/current-jump-rules')) {
@@ -420,6 +427,8 @@ export function ChainWorkspaceLayout() {
         return `/chains/${resolvedChainId}/effects`;
       case 'alt-chain-builder':
         return `/chains/${resolvedChainId}/alt-chain-builder`;
+      case 'three-boons':
+        return `/chains/${resolvedChainId}/three-boons`;
       case 'chainwide-rules':
         return `/chains/${resolvedChainId}/rules`;
       case 'current-jump-rules':
@@ -542,6 +551,9 @@ export function ChainWorkspaceLayout() {
           : '',
   ].filter(Boolean);
   const showFocusBar = presentation.mode === 'deep-task' || headerAttachment !== null;
+  const iconicAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'iconic');
+  const cosmicBackpackAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'cosmic-backpack');
+  const threeBoonsAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'three-boons');
 
   const moduleGroups: WorkspaceModuleGroup[] = [
     {
@@ -586,15 +598,19 @@ export function ChainWorkspaceLayout() {
           key: 'bodymod',
           label: 'Iconic',
           to: getModulePath('bodymod'),
-          description: 'Optional jumper continuity support for harsh resets and restrictions.',
-          readiness: 'optional',
+          description: iconicAvailability.locked
+            ? 'Locked until Alt-Chain Builder spends a Supplements pick on Iconic.'
+            : 'Optional jumper continuity support for harsh resets and restrictions.',
+          readiness: iconicAvailability.locked ? 'advanced' : 'optional',
         },
         {
           key: 'cosmic-backpack',
           label: 'Cosmic Backpack',
           to: getModulePath('cosmic-backpack'),
-          description: 'Optional warehouse alternative built around one portable bag and a short upgrade list.',
-          readiness: 'optional',
+          description: cosmicBackpackAvailability.locked
+            ? 'Locked until Alt-Chain Builder spends a Supplements pick on Cosmic Backpack.'
+            : 'Optional warehouse alternative built around one portable bag and a short upgrade list.',
+          readiness: cosmicBackpackAvailability.locked ? 'advanced' : 'optional',
         },
         {
           key: 'timeline',
@@ -635,6 +651,15 @@ export function ChainWorkspaceLayout() {
           label: 'Alt-Chain Builder',
           to: getModulePath('alt-chain-builder'),
           description: 'Work through the Alt-Chain worksheet and generate chainwide rule entries from it.',
+          readiness: 'advanced',
+        },
+        {
+          key: 'three-boons',
+          label: 'Three Boons',
+          to: getModulePath('three-boons'),
+          description: threeBoonsAvailability.locked
+            ? 'Locked until Alt-Chain Builder spends a Supplements pick on Three Boons.'
+            : 'Track the choose-three or roll-for-four Three Boons supplement for this chain.',
           readiness: 'advanced',
         },
         {

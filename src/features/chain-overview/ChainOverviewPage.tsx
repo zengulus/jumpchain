@@ -1,7 +1,9 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
+import { getAltChainTrackedSupplementAvailability } from '../chainwide-rules/altChainBuilder';
 import { cosmicBackpackMandatoryOptionIds } from '../cosmic-backpack/catalog';
 import { readCosmicBackpackState } from '../cosmic-backpack/model';
+import { hasThreeBoonsStarted, readThreeBoonsState } from '../three-boons/model';
 import {
   EmptyWorkspaceCard,
   ReadinessPill,
@@ -109,6 +111,9 @@ export function ChainOverviewPage() {
   const currentJump = workspace.currentJump ?? workspace.jumps[0] ?? null;
   const bodymodProfilesByJumperId = new Map(workspace.bodymodProfiles.map((profile) => [profile.jumperId, profile]));
   const backpackState = readCosmicBackpackState(workspace.chain);
+  const iconicAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'iconic');
+  const cosmicBackpackAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'cosmic-backpack');
+  const threeBoonsAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'three-boons');
   const backpackStarted =
     backpackState.customUpgrades.length > 0 ||
     backpackState.appearanceNotes.trim().length > 0 ||
@@ -120,6 +125,7 @@ export function ChainOverviewPage() {
           optionId as (typeof cosmicBackpackMandatoryOptionIds)[number],
         ),
     );
+  const threeBoonsStarted = hasThreeBoonsStarted(readThreeBoonsState(workspace.chain));
   const jumperGuideStates = listBranchGuideStates(branchGuideScopeKey, 'jumpers');
   const companionGuideStates = listBranchGuideStates(branchGuideScopeKey, 'companions');
   const jumpGuideStates = listBranchGuideStates(branchGuideScopeKey, 'jumps');
@@ -245,6 +251,17 @@ export function ChainOverviewPage() {
     };
   }
 
+  function buildAltChainSupplementUnlockTarget(label: string): OverviewTarget {
+    return {
+      id: `alt-chain-supplement:${label}`,
+      title: `Unlock ${label}`,
+      description: `Alt-Chain Builder is controlling supplement access for this branch. Spend a Supplements pick there first, then come back here.`,
+      to: buildPath(`/chains/${chainId}/alt-chain-builder`, {}),
+      overviewStepId: null,
+      optional: true,
+    };
+  }
+
   function getNextCoreTarget(): OverviewTarget | null {
     if (workspace.jumpers.length === 0) {
       return buildJumpersTarget();
@@ -334,6 +351,10 @@ export function ChainOverviewPage() {
     }
 
     if (overviewGuideState.iconicDecision === 'yes' && workspace.jumpers.length > 0) {
+      if (iconicAvailability.locked) {
+        return buildAltChainSupplementUnlockTarget('Iconic');
+      }
+
       const orderedJumpers = selectedJumper
         ? [selectedJumper, ...workspace.jumpers.filter((jumper) => jumper.id !== selectedJumper.id)]
         : workspace.jumpers;
@@ -358,6 +379,7 @@ export function ChainOverviewPage() {
 
     if (
       overviewGuideState.cosmicBackpackDecision === 'yes'
+      && !cosmicBackpackAvailability.locked
       && (
         (hasStoredBackpackGuide
           && hasIncompleteStep(
@@ -368,6 +390,10 @@ export function ChainOverviewPage() {
       )
     ) {
       return buildBackpackTarget();
+    }
+
+    if (overviewGuideState.cosmicBackpackDecision === 'yes' && cosmicBackpackAvailability.locked) {
+      return buildAltChainSupplementUnlockTarget('Cosmic Backpack');
     }
 
     return null;
@@ -384,7 +410,20 @@ export function ChainOverviewPage() {
     && !nextTarget
     && workspace.jumps.length > 0
     && overviewGuideState.promptState !== 'dismissed'
-    && (overviewGuideState.iconicDecision === 'undecided' || overviewGuideState.cosmicBackpackDecision === 'undecided');
+    && (
+      (!iconicAvailability.locked && overviewGuideState.iconicDecision === 'undecided')
+      || (!cosmicBackpackAvailability.locked && overviewGuideState.cosmicBackpackDecision === 'undecided')
+    );
+  const builderSupplementLockPromptAvailable =
+    simpleMode
+    && !nextTarget
+    && workspace.jumps.length > 0
+    && overviewGuideState.promptState !== 'dismissed'
+    && (
+      (iconicAvailability.locked && overviewGuideState.iconicDecision === 'undecided')
+      || (cosmicBackpackAvailability.locked && overviewGuideState.cosmicBackpackDecision === 'undecided')
+      || threeBoonsAvailability.locked
+    );
 
   const setupCards = [
     {
@@ -427,19 +466,33 @@ export function ChainOverviewPage() {
     {
       title: 'Iconic',
       description:
-        workspace.bodymodProfiles.length > 0
+        iconicAvailability.locked
+          ? 'Locked until Alt-Chain Builder spends a Supplements pick on Iconic.'
+          : workspace.bodymodProfiles.length > 0
           ? formatCountLabel(workspace.bodymodProfiles.length, 'Iconic profile')
           : 'Optional, no Iconic profiles yet.',
-      tone: workspace.bodymodProfiles.length > 0 ? 'core' : 'optional',
-      action: buildPath(`/chains/${chainId}/bodymod`, {
-        jumper: selectedJumper?.id ?? undefined,
-      }),
+      tone: iconicAvailability.locked ? 'advanced' : workspace.bodymodProfiles.length > 0 ? 'core' : 'optional',
+      action: iconicAvailability.locked
+        ? `/chains/${chainId}/alt-chain-builder`
+        : buildPath(`/chains/${chainId}/bodymod`, {
+            jumper: selectedJumper?.id ?? undefined,
+          }),
     },
     {
       title: 'Cosmic Backpack',
-      description: backpackStarted ? 'Optional warehouse replacement in progress.' : 'Optional, not started.',
-      tone: backpackStarted ? 'core' : 'optional',
-      action: `/chains/${chainId}/cosmic-backpack`,
+      description: cosmicBackpackAvailability.locked
+        ? 'Locked until Alt-Chain Builder spends a Supplements pick on Cosmic Backpack.'
+        : backpackStarted ? 'Optional warehouse replacement in progress.' : 'Optional, not started.',
+      tone: cosmicBackpackAvailability.locked ? 'advanced' : backpackStarted ? 'core' : 'optional',
+      action: cosmicBackpackAvailability.locked ? `/chains/${chainId}/alt-chain-builder` : `/chains/${chainId}/cosmic-backpack`,
+    },
+    {
+      title: 'Three Boons',
+      description: threeBoonsAvailability.locked
+        ? 'Locked until Alt-Chain Builder spends a Supplements pick on Three Boons.'
+        : threeBoonsStarted ? 'Optional boon worksheet in progress.' : 'Optional, not started.',
+      tone: threeBoonsAvailability.locked ? 'advanced' : threeBoonsStarted ? 'core' : 'optional',
+      action: threeBoonsAvailability.locked ? `/chains/${chainId}/alt-chain-builder` : `/chains/${chainId}/three-boons`,
     },
   ] as const;
 
@@ -499,6 +552,22 @@ export function ChainOverviewPage() {
               </button>
             </div>
           </section>
+        ) : builderSupplementLockPromptAvailable ? (
+          <section className="card stack">
+            <div className="section-heading">
+              <h3>Supplement unlocks live in Alt-Chain Builder</h3>
+              <ReadinessPill tone="advanced" label="Builder-controlled" />
+            </div>
+            <p>Iconic, Cosmic Backpack, and Three Boons are currently gated by the Alt-Chain Builder for this branch. Use its Supplements picks there first, then come back here.</p>
+            <div className="actions">
+              <button className="button" type="button" onClick={() => navigate(`/chains/${chainId}/alt-chain-builder`)}>
+                Open Alt-Chain Builder
+              </button>
+              <button className="button button--secondary" type="button" onClick={() => setOverviewPromptState('dismissed')}>
+                Pause Guided Setup
+              </button>
+            </div>
+          </section>
         ) : supplementPromptAvailable ? (
           <section className="card stack">
             <div className="section-heading">
@@ -507,7 +576,7 @@ export function ChainOverviewPage() {
             </div>
             <p>The core chain flow is in place. If you want, you can opt into Iconic or Cosmic Backpack and each page will handle its own setup from there.</p>
 
-            {overviewGuideState.iconicDecision === 'undecided' ? (
+            {overviewGuideState.iconicDecision === 'undecided' && !iconicAvailability.locked ? (
               <div className="stack stack--compact">
                 <strong>Iconic</strong>
                 <p>Optional continuity profile for keeping a jumper recognizable through resets or restrictions.</p>
@@ -534,7 +603,7 @@ export function ChainOverviewPage() {
               </div>
             ) : null}
 
-            {overviewGuideState.cosmicBackpackDecision === 'undecided' ? (
+            {overviewGuideState.cosmicBackpackDecision === 'undecided' && !cosmicBackpackAvailability.locked ? (
               <div className="stack stack--compact">
                 <strong>Cosmic Backpack</strong>
                 <p>Optional warehouse replacement built around one bag and a smaller upgrade list.</p>

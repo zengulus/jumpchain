@@ -1,13 +1,17 @@
 import {
   ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
+  ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT,
   applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
   createDefaultAltChainBuilderState,
   getAltChainBuilderSelectionCount,
+  getAltChainSupplementSelectionSummary,
   hasAltChainBuilderBeenUsed,
   parseAltChainBuilderState,
+  setAltChainSupplementExtraSelectionCount,
   setAltChainBuilderSelectionCount,
+  setAltChainTrackedSupplementSelected,
   updateAltChainBuilderMetadata,
 } from '../features/chainwide-rules/altChainBuilder';
 
@@ -33,12 +37,18 @@ describe('alt-chain builder helpers', () => {
         },
       },
       {
-        version: 4,
+        version: 5,
         enabled: true,
         startingPoint: 'stranded',
         exchangeRate: 'survivor',
         selectionCounts: {
           grant: 2,
+        },
+        supplementSelections: {
+          iconic: true,
+          cosmicBackpack: false,
+          threeBoons: false,
+          extraSelections: 1,
         },
         notes: 'Grounded branch start.',
         lastSyncedAt: '2026-04-02T10:00:00.000Z',
@@ -47,12 +57,18 @@ describe('alt-chain builder helpers', () => {
 
     expect(nextMetadata.cosmicBackpack).toEqual({ enabled: true });
     expect(nextMetadata.altChainBuilder).toEqual({
-      version: 4,
+      version: 5,
       enabled: true,
       startingPoint: 'stranded',
       exchangeRate: 'survivor',
       selectionCounts: {
         grant: 2,
+      },
+      supplementSelections: {
+        iconic: true,
+        cosmicBackpack: false,
+        threeBoons: false,
+        extraSelections: 1,
       },
       notes: 'Grounded branch start.',
       lastSyncedAt: '2026-04-02T10:00:00.000Z',
@@ -84,6 +100,17 @@ describe('alt-chain builder helpers', () => {
     expect(
       hasAltChainBuilderBeenUsed({
         ...createDefaultAltChainBuilderState(),
+        supplementSelections: {
+          iconic: true,
+          cosmicBackpack: false,
+          threeBoons: false,
+          extraSelections: 0,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      hasAltChainBuilderBeenUsed({
+        ...createDefaultAltChainBuilderState(),
         lastSyncedAt: '2026-04-02T10:00:00.000Z',
       }),
     ).toBe(true);
@@ -104,6 +131,7 @@ describe('alt-chain builder helpers', () => {
       ...ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
       'not-alone': 5,
     });
+    expect(parsed.supplementSelections.extraSelections).toBe(ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT);
     expect(getAltChainBuilderSelectionCount(parsed, 'braving-the-gauntlets')).toBe(1);
     expect(getAltChainBuilderSelectionCount(parsed, 'entertain-me')).toBe(1);
     expect(getAltChainBuilderSelectionCount(parsed, 'diminishing-returns')).toBe(1);
@@ -125,6 +153,7 @@ describe('alt-chain builder helpers', () => {
     expect(seeded.exchangeRate).toBe('masochist');
     expect(seeded.notes).toBe('Keep these notes.');
     expect(seeded.selectionCounts).toEqual(ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS);
+    expect(seeded.supplementSelections.extraSelections).toBe(ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT);
   });
 
   it('seeds the chosen starter package with the full base selection list', () => {
@@ -132,6 +161,12 @@ describe('alt-chain builder helpers', () => {
       ...createDefaultAltChainBuilderState(),
       enabled: true,
       selectionCounts: ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
+      supplementSelections: {
+        iconic: false,
+        cosmicBackpack: false,
+        threeBoons: false,
+        extraSelections: ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT,
+      },
     });
 
     expect(summary.selectedAccommodationCount).toBe(21);
@@ -241,5 +276,39 @@ describe('alt-chain builder helpers', () => {
     expect(specs[1]?.count).toBe(3);
     expect(specs[1]?.title).toBe('Budget Cuts x3');
     expect(specs[1]?.category).toBe('drawback');
+  });
+
+  it('uses the Supplements selection as tracked unlocks plus extra supplement count', () => {
+    const withSupplements = setAltChainSupplementExtraSelectionCount(
+      setAltChainTrackedSupplementSelected(
+        setAltChainTrackedSupplementSelected(createDefaultAltChainBuilderState(), 'iconic', true),
+        'three-boons',
+        true,
+      ),
+      2,
+    );
+
+    expect(getAltChainBuilderSelectionCount(withSupplements, 'supplements')).toBe(4);
+    expect(getAltChainSupplementSelectionSummary(withSupplements)).toEqual({
+      selections: {
+        iconic: true,
+        cosmicBackpack: false,
+        threeBoons: true,
+        extraSelections: 2,
+      },
+      unlockedSupplementIds: ['iconic', 'three-boons'],
+      trackedSelectionCount: 2,
+      extraSelectionCount: 2,
+      totalSelectionCount: 4,
+    });
+
+    const specs = buildAltChainBuilderGeneratedEffectSpecs(withSupplements);
+    const supplementSpec = specs.find((spec) => spec.optionId === 'supplements');
+
+    expect(supplementSpec?.count).toBe(4);
+    expect((supplementSpec?.importSourceMetadata as { altChainTrackedSupplementIds?: string[] } | undefined)?.altChainTrackedSupplementIds).toEqual([
+      'iconic',
+      'three-boons',
+    ]);
   });
 });
