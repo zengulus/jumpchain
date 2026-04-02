@@ -394,10 +394,6 @@ function extractRuleEffectOverrides(effect: Effect): RuleEffectOverrides {
 }
 
 export function getChainDrawbackBudgetGrants(effect: Effect): Record<string, number> {
-  if (effect.category !== 'drawback') {
-    return {};
-  }
-
   const metadata = effect.importSourceMetadata as Record<string, unknown>;
   const explicitBudgetGrants = parseExplicitBudgetGrants(metadata);
 
@@ -411,6 +407,10 @@ export function getChainDrawbackBudgetGrants(effect: Effect): Record<string, num
     return {
       '0': explicitChoicePointGrant,
     };
+  }
+
+  if (effect.category !== 'drawback') {
+    return {};
   }
 
   const importedValue = parseOptionalFiniteNumber(metadata.value);
@@ -438,7 +438,6 @@ export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorks
   for (const effect of workspace.effects) {
     if (
       effect.state !== 'active' ||
-      effect.category !== 'drawback' ||
       effect.scopeType !== 'chain' ||
       effect.ownerEntityType !== 'chain' ||
       effect.ownerEntityId !== workspace.chain.id

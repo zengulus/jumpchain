@@ -234,6 +234,9 @@ describe('alt-chain builder helpers', () => {
     expect(specs[0]?.count).toBe(2);
     expect(specs[0]?.title).toBe('Grant x2');
     expect(specs[0]?.category).toBe('rule');
+    expect((specs[0]?.importSourceMetadata as { budgetGrants?: Record<string, number> } | undefined)?.budgetGrants).toEqual({
+      '0': 200,
+    });
     expect(specs[1]?.optionId).toBe('budget-cuts');
     expect(specs[1]?.count).toBe(3);
     expect(specs[1]?.title).toBe('Budget Cuts x3');

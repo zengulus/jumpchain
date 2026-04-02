@@ -184,6 +184,54 @@ describe('workspace selectors', () => {
     expect(budgetState.effectiveBudgets['0']).toBe((baseParticipation.budgets['0'] ?? 0) + 300);
   });
 
+  it('adds explicit budget grants from active chain rules into effective participation budgets', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+    const now = new Date().toISOString();
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      participations: session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-rule-budget-grant',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Grant x2',
+          description: '',
+          category: 'rule',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            altChainBuilderGenerated: true,
+            altChainBuilderOptionId: 'grant',
+            budgetGrants: {
+              '0': 200,
+            },
+          },
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const budgetState = getEffectiveParticipationBudgetState(workspace, workspace.participations[0] ?? null);
+
+    expect(getActiveChainDrawbackBudgetContributions(workspace)).toHaveLength(1);
+    expect(budgetState.chainDrawbackBudgetGrants).toEqual({ '0': 200 });
+    expect(budgetState.effectiveBudgets['0']).toBe((baseParticipation.budgets['0'] ?? 0) + 200);
+  });
+
   it('uses imported currency budgets when a participation has no explicit budget overrides', () => {
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const branchId = session.bundle.chain.activeBranchId;

@@ -441,6 +441,12 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
 
     const countSuffix = count > 1 ? ` x${count}` : '';
     const category = option.kind === 'complication' ? 'drawback' : 'rule';
+    const budgetGrants =
+      option.id === 'grant'
+        ? {
+            '0': count * 100,
+          }
+        : null;
     const descriptionParts = [
       `Generated from the Alt-Chain builder for ${option.group}.`,
       option.description,
@@ -462,6 +468,7 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
           altChainBuilderOptionKind: option.kind,
           altChainBuilderOptionGroup: option.group,
           altChainBuilderSelectionCount: count,
+          ...(budgetGrants ? { budgetGrants } : {}),
         },
       },
     ];
