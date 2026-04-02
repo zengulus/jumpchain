@@ -1,4 +1,5 @@
 import {
+  ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
   applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
@@ -100,10 +101,12 @@ describe('alt-chain builder helpers', () => {
     });
 
     expect(parsed.selectionCounts).toEqual({
-      supplements: 2,
-      'under-warranty': 3,
+      ...ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
       'not-alone': 5,
     });
+    expect(getAltChainBuilderSelectionCount(parsed, 'braving-the-gauntlets')).toBe(1);
+    expect(getAltChainBuilderSelectionCount(parsed, 'entertain-me')).toBe(1);
+    expect(getAltChainBuilderSelectionCount(parsed, 'diminishing-returns')).toBe(1);
     expect(getAltChainBuilderSelectionCount(parsed, 'supplements')).toBe(2);
     expect(getAltChainBuilderSelectionCount(parsed, 'under-warranty')).toBe(3);
     expect(getAltChainBuilderSelectionCount(parsed, 'not-alone')).toBe(5);
@@ -121,11 +124,20 @@ describe('alt-chain builder helpers', () => {
     expect(seeded.startingPoint).toBe('chosen');
     expect(seeded.exchangeRate).toBe('masochist');
     expect(seeded.notes).toBe('Keep these notes.');
-    expect(seeded.selectionCounts).toEqual({
-      supplements: 2,
-      'under-warranty': 3,
-      'not-alone': 4,
+    expect(seeded.selectionCounts).toEqual(ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS);
+  });
+
+  it('seeds the chosen starter package with the full base selection list', () => {
+    const summary = buildAltChainBuilderSummary({
+      ...createDefaultAltChainBuilderState(),
+      enabled: true,
+      selectionCounts: ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
     });
+
+    expect(summary.selectedAccommodationCount).toBe(21);
+    expect(summary.selectedComplicationCount).toBe(2);
+    expect(summary.warnings.includes('Chosen has 21 Accommodation slots. 1 still unfilled.')).toBe(false);
+    expect(summary.warnings.includes('Chosen has 2 Complication slots. 2 still unfilled.')).toBe(false);
   });
 
   it('builds worksheet totals from explicit recorded selections', () => {
@@ -153,7 +165,7 @@ describe('alt-chain builder helpers', () => {
     expect(summary.extraAccommodationDelta).toBe(4);
   });
 
-  it('treats chosen as a swappable 22A / 2C budget', () => {
+  it('treats chosen as a swappable 21A / 2C budget', () => {
     const chosenState = setAltChainBuilderSelectionCount(
       setAltChainBuilderSelectionCount(
         {
@@ -174,7 +186,7 @@ describe('alt-chain builder helpers', () => {
     expect(summary.recordedAccommodationCount).toBe(2);
     expect(summary.recordedComplicationCount).toBe(4);
     expect(summary.availableExtraAccommodationCredit).toBe(3);
-    expect(summary.extraAccommodationDelta).toBe(23);
+    expect(summary.extraAccommodationDelta).toBe(22);
   });
 
   it('warns when chosen slots are still unfilled', () => {
@@ -185,7 +197,7 @@ describe('alt-chain builder helpers', () => {
 
     const summary = buildAltChainBuilderSummary(chosenState);
 
-    expect(summary.warnings).toContain('Chosen has 22 Accommodation slots. 22 still unfilled.');
+    expect(summary.warnings).toContain('Chosen has 21 Accommodation slots. 21 still unfilled.');
     expect(summary.warnings).toContain('Chosen has 2 Complication slots. 2 still unfilled.');
   });
 

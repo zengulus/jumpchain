@@ -76,11 +76,11 @@ export interface AltChainBuilderGeneratedEffectSpec {
 export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, AltChainStartingPointConfig> = {
   chosen: {
     title: 'Chosen',
-    simpleSummary: 'Start with a swappable budget of 22 Accommodations and 2 Complications, then choose the mix that fits the branch.',
-    description: 'Start with a Chosen budget of 22 Accommodations and 2 Complications, then select the specific package mix you want to carry forward.',
-    baselineAccommodationCount: 22,
+    simpleSummary: 'Start with a swappable budget of 21 Accommodations and 2 Complications, then choose the mix that fits the branch.',
+    description: 'Start with a Chosen budget of 21 Accommodations and 2 Complications, then select the specific package mix you want to carry forward.',
+    baselineAccommodationCount: 21,
     baselineComplicationCount: 2,
-    reviewNote: 'Chosen starts from a swappable 22 Accommodation / 2 Complication package budget.',
+    reviewNote: 'Chosen starts from a swappable 21 Accommodation / 2 Complication package budget.',
   },
   stranded: {
     title: 'Stranded',
@@ -102,9 +102,23 @@ export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, Alt
 };
 
 export const ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> = {
+  'braving-the-gauntlets': 1,
+  'death-is-not-the-end': 1,
+  'going-native': 1,
+  homesick: 1,
+  'look-before-you-jump': 1,
+  'nothing-happened-while-you-were-out': 1,
+  'spark-end-jump': 1,
   supplements: 2,
+  'alt-form-armoire': 1,
+  'before-babel': 1,
   'under-warranty': 3,
+  'universal-power': 1,
+  benched: 1,
   'not-alone': 4,
+  'spawn-of-jumper': 1,
+  'entertain-me': 1,
+  'diminishing-returns': 1,
 };
 
 export const ALT_CHAIN_EXCHANGE_RATE_CONFIGS: Record<AltChainExchangeRate, AltChainExchangeRateConfig> = {

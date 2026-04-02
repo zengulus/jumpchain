@@ -153,11 +153,25 @@ function AltChainOptionSection(props: {
   hideSelected: boolean;
   onCountChange: (optionId: string, nextValue: unknown) => void;
 }) {
-  const matchingOptions = props.options.filter((option) => matchesQuery(option, props.searchQuery));
-  const visibleOptions = matchingOptions.filter(
-    (option) => !props.hideSelected || getAltChainBuilderSelectionCount(props.state, option.id) <= 0,
-  );
-  const selectedCount = matchingOptions.reduce((total, option) => total + getAltChainBuilderSelectionCount(props.state, option.id), 0);
+  const matchingOptions = props.options
+    .map((option, index) => ({
+      option,
+      index,
+      count: getAltChainBuilderSelectionCount(props.state, option.id),
+    }))
+    .filter(({ option }) => matchesQuery(option, props.searchQuery));
+  const visibleOptions = matchingOptions
+    .filter(({ count }) => !props.hideSelected || count <= 0)
+    .sort((left, right) => {
+      const selectedDelta = Number(right.count > 0) - Number(left.count > 0);
+
+      if (selectedDelta !== 0) {
+        return selectedDelta;
+      }
+
+      return left.index - right.index;
+    });
+  const selectedCount = matchingOptions.reduce((total, entry) => total + entry.count, 0);
 
   if (visibleOptions.length === 0) {
     return null;
@@ -174,8 +188,7 @@ function AltChainOptionSection(props: {
       </summary>
 
       <div className="details-panel__body stack stack--compact">
-        {visibleOptions.map((option) => {
-          const count = getAltChainBuilderSelectionCount(props.state, option.id);
+        {visibleOptions.map(({ option, count }) => {
           const isRepeatable = isAltChainBuilderOptionRepeatable(option);
           const selectionLimit = getAltChainBuilderSelectionLimit(option);
           const isSelected = count > 0;
