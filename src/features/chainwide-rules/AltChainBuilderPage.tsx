@@ -797,7 +797,7 @@ export function AltChainBuilderPage() {
                 term="Post to chainwide effects"
                 meaning="turn the named Accommodations into chain rules and the named Complications into chain drawbacks on the rules page."
               />
-              <p>The starting point and exchange rate stay on the chain as builder metadata. Only the named options you record here get generated as rule entries.</p>
+              <p>The starting point and exchange rate stay on the chain as builder metadata. Chosen gives you a swappable 22 Accommodation / 2 Complication budget, and the named options you select here get generated as rule entries.</p>
             </section>
           ) : null}
 
@@ -839,7 +839,7 @@ export function AltChainBuilderPage() {
                 </span>
                 <span className="metric">
                   <strong>{summary.extraAccommodationDelta >= 0 ? `+${summary.extraAccommodationDelta}` : String(summary.extraAccommodationDelta)}</strong>
-                  Credit delta
+                  A slot delta
                 </span>
               </div>
               {summary.warnings.map((warning) => (

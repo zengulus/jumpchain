@@ -17,7 +17,7 @@ export const altChainExchangeRates = ['favored', 'survivor', 'masochist'] as con
 export type AltChainExchangeRate = (typeof altChainExchangeRates)[number];
 
 export interface AltChainBuilderState {
-  version: 2;
+  version: 4;
   enabled: boolean;
   startingPoint: AltChainStartingPoint;
   exchangeRate: AltChainExchangeRate;
@@ -76,11 +76,11 @@ export interface AltChainBuilderGeneratedEffectSpec {
 export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, AltChainStartingPointConfig> = {
   chosen: {
     title: 'Chosen',
-    simpleSummary: 'Start from the usual standard package, then record the extra swaps and standing picks that matter.',
-    description: 'Begin from the standard package, then record the named Accommodations and Complications you actually want to carry forward.',
+    simpleSummary: 'Start with a swappable budget of 22 Accommodations and 2 Complications, then choose the mix that fits the branch.',
+    description: 'Start with a Chosen budget of 22 Accommodations and 2 Complications, then select the specific package mix you want to carry forward.',
     baselineAccommodationCount: 22,
     baselineComplicationCount: 2,
-    reviewNote: 'Chosen already assumes a 22 Accommodation / 2 Complication standard package baseline.',
+    reviewNote: 'Chosen starts from a swappable 22 Accommodation / 2 Complication package budget.',
   },
   stranded: {
     title: 'Stranded',
@@ -99,6 +99,12 @@ export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, Alt
     minimumRecordedComplicationsBeforeAccommodations: 8,
     reviewNote: 'Cocksure requires at least eight recorded Complications before extra Accommodations should start landing.',
   },
+};
+
+const ALT_CHAIN_LEGACY_VERSION_3_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> = {
+  supplements: 2,
+  'under-warranty': 3,
+  'not-alone': 4,
 };
 
 export const ALT_CHAIN_EXCHANGE_RATE_CONFIGS: Record<AltChainExchangeRate, AltChainExchangeRateConfig> = {
@@ -184,9 +190,41 @@ function normalizeSelectionCounts(selectionCounts: Record<string, number>) {
   return readSelectionCounts(selectionCounts);
 }
 
+function migrateLegacySelectionCounts(
+  selectionCounts: Record<string, number>,
+  startingPoint: AltChainStartingPoint,
+  version: number,
+) {
+  if (version !== 3 || startingPoint !== 'chosen') {
+    return selectionCounts;
+  }
+
+  const nextSelectionCounts = { ...selectionCounts };
+
+  for (const [optionId, legacyCount] of Object.entries(ALT_CHAIN_LEGACY_VERSION_3_CHOSEN_STARTER_SELECTION_COUNTS)) {
+    const option = altChainBuilderOptionsById[optionId];
+
+    if (!option) {
+      continue;
+    }
+
+    const currentCount = normalizeSelectionCount(nextSelectionCounts[optionId], getAltChainBuilderSelectionLimit(option));
+    const migratedCount = normalizeSelectionCount(currentCount + legacyCount, getAltChainBuilderSelectionLimit(option));
+
+    if (migratedCount <= 0) {
+      delete nextSelectionCounts[optionId];
+      continue;
+    }
+
+    nextSelectionCounts[optionId] = migratedCount;
+  }
+
+  return normalizeSelectionCounts(nextSelectionCounts);
+}
+
 export function createDefaultAltChainBuilderState(): AltChainBuilderState {
   return {
-    version: 2,
+    version: 4,
     enabled: false,
     startingPoint: 'chosen',
     exchangeRate: 'favored',
@@ -199,13 +237,19 @@ export function createDefaultAltChainBuilderState(): AltChainBuilderState {
 export function parseAltChainBuilderState(raw: unknown): AltChainBuilderState {
   const fallback = createDefaultAltChainBuilderState();
   const record = isRecord(raw) ? raw : {};
+  const parsedStartingPoint = isAltChainStartingPoint(record.startingPoint) ? record.startingPoint : fallback.startingPoint;
+  const parsedVersion = typeof record.version === 'number' && Number.isFinite(record.version) ? record.version : 0;
 
   return {
-    version: 2,
+    version: 4,
     enabled: record.enabled === true,
-    startingPoint: isAltChainStartingPoint(record.startingPoint) ? record.startingPoint : fallback.startingPoint,
+    startingPoint: parsedStartingPoint,
     exchangeRate: isAltChainExchangeRate(record.exchangeRate) ? record.exchangeRate : fallback.exchangeRate,
-    selectionCounts: normalizeSelectionCounts(readSelectionCounts(record.selectionCounts)),
+    selectionCounts: migrateLegacySelectionCounts(
+      normalizeSelectionCounts(readSelectionCounts(record.selectionCounts)),
+      parsedStartingPoint,
+      parsedVersion,
+    ),
     notes: typeof record.notes === 'string' ? record.notes : fallback.notes,
     lastSyncedAt: typeof record.lastSyncedAt === 'string' && record.lastSyncedAt.trim().length > 0 ? record.lastSyncedAt : null,
   };
@@ -215,7 +259,7 @@ export function updateAltChainBuilderMetadata(importSourceMetadata: JsonMap, nex
   return {
     ...importSourceMetadata,
     [ALT_CHAIN_BUILDER_METADATA_KEY]: {
-      version: 2,
+      version: 4,
       enabled: nextState.enabled,
       startingPoint: nextState.startingPoint,
       exchangeRate: nextState.exchangeRate,
@@ -237,7 +281,8 @@ export function setAltChainBuilderSelectionCount(state: AltChainBuilderState, op
     return state;
   }
 
-  const normalizedCount = normalizeSelectionCount(count, getAltChainBuilderSelectionLimit(option));
+  const selectionLimit = getAltChainBuilderSelectionLimit(option);
+  const normalizedCount = normalizeSelectionCount(count, selectionLimit);
   const nextSelectionCounts = { ...state.selectionCounts };
 
   if (normalizedCount <= 0) {
@@ -275,29 +320,37 @@ export function buildAltChainBuilderSummary(state: AltChainBuilderState): AltCha
   const selectedAccommodationCount = selectedAccommodations.reduce((total, entry) => total + entry.count, 0);
   const selectedComplicationCount = selectedComplications.reduce((total, entry) => total + entry.count, 0);
   const selectedOptionCount = selectedAccommodations.length + selectedComplications.length;
+  const includedAccommodationBudget = startingPoint.baselineAccommodationCount;
+  const includedComplicationBudget = startingPoint.baselineComplicationCount;
+  const extraComplicationCount = Math.max(0, selectedComplicationCount - includedComplicationBudget);
   const exchangeAccommodationCredit =
-    Math.floor(selectedComplicationCount / exchangeRate.complicationsRequired) * exchangeRate.accommodationsGranted;
+    Math.floor(extraComplicationCount / exchangeRate.complicationsRequired) * exchangeRate.accommodationsGranted;
   const cocksureGate = startingPoint.minimumRecordedComplicationsBeforeAccommodations ?? 0;
   const cocksureGateMet = selectedComplicationCount >= cocksureGate;
   const availableExtraAccommodationCredit =
     cocksureGate > 0 && !cocksureGateMet ? 0 : exchangeAccommodationCredit;
-  const extraAccommodationDelta = availableExtraAccommodationCredit - selectedAccommodationCount;
+  const totalAccommodationBudget = includedAccommodationBudget + availableExtraAccommodationCredit;
+  const extraAccommodationDelta = totalAccommodationBudget - selectedAccommodationCount;
   const warnings: string[] = [];
 
   if (!state.enabled) {
-    warnings.push('Builder tracking is off. Turn it on before relying on the recorded counts.');
+    warnings.push('Builder tracking is off. Turn it on before relying on the selected totals.');
   }
 
   if (state.startingPoint === 'cocksure' && cocksureGate > 0 && selectedAccommodationCount > 0 && !cocksureGateMet) {
-    warnings.push(`Cocksure wants at least ${cocksureGate} recorded Complications before extra Accommodations start landing.`);
+    warnings.push(`Cocksure wants at least ${cocksureGate} selected Complications before extra Accommodations start landing.`);
   }
 
-  if (selectedAccommodationCount > availableExtraAccommodationCredit) {
-    warnings.push('Recorded Accommodations currently outpace the extra Complication credit paying for them.');
+  if (state.startingPoint === 'chosen' && selectedAccommodationCount < includedAccommodationBudget) {
+    warnings.push(`Chosen has ${includedAccommodationBudget} Accommodation slots. ${includedAccommodationBudget - selectedAccommodationCount} still unfilled.`);
   }
 
-  if (state.startingPoint === 'chosen') {
-    warnings.push('Chosen baseline picks are tracked as builder metadata only. Only the named options recorded below will post into chainwide effects.');
+  if (state.startingPoint === 'chosen' && selectedComplicationCount < includedComplicationBudget) {
+    warnings.push(`Chosen has ${includedComplicationBudget} Complication slots. ${includedComplicationBudget - selectedComplicationCount} still unfilled.`);
+  }
+
+  if (selectedAccommodationCount > totalAccommodationBudget) {
+    warnings.push('Selected Accommodations currently outpace the included slots and extra Complication credit paying for them.');
   }
 
   return {
@@ -306,8 +359,8 @@ export function buildAltChainBuilderSummary(state: AltChainBuilderState): AltCha
     selectedOptionCount,
     baselineAccommodationCount: startingPoint.baselineAccommodationCount,
     baselineComplicationCount: startingPoint.baselineComplicationCount,
-    recordedAccommodationCount: startingPoint.baselineAccommodationCount + selectedAccommodationCount,
-    recordedComplicationCount: startingPoint.baselineComplicationCount + selectedComplicationCount,
+    recordedAccommodationCount: selectedAccommodationCount,
+    recordedComplicationCount: selectedComplicationCount,
     exchangeAccommodationCredit,
     availableExtraAccommodationCredit,
     extraAccommodationDelta,
@@ -366,7 +419,7 @@ export function buildAltChainBuilderGeneratedEffectSpecs(state: AltChainBuilderS
       `Generated from the Alt-Chain builder for ${option.group}.`,
       option.description,
       option.note ? `Builder note: ${option.note}` : null,
-      count > 1 ? `Recorded ${count} times in the builder.` : null,
+      count > 1 ? `Selected ${count} times in the builder.` : null,
     ].filter((part): part is string => Boolean(part));
 
     return [
