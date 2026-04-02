@@ -1,6 +1,11 @@
 import type { JsonMap } from '../../domain/common';
 import type { Effect } from '../../domain/effects/types';
-import { altChainBuilderOptionCatalog, altChainBuilderOptionsById, type AltChainBuilderOption } from './catalog';
+import {
+  altChainBuilderOptionCatalog,
+  altChainBuilderOptionsById,
+  getAltChainBuilderSelectionLimit,
+  type AltChainBuilderOption,
+} from './catalog';
 
 export const ALT_CHAIN_BUILDER_METADATA_KEY = 'altChainBuilder';
 export const ALT_CHAIN_BUILDER_EFFECT_SOURCE = 'alt-chain-builder';
@@ -168,7 +173,7 @@ function readSelectionCounts(value: unknown) {
         return [];
       }
 
-      const normalizedCount = normalizeSelectionCount(count, option.maxSelections);
+      const normalizedCount = normalizeSelectionCount(count, getAltChainBuilderSelectionLimit(option));
 
       return normalizedCount > 0 ? [[optionId, normalizedCount]] : [];
     }),
@@ -222,7 +227,7 @@ export function updateAltChainBuilderMetadata(importSourceMetadata: JsonMap, nex
 }
 
 export function getAltChainBuilderSelectionCount(state: AltChainBuilderState, optionId: string) {
-  return normalizeSelectionCount(state.selectionCounts[optionId], altChainBuilderOptionsById[optionId]?.maxSelections);
+  return normalizeSelectionCount(state.selectionCounts[optionId], getAltChainBuilderSelectionLimit(altChainBuilderOptionsById[optionId]));
 }
 
 export function setAltChainBuilderSelectionCount(state: AltChainBuilderState, optionId: string, count: unknown): AltChainBuilderState {
@@ -232,7 +237,7 @@ export function setAltChainBuilderSelectionCount(state: AltChainBuilderState, op
     return state;
   }
 
-  const normalizedCount = normalizeSelectionCount(count, option.maxSelections);
+  const normalizedCount = normalizeSelectionCount(count, getAltChainBuilderSelectionLimit(option));
   const nextSelectionCounts = { ...state.selectionCounts };
 
   if (normalizedCount <= 0) {

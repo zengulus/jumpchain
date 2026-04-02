@@ -8,6 +8,7 @@ export interface AltChainBuilderOption {
   group: AltChainBuilderOptionGroup;
   description: string;
   note?: string;
+  repeatable?: boolean;
   maxSelections?: number;
 }
 
@@ -17,7 +18,7 @@ function option(
   kind: AltChainBuilderOptionKind,
   group: AltChainBuilderOptionGroup,
   description: string,
-  extras: Pick<Partial<AltChainBuilderOption>, 'note' | 'maxSelections'> = {},
+  extras: Pick<Partial<AltChainBuilderOption>, 'note' | 'repeatable' | 'maxSelections'> = {},
 ): AltChainBuilderOption {
   return {
     id,
@@ -46,6 +47,7 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
   option('spark-end-jump', 'Spark/End-Jump', 'accommodation', 'chain', 'Make the end of the chain culminate in a rare Spark and the kind of multiversal apotheosis associated with it.'),
   option('supplements', 'Supplements', 'accommodation', 'chain', 'Open the door to hotels, arenas, rivals, warehouses, body mods, and other supplement-side systems.', {
     note: 'Chosen starts with two purchases of this option.',
+    repeatable: true,
   }),
   option('combine-jumps', 'Combine Jumps', 'accommodation', 'chain', 'Merge multiple jumps together into one blended setting while each jump keeps its own background and option structure.'),
   option('cyoa-in-the-sky', 'CYOA In the Sky', 'accommodation', 'chain', 'Allow the jumper to build jumps out of outside CYOAs instead of sticking to standard jump documents.'),
@@ -80,6 +82,7 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
   option('benched', 'Benched', 'accommodation', 'companions', 'Give the chain effectively unlimited companion slots and let the jumper decide which companions are actively imported.'),
   option('not-alone', 'Not Alone', 'accommodation', 'companions', 'Increase the number of companions who can actively follow the jumper from jump to jump.', {
     note: 'Chosen starts with four purchases. Each purchase expands active companion capacity.',
+    repeatable: true,
   }),
   option('spawn-of-jumper', 'Spawn of Jumper', 'accommodation', 'companions', 'Automatically treat the jumper’s children as companions.'),
   option('canon-tag-along', 'Canon Tag-Along', 'accommodation', 'companions', 'Let the jumper recruit canon characters as companions even when the jump document forgot to offer them.'),
@@ -108,6 +111,7 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
   option('ive-been-x-before', "I've Been X Before", 'accommodation', 'choice-points', 'Keep qualifying for familiar discounts across later jumps once the jumper or companion has earned them once.'),
   option('savings-account', 'Savings Account', 'accommodation', 'choice-points', 'Bank 100 CP for a future jump instead of spending it now.', {
     note: 'Each purchase banks another 100 CP. The source notes mention a 10% interest variant.',
+    repeatable: true,
   }),
   option('unlimited-drawbacks', 'Unlimited Drawbacks', 'accommodation', 'choice-points', 'Remove the normal drawback cap so the jumper can keep taking more if desired.'),
 
@@ -202,6 +206,7 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
   }),
   option('budget-cuts', 'Budget Cuts', 'complication', 'choice-points', 'Reduce starting CP by 100 each time.', {
     note: 'Repeatable. After ten purchases the source expects Roll With the Drawbacks to cover the rest.',
+    repeatable: true,
   }),
   option('cp-equals-xp', 'CP = XP', 'complication', 'choice-points', 'Make purchases unlock only after the jumper earns the equivalent through adventure or growth.'),
   option('drawback-depreciation', 'Drawback Depreciation', 'complication', 'choice-points', 'Cut drawback payouts in half, then remove them entirely on the second purchase.', {
@@ -224,6 +229,26 @@ export const altChainBuilderOptionCatalog: AltChainBuilderOption[] = [
     note: 'Conflicts with a fully doubled No Such Thing As A Free X.',
   }),
 ];
+
+export function isAltChainBuilderOptionRepeatable(option: AltChainBuilderOption | undefined) {
+  if (!option) {
+    return false;
+  }
+
+  return option.repeatable === true || (typeof option.maxSelections === 'number' && option.maxSelections > 1);
+}
+
+export function getAltChainBuilderSelectionLimit(option: AltChainBuilderOption | undefined) {
+  if (!option) {
+    return 1;
+  }
+
+  if (typeof option.maxSelections === 'number' && Number.isFinite(option.maxSelections)) {
+    return option.maxSelections;
+  }
+
+  return isAltChainBuilderOptionRepeatable(option) ? undefined : 1;
+}
 
 export const altChainBuilderOptionsById = Object.fromEntries(
   altChainBuilderOptionCatalog.map((entry) => [entry.id, entry]),

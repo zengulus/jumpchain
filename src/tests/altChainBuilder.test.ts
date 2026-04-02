@@ -2,6 +2,7 @@ import {
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
   createDefaultAltChainBuilderState,
+  getAltChainBuilderSelectionCount,
   hasAltChainBuilderBeenUsed,
   parseAltChainBuilderState,
   setAltChainBuilderSelectionCount,
@@ -110,6 +111,17 @@ describe('alt-chain builder helpers', () => {
     expect(summary.extraAccommodationDelta).toBe(4);
   });
 
+  it('treats non-repeatable options as binary selections while keeping repeatable tallies', () => {
+    const withSelections = setAltChainBuilderSelectionCount(
+      setAltChainBuilderSelectionCount(createDefaultAltChainBuilderState(), 'braving-the-gauntlets', 3),
+      'budget-cuts',
+      4,
+    );
+
+    expect(getAltChainBuilderSelectionCount(withSelections, 'braving-the-gauntlets')).toBe(1);
+    expect(getAltChainBuilderSelectionCount(withSelections, 'budget-cuts')).toBe(4);
+  });
+
   it('builds generated chainwide effect specs from recorded options', () => {
     const withSelections = setAltChainBuilderSelectionCount(
       setAltChainBuilderSelectionCount(
@@ -127,17 +139,13 @@ describe('alt-chain builder helpers', () => {
     const specs = buildAltChainBuilderGeneratedEffectSpecs(withSelections);
 
     expect(specs).toHaveLength(2);
-    expect(specs[0]).toMatchObject({
-      optionId: 'grant',
-      count: 2,
-      title: 'Grant x2',
-      category: 'rule',
-    });
-    expect(specs[1]).toMatchObject({
-      optionId: 'budget-cuts',
-      count: 3,
-      title: 'Budget Cuts x3',
-      category: 'drawback',
-    });
+    expect(specs[0]?.optionId).toBe('grant');
+    expect(specs[0]?.count).toBe(2);
+    expect(specs[0]?.title).toBe('Grant x2');
+    expect(specs[0]?.category).toBe('rule');
+    expect(specs[1]?.optionId).toBe('budget-cuts');
+    expect(specs[1]?.count).toBe(3);
+    expect(specs[1]?.title).toBe('Budget Cuts x3');
+    expect(specs[1]?.category).toBe('drawback');
   });
 });

@@ -24,7 +24,14 @@ import {
 } from '../workspace/simpleModeGuides';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-import { ALT_CHAIN_OPTION_GROUP_LABELS, altChainBuilderOptionCatalog, type AltChainBuilderOption, type AltChainBuilderOptionGroup } from './catalog';
+import {
+  ALT_CHAIN_OPTION_GROUP_LABELS,
+  altChainBuilderOptionCatalog,
+  getAltChainBuilderSelectionLimit,
+  isAltChainBuilderOptionRepeatable,
+  type AltChainBuilderOption,
+  type AltChainBuilderOptionGroup,
+} from './catalog';
 import {
   ALT_CHAIN_EXCHANGE_RATE_CONFIGS,
   ALT_CHAIN_STARTING_POINT_CONFIGS,
@@ -121,13 +128,23 @@ function formatTimestamp(value: string | null) {
   }).format(parsedDate);
 }
 
+function getAltChainOptionKindLabel(kind: AltChainBuilderOption['kind']) {
+  return kind === 'accommodation' ? 'Accommodation' : 'Complication';
+}
+
+function getAltChainSearchPlaceholder(kind: AltChainBuilderOption['kind']) {
+  return kind === 'accommodation'
+    ? 'Find an accommodation by name, note, or group...'
+    : 'Find a complication by name, note, or group...';
+}
+
 function AltChainOptionSection(props: {
   title: string;
+  kind: AltChainBuilderOption['kind'];
   options: AltChainBuilderOption[];
   state: AltChainBuilderState;
   searchQuery: string;
-  onCountChange: (optionId: string, nextValue: string) => void;
-  defaultOpen?: boolean;
+  onCountChange: (optionId: string, nextValue: unknown) => void;
 }) {
   const visibleOptions = props.options.filter((option) => matchesQuery(option, props.searchQuery));
   const selectedCount = visibleOptions.reduce((total, option) => total + getAltChainBuilderSelectionCount(props.state, option.id), 0);
@@ -137,11 +154,11 @@ function AltChainOptionSection(props: {
   }
 
   return (
-    <details className="details-panel" open={props.defaultOpen ? true : undefined}>
+    <details className={`details-panel alt-chain-option-section alt-chain-option-section--${props.kind}`}>
       <summary className="details-panel__summary">
         <span>{props.title}</span>
         <div className="inline-meta">
-          <span className="pill">{selectedCount} recorded</span>
+          <span className={`pill alt-chain-token alt-chain-token--${props.kind}`}>{selectedCount} selected</span>
           <span className="pill pill--soft">{visibleOptions.length} options</span>
         </div>
       </summary>
@@ -149,30 +166,79 @@ function AltChainOptionSection(props: {
       <div className="details-panel__body stack stack--compact">
         {visibleOptions.map((option) => {
           const count = getAltChainBuilderSelectionCount(props.state, option.id);
+          const isRepeatable = isAltChainBuilderOptionRepeatable(option);
+          const selectionLimit = getAltChainBuilderSelectionLimit(option);
+          const isSelected = count > 0;
 
           return (
-            <article className="selection-editor" key={option.id}>
+            <article
+              className={`selection-editor alt-chain-option alt-chain-option--${option.kind}${isSelected ? ' is-selected' : ''}`}
+              key={option.id}
+            >
               <div className="selection-editor__header">
                 <div className="stack stack--compact">
                   <strong>{option.title}</strong>
                   <p className="editor-section__copy">{option.description}</p>
                 </div>
-                <span className="pill pill--soft">{option.kind === 'accommodation' ? 'A' : 'C'}</span>
+                <div className="inline-meta alt-chain-option__meta">
+                  <span className={`pill alt-chain-token alt-chain-token--${option.kind}`}>{getAltChainOptionKindLabel(option.kind)}</span>
+                  <span className={`pill alt-chain-option__state-pill alt-chain-option__state-pill--${option.kind}${isSelected ? ' is-selected' : ''}`}>
+                    {isSelected ? 'Selected' : 'Unselected'}
+                  </span>
+                  {isRepeatable && isSelected ? <span className="pill pill--soft">{count}x</span> : null}
+                </div>
               </div>
 
               {option.note ? <p className="field-hint">{option.note}</p> : null}
 
-              <label className="field">
-                <span>Recorded count</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={option.maxSelections}
-                  step={1}
-                  value={count}
-                  onChange={(event) => props.onCountChange(option.id, event.target.value)}
-                />
-              </label>
+              {isRepeatable ? (
+                <div className="alt-chain-option__counter">
+                  <div className="alt-chain-option__counter-row">
+                    <button
+                      aria-label={`Decrease ${option.title} count`}
+                      className="button button--secondary alt-chain-option__stepper"
+                      disabled={count <= 0}
+                      type="button"
+                      onClick={() => props.onCountChange(option.id, count - 1)}
+                    >
+                      -
+                    </button>
+                    <span className="pill pill--soft alt-chain-option__count">{count}</span>
+                    <button
+                      aria-label={`Increase ${option.title} count`}
+                      className="button button--secondary alt-chain-option__stepper"
+                      disabled={typeof selectionLimit === 'number' && count >= selectionLimit}
+                      type="button"
+                      onClick={() => props.onCountChange(option.id, count + 1)}
+                    >
+                      +
+                    </button>
+                    <span className="alt-chain-option__selection-summary">
+                      {typeof selectionLimit === 'number' ? `${count} of ${selectionLimit} selected` : `${count} selected`}
+                    </span>
+                  </div>
+
+                  {typeof selectionLimit === 'number' && selectionLimit <= 10 ? (
+                    <div className="alt-chain-option__pips" aria-hidden="true">
+                      {Array.from({ length: selectionLimit }).map((_, index) => (
+                        <span className={`alt-chain-option__pip${index < count ? ' is-active' : ''}`} key={`${option.id}-pip-${index}`} />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="alt-chain-option__toggle-row">
+                  <button
+                    aria-label={`${isSelected ? 'Unselect' : 'Select'} ${option.title}`}
+                    aria-pressed={isSelected}
+                    className={`alt-chain-option__toggle${isSelected ? ' is-selected' : ''}`}
+                    type="button"
+                    onClick={() => props.onCountChange(option.id, isSelected ? 0 : 1)}
+                  >
+                    {isSelected ? 'Selected' : 'Unselected'}
+                  </button>
+                </div>
+              )}
             </article>
           );
         })}
@@ -183,14 +249,15 @@ function AltChainOptionSection(props: {
 
 function AltChainSelectionsReview(props: {
   title: string;
+  kind: AltChainBuilderOption['kind'];
   entries: Array<{ option: AltChainBuilderOption; count: number }>;
   emptyText: string;
 }) {
   return (
-    <section className="card stack stack--compact">
+    <section className={`card stack stack--compact alt-chain-kind-card alt-chain-kind-card--${props.kind}`}>
       <div className="section-heading">
         <h3>{props.title}</h3>
-        <span className="pill">{props.entries.length} entries</span>
+        <span className={`pill alt-chain-token alt-chain-token--${props.kind}`}>{props.entries.length} entries</span>
       </div>
 
       {props.entries.length === 0 ? (
@@ -283,7 +350,7 @@ export function AltChainBuilderPage() {
     });
   }
 
-  function handleCountChange(optionId: string, rawValue: string) {
+  function handleCountChange(optionId: string, rawValue: unknown) {
     updateBuilder(setAltChainBuilderSelectionCount(builder, optionId, rawValue));
   }
 
@@ -489,20 +556,20 @@ export function AltChainBuilderPage() {
           <span>Filter options</span>
           <input
             value={searchQuery}
-            placeholder={`Find a ${kind} by name, note, or group...`}
+            placeholder={getAltChainSearchPlaceholder(kind)}
             onChange={(event) => setSearchQuery(event.target.value)}
           />
         </label>
 
-        {visibleGroups.map(({ group, options }, index) => (
+        {visibleGroups.map(({ group, options }) => (
           <AltChainOptionSection
             key={`${kind}-${group}`}
             title={ALT_CHAIN_OPTION_GROUP_LABELS[group]}
+            kind={kind}
             options={options}
             state={builder}
             searchQuery={searchQuery}
             onCountChange={handleCountChange}
-            defaultOpen={index === 0}
           />
         ))}
       </div>
@@ -655,13 +722,15 @@ export function AltChainBuilderPage() {
 
         <AltChainSelectionsReview
           title="Accommodations to Post"
+          kind="accommodation"
           entries={selectedAccommodations}
-          emptyText="No named Accommodations are recorded yet."
+          emptyText="No named Accommodations are selected yet."
         />
         <AltChainSelectionsReview
           title="Complications to Post"
+          kind="complication"
           entries={selectedComplications}
-          emptyText="No named Complications are recorded yet."
+          emptyText="No named Complications are selected yet."
         />
 
         <div className="actions">
@@ -806,18 +875,18 @@ export function AltChainBuilderPage() {
             </label>
           </section>
 
-          <section className="card stack">
+          <section className="card stack alt-chain-kind-card alt-chain-kind-card--accommodation">
             <div className="section-heading">
               <h3>Accommodations</h3>
-              <span className="pill">{summary.selectedAccommodationCount} recorded</span>
+              <span className="pill alt-chain-token alt-chain-token--accommodation">{summary.selectedAccommodationCount} selected</span>
             </div>
             {renderOptionsByKind('accommodation')}
           </section>
 
-          <section className="card stack">
+          <section className="card stack alt-chain-kind-card alt-chain-kind-card--complication">
             <div className="section-heading">
               <h3>Complications</h3>
-              <span className="pill">{summary.selectedComplicationCount} recorded</span>
+              <span className="pill alt-chain-token alt-chain-token--complication">{summary.selectedComplicationCount} selected</span>
             </div>
             {renderOptionsByKind('complication')}
           </section>
@@ -825,13 +894,15 @@ export function AltChainBuilderPage() {
           <section className="grid grid--two">
             <AltChainSelectionsReview
               title="Accommodations To Post"
+              kind="accommodation"
               entries={selectedAccommodations}
-              emptyText="No named Accommodations are recorded yet."
+              emptyText="No named Accommodations are selected yet."
             />
             <AltChainSelectionsReview
               title="Complications To Post"
+              kind="complication"
               entries={selectedComplications}
-              emptyText="No named Complications are recorded yet."
+              emptyText="No named Complications are selected yet."
             />
           </section>
         </>
