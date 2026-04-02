@@ -161,6 +161,9 @@ function PageShellContent() {
           data-ui-mode={simpleMode ? 'simple' : 'advanced'}
           data-has-workspace-nav={workspaceDrawerRegistered ? 'true' : 'false'}
         >
+          <a className="page-shell__skip-link" href="#app-main">
+            Skip to content
+          </a>
           <header className="page-shell__header">
             <button
               className={`page-shell__nav-toggle${navOpen ? ' is-active' : ''}`}
@@ -221,7 +224,7 @@ function PageShellContent() {
               ? 'Guided mode works best on desktop or a wider window.'
               : 'Advanced mode keeps more data visible at once on desktop or a wider window.'}
           </div>
-          <main className="page-shell__main">
+          <main className="page-shell__main" id="app-main" tabIndex={-1}>
             <Outlet />
           </main>
         </div>

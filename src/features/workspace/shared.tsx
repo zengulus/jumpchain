@@ -154,7 +154,11 @@ export function StatusNoticeBanner({ notice }: { notice: StatusNotice | null }) 
     return null;
   }
 
-  return <div className={`status status--${notice.tone}`}>{notice.message}</div>;
+  return (
+    <div className={`status status--${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>
+      {notice.message}
+    </div>
+  );
 }
 
 export function ReadinessPill(props: { tone: ReadinessTone; label?: string; className?: string }) {

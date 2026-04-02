@@ -62,6 +62,8 @@ export function HomePage() {
   const resumeChain = lastVisitedChain ?? latestChain;
   const resumePath = resumeChain ? getLastChainRoute(resumeChain.chainId, getDefaultChainPath(resumeChain.chainId)) : null;
   const resumeLabel = lastVisitedChain ? 'Resume Last Workspace' : 'Resume Latest Chain';
+  const resumeChainStatus = resumeChain ? getSimpleChainStatus(resumeChain) : null;
+  const chainsReadyForPlay = chains.filter((chain) => chain.jumperCount > 0 && chain.jumpCount > 0).length;
 
   async function refreshChains() {
     const nextChains = await listChainOverviews();
@@ -159,14 +161,37 @@ export function HomePage() {
   return (
     <div className="home-shell stack">
       <section className="home-stage">
-        <section className="hero hero--split">
+        <section className="hero hero--split home-hero">
           <div className="hero__content stack stack--compact">
+            <span className="home-hero__eyebrow">Local-first continuity workspace</span>
             <h2>Jumpchain Tracker</h2>
-            <p>
+            <p className="home-hero__lead">
               {simpleMode
                 ? 'Open a stored chain, create a new one, or import a trusted save.'
                 : 'Local-first continuity tracking with wide module workspaces, snapshots, imports, and page-by-page supplement planning.'}
             </p>
+            <div className="home-hero__signals">
+              <div className="home-hero__signal">
+                <strong>{simpleMode ? 'Guided next steps' : 'Fast workspace navigation'}</strong>
+                <span>
+                  {simpleMode
+                    ? 'Keep the next useful action visible while you scaffold jumpers, jumps, and setup.'
+                    : 'Move directly between modules, search globally, and stay in context while editing.'}
+                </span>
+              </div>
+              <div className="home-hero__signal">
+                <strong>Native saves and local autosave</strong>
+                <span>Everything stays local-first, with native exports ready when you want a safety copy.</span>
+              </div>
+              <div className="home-hero__signal">
+                <strong>{simpleMode ? 'Switch modes whenever you want' : 'Guided mode is still one click away'}</strong>
+                <span>
+                  {simpleMode
+                    ? 'Start with a calmer, guided surface and swap into advanced mode when you want more density.'
+                    : 'Advanced mode keeps more information on screen, but guided mode remains available for focused setup work.'}
+                </span>
+              </div>
+            </div>
             <div className="actions">
               {simpleMode ? (
                 <>
@@ -201,27 +226,93 @@ export function HomePage() {
               )}
             </div>
           </div>
-          <div className="hero__stats summary-grid">
-            {simpleMode ? (
-              <>
+          <div className="home-hero__side stack stack--compact">
+            <section className="home-spotlight-card">
+              <div className="section-heading">
+                <h3>{resumeChain ? 'Continue where you left off' : 'Start the first chain'}</h3>
+                {resumeChainStatus ? <ReadinessPill tone={resumeChainStatus.tone} label={resumeChainStatus.label} /> : <span className="pill">Ready</span>}
+              </div>
+              {resumeChain ? (
+                <>
+                  <div className="home-spotlight-card__chain">
+                    <strong>{resumeChain.title}</strong>
+                    <span>
+                      {lastVisitedChain ? 'Last workspace' : 'Latest chain'} updated {formatTimestamp(resumeChain.updatedAt)}
+                    </span>
+                  </div>
+                  <div className="summary-grid home-spotlight-card__metrics">
+                    <div className="metric">
+                      <strong>{resumeChain.jumperCount}</strong>
+                      Jumpers
+                    </div>
+                    <div className="metric">
+                      <strong>{resumeChain.jumpCount}</strong>
+                      Jumps
+                    </div>
+                    <div className="metric">
+                      <strong>{resumeChain.importReportCount}</strong>
+                      Import reports
+                    </div>
+                    <div className="metric">
+                      <strong>{getSimpleChainStatus(resumeChain).label}</strong>
+                      Workspace status
+                    </div>
+                  </div>
+                  <p className="home-spotlight-card__copy">{resumeChainStatus?.message}</p>
+                  <div className="actions">
+                    <Link className="button" to={resumePath ?? getDefaultChainPath(resumeChain.chainId)}>
+                      {lastVisitedChain ? 'Open Resume Target' : 'Open Latest Chain'}
+                    </Link>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => nativeImportInputRef.current?.click()}
+                      disabled={isBusy}
+                    >
+                      Import Native Save
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="home-spotlight-card__copy">
+                    Create a blank chain to start tracking immediately, or import a trusted native save if you already have one.
+                  </p>
+                  <div className="actions">
+                    <button className="button" type="button" onClick={() => draftTitleInputRef.current?.focus()} disabled={isBusy}>
+                      Create Chain
+                    </button>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() => nativeImportInputRef.current?.click()}
+                      disabled={isBusy}
+                    >
+                      Import Native Save
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="home-mode-panel">
+              <div className="section-heading">
+                <h3>{simpleMode ? 'Guided mode is active' : 'Advanced mode is active'}</h3>
+                <span className="pill pill--soft">{simpleMode ? 'guided' : 'advanced'}</span>
+              </div>
+              <p>
+                {simpleMode
+                  ? 'Guided mode keeps the next setup step and the safest actions visible so the workspace never feels harder than it needs to.'
+                  : 'Advanced mode keeps more density on screen at once, which is better once you already know where you want to go.'}
+              </p>
+              <div className="summary-grid home-mode-panel__metrics">
                 <div className="metric">
                   <strong>{chains.length}</strong>
                   Stored chains
                 </div>
                 <div className="metric">
-                  <strong>{resumeChain ? resumeChain.title : 'No chain yet'}</strong>
-                  {lastVisitedChain ? 'Last workspace' : 'Latest chain'}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="metric">
-                  <strong>{chains.length}</strong>
-                  Stored chains
-                </div>
-                <div className="metric">
-                  <strong>{importedChainCount}</strong>
-                  Imported chains
+                  <strong>{chainsReadyForPlay}</strong>
+                  Core-ready chains
                 </div>
                 <div className="metric">
                   <strong>{totalJumpers}</strong>
@@ -231,8 +322,14 @@ export function HomePage() {
                   <strong>{totalJumps}</strong>
                   Total jumps
                 </div>
-              </>
-            )}
+                {!simpleMode ? (
+                  <div className="metric">
+                    <strong>{importedChainCount}</strong>
+                    Imported chains
+                  </div>
+                ) : null}
+              </div>
+            </section>
           </div>
         </section>
       </section>
@@ -241,7 +338,11 @@ export function HomePage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>{simpleMode ? 'New chain' : 'New Chain'}</h3>
+            <span className="pill pill--soft">Blank workspace</span>
           </div>
+          <p className="home-card-copy">
+            Start with a clean branch, then add jumpers and jumps as the chain takes shape.
+          </p>
           <label className="field">
             <span>Chain title</span>
             <input
@@ -259,7 +360,11 @@ export function HomePage() {
         <article className="card stack">
           <div className="section-heading">
             <h3>{simpleMode ? 'Import a save' : 'Native Save'}</h3>
+            <span className="pill pill--soft">Bring data in</span>
           </div>
+          <p className="home-card-copy">
+            Native saves load directly. External JSON still goes through Import Review so you can inspect it before conversion.
+          </p>
           <button
             className="button button--secondary"
             type="button"
@@ -296,14 +401,21 @@ export function HomePage() {
         </article>
       </section>
 
-      {statusMessage ? <div className="status status--success">{statusMessage}</div> : null}
-      {errorMessage ? <div className="status status--error">{errorMessage}</div> : null}
+      {statusMessage ? <div className="status status--success" role="status">{statusMessage}</div> : null}
+      {errorMessage ? <div className="status status--error" role="alert">{errorMessage}</div> : null}
 
       <section className="card stack">
         <div className="section-heading">
           <h3>Stored Chains</h3>
           <span className="pill">{chains.length} total</span>
         </div>
+        <p className="home-section-copy">
+          {chains.length === 0
+            ? 'Create your first chain to turn this list into a quick-launch dashboard.'
+            : simpleMode
+              ? 'Each chain surfaces the next useful action, so you can re-enter without remembering the whole setup.'
+              : 'Jump back into the latest workspace, export safety copies, or prune old chains from one place.'}
+        </p>
 
         {chains.length === 0 ? (
           <p>No chains yet. Create one or import a save.</p>
@@ -314,42 +426,51 @@ export function HomePage() {
               const defaultChainPath = getDefaultChainPath(chain.chainId);
               const resumeChainPath = getLastChainRoute(chain.chainId, defaultChainPath);
               const hasResumeContext = resumeChainPath !== defaultChainPath;
+              const isResumeChain = resumeChain?.chainId === chain.chainId;
+              const isLatestChain = latestChain?.chainId === chain.chainId;
+              const isLastVisitedChain = lastVisitedChain?.chainId === chain.chainId;
 
               return (
-                <article className="entity-card" key={chain.chainId}>
-                  <div className="section-heading">
-                    <h4>{chain.title}</h4>
-                    <span className="pill">{chain.importReportCount > 0 ? 'imported' : 'native'}</span>
+                <article className={`entity-card home-chain-card${isResumeChain ? ' is-highlighted' : ''}`} key={chain.chainId}>
+                  <div className="home-chain-card__header">
+                    <div className="home-chain-card__copy stack stack--compact">
+                      <div className="inline-meta home-chain-card__badges">
+                        <span className="pill">{chain.importReportCount > 0 ? 'imported' : 'native'}</span>
+                        {isLatestChain ? <span className="pill pill--soft">latest</span> : null}
+                        {isLastVisitedChain ? <span className="pill pill--soft">last opened</span> : null}
+                      </div>
+                      <h4>{chain.title}</h4>
+                    </div>
+                    {simpleMode ? <ReadinessPill tone={simpleChainStatus.tone} label={simpleChainStatus.label} /> : null}
+                  </div>
+                  <p className="home-chain-card__timestamp">Updated {formatTimestamp(chain.updatedAt)}</p>
+                  <div className="summary-grid home-chain-card__metrics">
+                    <div className="metric">
+                      <strong>{chain.jumperCount}</strong>
+                      Jumpers
+                    </div>
+                    <div className="metric">
+                      <strong>{chain.jumpCount}</strong>
+                      Jumps
+                    </div>
+                    <div className="metric">
+                      <strong>{chain.importReportCount}</strong>
+                      Import reports
+                    </div>
                   </div>
                   {simpleMode ? (
-                    <div className="home-chain-status">
-                      <ReadinessPill tone={simpleChainStatus.tone} label={simpleChainStatus.label} />
-                    </div>
-                  ) : null}
-                  {simpleMode ? (
                     <>
-                      <p>
-                        {chain.jumperCount} jumpers, {chain.jumpCount} jumps, last updated {formatTimestamp(chain.updatedAt)}.
-                      </p>
                       <p className="home-chain-copy">{simpleChainStatus.message}</p>
                     </>
                   ) : (
-                    <div className="inline-meta">
-                      <span className="metric">
-                        <strong>{chain.jumperCount}</strong>
-                        Jumpers
-                      </span>
-                      <span className="metric">
-                        <strong>{chain.jumpCount}</strong>
-                        Jumps
-                      </span>
-                      <span className="metric">
-                        <strong>{chain.importReportCount}</strong>
-                        Import reports
-                      </span>
-                    </div>
+                    <p className="home-chain-copy">
+                      {isResumeChain
+                        ? 'This is the fastest route back into active work.'
+                        : hasResumeContext
+                          ? 'A saved route exists for this chain, so Resume Workspace will return to your last page.'
+                          : 'Open the workspace at its default overview and continue from there.'}
+                    </p>
                   )}
-                  {!simpleMode ? <p>Last updated {formatTimestamp(chain.updatedAt)}</p> : null}
                   <div className="entity-actions">
                     <Link className="button" to={resumeChainPath}>
                       {simpleMode ? (hasResumeContext ? 'Resume Chain' : 'Open Chain') : hasResumeContext ? 'Resume Workspace' : 'Open Workspace'}

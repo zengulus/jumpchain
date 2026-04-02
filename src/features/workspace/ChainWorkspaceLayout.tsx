@@ -679,6 +679,92 @@ export function ChainWorkspaceLayout() {
       ],
     },
   ];
+  const activeModuleItem = moduleGroups.flatMap((group) => group.items).find((item) => item.key === activeModuleKey) ?? null;
+  const setupCompletionCount = Number(hasJumpers) + Number(hasJumps);
+  const setupCompletionPercent = Math.round((setupCompletionCount / 2) * 100);
+  const unlockedSystemsCount = [iconicAvailability, cosmicBackpackAvailability, threeBoonsAvailability].filter(
+    (availability) => !availability.locked,
+  ).length;
+  const focusCard =
+    activeModuleKey === 'jumpers' || activeModuleKey === 'bodymod'
+      ? selectedJumper
+        ? {
+            label: activeModuleKey === 'bodymod' ? 'Selected iconic owner' : 'Selected jumper',
+            title: selectedJumper.name,
+            body: activeModuleKey === 'bodymod'
+              ? selectedIconicProfile
+                ? 'Iconic profile and continuity details are keyed to this jumper.'
+                : 'No Iconic profile exists for this jumper yet, so the next edit here will likely be setup.'
+              : 'Identity, notes, and character-level setup are currently focused on this jumper.',
+          }
+        : {
+            label: activeModuleKey === 'bodymod' ? 'Selected iconic owner' : 'Selected jumper',
+            title: 'No jumper selected',
+            body: 'Pick a jumper to anchor the current character-facing workspace.',
+          }
+      : activeModuleKey === 'companions'
+        ? selectedCompanion
+          ? {
+              label: 'Selected companion',
+              title: selectedCompanion.name,
+              body: 'Companion-specific edits and notes will land on this record.',
+            }
+          : {
+              label: 'Selected companion',
+              title: 'No companion selected',
+              body: 'Choose a companion record to make the current editing context more specific.',
+            }
+        : focusedParticipant
+          ? {
+              label: focusedParticipantCompanion ? 'Selected participant' : 'Selected jumper',
+              title: focusedParticipant.name,
+              body: focusedJump
+                ? `This participant is currently in view against ${focusedJump.title}.`
+                : 'This participant is the current focus inside the workspace.',
+            }
+          : focusedJump
+            ? {
+                label: 'Jump in focus',
+                title: focusedJump.title,
+                body: 'Jump-specific editing and summaries are centered on this entry right now.',
+              }
+            : {
+                label: 'Branch in focus',
+                title: activeBranch?.title ?? 'No active branch',
+                body: 'You are looking at the active branch-level workspace rather than one specific record.',
+              };
+  const advancedHeroSummary =
+    presentation.mode === 'deep-task'
+      ? null
+      : presentation.mode === 'overview'
+        ? `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` • Current jump: ${currentJump.title}` : ' • No current jump selected'}. ${activeModuleItem?.description ?? ''}`.trim()
+        : activeModuleItem?.description ?? `${activeBranch?.title ?? 'No active branch'} branch is active.`;
+  const heroSummary = simpleMode ? simpleHeroSummary : advancedHeroSummary;
+  const heroDetailCards = presentation.mode === 'deep-task'
+    ? []
+    : [
+        {
+          label: 'Current page',
+          title: activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey],
+          body: activeModuleItem?.description ?? 'Work inside the current module context.',
+        },
+        focusCard,
+        simpleMode
+          ? {
+              label: guidedSetupActive ? 'Setup guide' : 'Core setup',
+              title: `${setupCompletionCount}/2 core steps complete`,
+              body: guidedSetupActive
+                ? 'The guide is open on this page, so the content below is already pointing at the current setup step.'
+                : showGuidedSetup
+                  ? `Setup is still in progress. Next useful move: ${nextCoreAction.title}.`
+                  : 'Core setup is in place, so you can move freely between modules without losing your place.',
+            }
+          : {
+              label: 'Next useful move',
+              title: primaryQuickAction.title,
+              body: primaryQuickAction.description,
+            },
+      ];
 
   return (
     <WorkspacePresentationContext.Provider value={setPresentationOverride}>
@@ -690,15 +776,29 @@ export function ChainWorkspaceLayout() {
                 <div className="workspace-hero__toolbar">
                   <div className="inline-meta">
                     {simpleMode ? null : <span className="pill">Active workspace</span>}
+                    <span className="pill pill--soft">{activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey]}</span>
                     <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
                     {presentation.mode === 'deep-task' ? null : <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>}
+                    {simpleMode ? (
+                      <ReadinessPill
+                        tone={showGuidedSetup ? 'start' : 'core'}
+                        label={showGuidedSetup ? 'Setup in progress' : 'Core ready'}
+                      />
+                    ) : null}
                   </div>
                 </div>
                 <h2>{state.bundle.chain.title}</h2>
-                {simpleMode ? simpleHeroSummary ? <p className="workspace-hero__summary">{simpleHeroSummary}</p> : null : presentation.mode === 'overview' ? (
-                  <p className="workspace-hero__summary">
-                    {`${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` | Current jump: ${currentJump.title}` : ' | No current jump selected'}.`}
-                  </p>
+                {heroSummary ? <p className="workspace-hero__summary">{heroSummary}</p> : null}
+                {heroDetailCards.length > 0 ? (
+                  <div className="workspace-hero__detail-grid">
+                    {heroDetailCards.map((card) => (
+                      <section className="workspace-hero__detail-card" key={card.label}>
+                        <span>{card.label}</span>
+                        <strong>{card.title}</strong>
+                        <p>{card.body}</p>
+                      </section>
+                    ))}
+                  </div>
                 ) : null}
                 {showHeroGuideAction ? (
                   <div className="actions workspace-hero__actions">
@@ -710,7 +810,26 @@ export function ChainWorkspaceLayout() {
               </div>
               {presentation.showHeroStats ? (
                 <div className="workspace-hero__stats">
-                  {simpleMode && guidedSetupActive ? null : presentation.mode === 'editor' ? (
+                  {simpleMode ? (
+                    <>
+                      <span className="metric">
+                        <strong>{setupCompletionCount}/2</strong>
+                        Core setup
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.jumpers.length}</strong>
+                        Jumpers ready
+                      </span>
+                      <span className="metric">
+                        <strong>{workspace.jumps.length}</strong>
+                        Jumps in branch
+                      </span>
+                      <span className="metric">
+                        <strong>{setupCompletionPercent}%</strong>
+                        Setup progress
+                      </span>
+                    </>
+                  ) : presentation.mode === 'editor' ? (
                     <>
                       <span className="metric">
                         <strong>{workspace.jumpers.length}</strong>
@@ -720,16 +839,13 @@ export function ChainWorkspaceLayout() {
                         <strong>{workspace.jumps.length}</strong>
                         Jumps
                       </span>
-                    </>
-                  ) : simpleMode ? (
-                    <>
                       <span className="metric">
-                        <strong>{workspace.jumpers.length}</strong>
-                        Jumpers ready
+                        <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
+                        Current jump
                       </span>
                       <span className="metric">
-                        <strong>{workspace.jumps.length}</strong>
-                        Jumps in branch
+                        <strong>{workspace.snapshots.length}</strong>
+                        Snapshots
                       </span>
                     </>
                   ) : (
@@ -743,8 +859,8 @@ export function ChainWorkspaceLayout() {
                         Jumps
                       </span>
                       <span className="metric">
-                        <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
-                        Current jump
+                        <strong>{unlockedSystemsCount}</strong>
+                        Systems unlocked
                       </span>
                       <span className="metric">
                         <strong>{workspace.snapshots.length}</strong>
@@ -769,14 +885,19 @@ export function ChainWorkspaceLayout() {
 
             <aside className={`workspace-sidebar${sidebarOpen ? ' is-open' : ''}`} id="workspace-sidebar">
               {!showQuickActions ? null : (
-                <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                  <div className="section-heading">
-                    <h4>{simpleMode ? 'Shortcuts' : 'Suggested Next Steps'}</h4>
-                    <span className="pill">Context aware</span>
-                  </div>
+              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
+                <div className="section-heading">
+                  <h4>{simpleMode ? 'Shortcuts' : 'Suggested Next Steps'}</h4>
+                  <span className="pill">Context aware</span>
+                </div>
+                <p className="workspace-sidebar-copy">
+                  {simpleMode
+                    ? 'Use these to keep momentum without hunting through the full workspace menu.'
+                    : 'These actions jump straight to the most likely next edit based on the current branch state.'}
+                </p>
 
-                  <div className="workspace-action-grid">
-                    {visibleQuickActions.map((action) => (
+                <div className="workspace-action-grid">
+                  {visibleQuickActions.map((action) => (
                       <TooltipFrame
                         key={action.id}
                         tooltip={!simpleMode ? action.description : undefined}
@@ -826,6 +947,12 @@ export function ChainWorkspaceLayout() {
                 ) : (
                   <p className="workspace-sidebar-copy">Move between setup, systems, and reference pages without opening a chooser first.</p>
                 )}
+
+                <div className="workspace-sidebar-current">
+                  <span className="workspace-sidebar-current__eyebrow">Current page</span>
+                  <strong>{activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey]}</strong>
+                  <p>{activeModuleItem?.description ?? 'Work inside the active module context.'}</p>
+                </div>
 
                 <WorkspaceModuleLinks
                   groups={moduleGroups}
