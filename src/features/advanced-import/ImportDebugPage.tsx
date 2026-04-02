@@ -7,6 +7,8 @@ import { detectImportSource } from '../../domain/import/sourceDetection';
 import { listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
 import sampleChainMaker from '../../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { readJsonFile } from '../../utils/file';
+import { ConfirmActionDialog } from '../workspace/shared';
+import { createSafetySnapshot } from '../workspace/safety';
 
 function summarizeReasons(reasons: string[]) {
   return reasons.join(' ');
@@ -59,6 +61,7 @@ export function ImportDebugPage() {
   const [importMode, setImportMode] = useState<'new-chain' | 'new-branch' | 'new-jumpers'>('new-chain');
   const [targetChainId, setTargetChainId] = useState('');
   const [branchTitle, setBranchTitle] = useState('');
+  const [confirmImportOpen, setConfirmImportOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,7 +150,7 @@ export function ImportDebugPage() {
     }
   }
 
-  async function handleImportAsNewChain() {
+  async function commitImport() {
     if (!importSession) {
       return;
     }
@@ -162,6 +165,24 @@ export function ImportDebugPage() {
     setErrorMessage(null);
 
     try {
+      let snapshotTitle: string | null = null;
+
+      if (importMode !== 'new-chain') {
+        const targetChain = availableChains.find((chain) => chain.chainId === targetChainId) ?? null;
+
+        if (!targetChain) {
+          throw new Error('Choose a valid target chain for staged imports.');
+        }
+
+        const snapshot = await createSafetySnapshot({
+          chainId: targetChain.chainId,
+          branchId: targetChain.activeBranchId,
+          actionLabel: importMode === 'new-jumpers' ? 'Stage Imported Jumpers' : 'Import ChainMaker Branch',
+          details: 'Created before staging reviewed ChainMaker data into an existing chain.',
+        });
+        snapshotTitle = snapshot.title;
+      }
+
       const persisted = await saveImportedChainBundle(importSession.bundle, {
         importMode,
         targetChainId: importMode === 'new-chain' ? undefined : targetChainId,
@@ -171,14 +192,24 @@ export function ImportDebugPage() {
       setStatusMessage(
         importMode === 'new-chain'
           ? `Imported "${persisted.chain.title}" into IndexedDB as a new chain.`
-          : `Imported into "${persisted.chain.title}" as a non-destructive staged branch.`,
+          : `Imported into "${persisted.chain.title}" as a non-destructive staged branch.${snapshotTitle ? ` "${snapshotTitle}" was created first.` : ''}`,
       );
+      setConfirmImportOpen(false);
       navigate(`/chains/${persisted.chain.id}/overview`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to commit imported chain.');
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handleImportAsNewChain() {
+    if (importMode === 'new-chain') {
+      void commitImport();
+      return;
+    }
+
+    setConfirmImportOpen(true);
   }
 
   const jumperNames = importSession?.bundle.jumpers.map((jumper) => jumper.name) ?? [];
@@ -476,7 +507,7 @@ export function ImportDebugPage() {
               )}
             </div>
             <div className="actions">
-              <button className="button" type="button" onClick={() => void handleImportAsNewChain()} disabled={isSaving}>
+              <button className="button" type="button" onClick={handleImportAsNewChain} disabled={isSaving}>
                 {commitButtonLabel}
               </button>
             </div>
@@ -655,6 +686,21 @@ export function ImportDebugPage() {
           )}
         </>
       )}
+
+      <ConfirmActionDialog
+        open={confirmImportOpen}
+        title="Stage this import into an existing chain?"
+        description="This will add the reviewed import as a new staged branch inside the selected chain."
+        confirmLabel={commitButtonLabel}
+        isBusy={isSaving}
+        details={
+          <p>
+            A safety snapshot of the target chain&apos;s active branch will be created before the staged import is written.
+          </p>
+        }
+        onCancel={() => setConfirmImportOpen(false)}
+        onConfirm={() => void commitImport()}
+      />
     </div>
   );
 }

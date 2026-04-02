@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Chain } from '../domain/chain/types';
 import type { Branch } from '../domain/branch/types';
 import type { NativeChainBundle } from '../domain/save';
-import { buildUniversalSearchResults, matchesSearchQuery } from '../features/search/searchUtils';
+import { buildUniversalSearchResults, filterUniversalSearchResults, matchesSearchQuery } from '../features/search/searchUtils';
 
 const now = '2026-03-26T00:00:00.000Z';
 
@@ -421,5 +421,50 @@ describe('search utilities', () => {
           result.to.includes('participationTab=alt-forms'),
       ),
     ).toBe(true);
+  });
+
+  it('filters results by current chain and category', () => {
+    const alpha = createBundle('chain-alpha', 'Alpha Chain');
+    const beta = createBundle('chain-beta', 'Beta Chain');
+    const results = buildUniversalSearchResults({
+      query: 'garage',
+      overviews: [
+        {
+          chainId: alpha.chain.id,
+          title: alpha.chain.title,
+          updatedAt: now,
+          activeBranchId: alpha.chain.activeBranchId,
+          jumperCount: 1,
+          jumpCount: 1,
+          importReportCount: 0,
+        },
+        {
+          chainId: beta.chain.id,
+          title: beta.chain.title,
+          updatedAt: now,
+          activeBranchId: beta.chain.activeBranchId,
+          jumperCount: 1,
+          jumpCount: 1,
+          importReportCount: 0,
+        },
+      ],
+      bundles: [alpha, beta],
+      preferredChainId: alpha.chain.id,
+    });
+
+    const currentChainCharacterResults = filterUniversalSearchResults({
+      results,
+      preferredChainId: alpha.chain.id,
+      currentChainOnly: true,
+      category: 'characters',
+    });
+    const backupResults = filterUniversalSearchResults({
+      results,
+      category: 'backups',
+    });
+
+    expect(currentChainCharacterResults.every((result) => result.chainId === alpha.chain.id)).toBe(true);
+    expect(currentChainCharacterResults.every((result) => ['jumper', 'companion'].includes(result.kind))).toBe(true);
+    expect(backupResults.every((result) => ['branch', 'snapshot'].includes(result.kind))).toBe(true);
   });
 });

@@ -37,6 +37,108 @@ export function WorkspaceModuleHeader(props: {
   );
 }
 
+export function WorkspaceFocusBar(props: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  meta?: string[];
+  aside?: ReactNode;
+}) {
+  const metaItems = props.meta?.filter((item) => item.trim().length > 0) ?? [];
+
+  return (
+    <section className="workspace-focus-bar">
+      <div className="workspace-focus-bar__copy">
+        <div className="workspace-context-title">
+          {props.eyebrow ? <span className="workspace-focus-bar__eyebrow">{props.eyebrow}</span> : null}
+          <strong>{props.title}</strong>
+          {props.subtitle ? <span>{props.subtitle}</span> : null}
+        </div>
+        {metaItems.length > 0 ? (
+          <div className="workspace-context-meta">
+            {metaItems.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {props.aside ? <div className="workspace-focus-bar__aside">{props.aside}</div> : null}
+    </section>
+  );
+}
+
+export function ConfirmActionDialog(props: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  tone?: 'default' | 'danger';
+  details?: ReactNode;
+  isBusy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!props.open) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        props.onCancel();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [props.open, props.onCancel]);
+
+  if (!props.open) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        className="confirm-action-dialog__backdrop"
+        type="button"
+        aria-label="Close confirmation dialog"
+        onClick={props.onCancel}
+      />
+      <section
+        className={`confirm-action-dialog${props.tone === 'danger' ? ' confirm-action-dialog--danger' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <div className="stack">
+          <div className="stack stack--compact">
+            <h3 id={titleId}>{props.title}</h3>
+            <p>{props.description}</p>
+          </div>
+          {props.details ? <div className="confirm-action-dialog__details">{props.details}</div> : null}
+          <div className="actions confirm-action-dialog__actions">
+            <button className="button button--secondary" type="button" onClick={props.onCancel} disabled={props.isBusy}>
+              {props.cancelLabel ?? 'Cancel'}
+            </button>
+            <button
+              className={`button${props.tone === 'danger' ? ' button--danger' : ''}`}
+              type="button"
+              onClick={props.onConfirm}
+              disabled={props.isBusy}
+            >
+              {props.isBusy ? 'Working...' : props.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
 export function EmptyWorkspaceCard(props: { title: string; body: string; action?: ReactNode }) {
   return (
     <section className="card stack">

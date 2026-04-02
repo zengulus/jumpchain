@@ -3,7 +3,15 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
-import { extractSearchTerms, normalizeSearchQuery, queryUniversalSearchResults, withSearchParams } from './searchUtils';
+import {
+  extractSearchTerms,
+  filterUniversalSearchResults,
+  normalizeSearchQuery,
+  queryUniversalSearchResults,
+  readUniversalSearchCategory,
+  universalSearchCategoryOptions,
+  withSearchParams,
+} from './searchUtils';
 
 function appendSearchTerm(query: string, term: string) {
   return Array.from(new Set([...extractSearchTerms(query), ...extractSearchTerms(term)])).join(' ');
@@ -11,12 +19,14 @@ function appendSearchTerm(query: string, term: string) {
 
 export function SearchResultsPage() {
   const { simpleMode } = useUiPreferences();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: searchData, ensureLoaded, isLoading } = useUniversalSearchData();
   const query = searchParams.get('q') ?? '';
   const preferredChainId = searchParams.get('chain') ?? undefined;
+  const currentChainOnly = searchParams.get('scope') === 'current-chain';
+  const activeCategory = readUniversalSearchCategory(searchParams.get('kind'));
   const normalizedQuery = normalizeSearchQuery(query);
-  const results = useMemo(
+  const rawResults = useMemo(
     () =>
       searchData && normalizedQuery.length > 0
         ? queryUniversalSearchResults({
@@ -27,10 +37,34 @@ export function SearchResultsPage() {
         : [],
     [normalizedQuery.length, preferredChainId, query, searchData],
   );
+  const results = useMemo(
+    () =>
+      filterUniversalSearchResults({
+        results: rawResults,
+        preferredChainId,
+        currentChainOnly,
+        category: activeCategory,
+      }),
+    [activeCategory, currentChainOnly, preferredChainId, rawResults],
+  );
 
   useEffect(() => {
     ensureLoaded();
   }, [ensureLoaded]);
+
+  function updateFilter(key: 'scope' | 'kind', value: string | null) {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+
+      if (value && value.trim().length > 0) {
+        nextParams.set(key, value);
+      } else {
+        nextParams.delete(key);
+      }
+
+      return nextParams;
+    });
+  }
 
   return (
     <div className="search-page stack">
@@ -38,12 +72,34 @@ export function SearchResultsPage() {
         <h2>Universal Search</h2>
         <p>
           {simpleMode
-            ? 'Search everything from one place, then jump straight to the matching page.'
+            ? 'Search everything from one place, filter the results, then jump straight to the matching page.'
             : 'Search chains, active-branch records, tagged selections, alt-form notes, effects, notes, backups, and the Cosmic Backpack planner from one place.'}
         </p>
         <div className="inline-meta">
           <span className="pill">{normalizedQuery.length > 0 ? `Query: ${query}` : 'Enter a query in the header'}</span>
           {searchData ? <span className="pill pill--soft">{results.length} matches</span> : <span className="pill pill--soft">{isLoading ? 'Loading...' : 'Search idle'}</span>}
+        </div>
+
+        <div className="search-filter-row">
+          {preferredChainId ? (
+            <button
+              className={`search-filter-chip${currentChainOnly ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => updateFilter('scope', currentChainOnly ? null : 'current-chain')}
+            >
+              Current Chain
+            </button>
+          ) : null}
+          {universalSearchCategoryOptions.map((option) => (
+            <button
+              className={`search-filter-chip${activeCategory === option.id ? ' is-active' : ''}`}
+              key={option.id}
+              type="button"
+              onClick={() => updateFilter('kind', option.id === 'all' ? null : option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </section>
 
@@ -55,12 +111,12 @@ export function SearchResultsPage() {
       ) : normalizedQuery.length === 0 ? (
         <section className="card stack">
           <h3>No query yet</h3>
-          <p>Use the top banner search box to start filtering across chains and workspace modules.</p>
+          <p>Use the top banner search box or `Ctrl/Cmd+K` to start filtering across chains and workspace modules.</p>
         </section>
       ) : results.length === 0 ? (
         <section className="card stack">
           <h3>No matches</h3>
-          <p>No stored chain data or workspace pages matched that query.</p>
+          <p>No stored chain data or workspace pages matched that query with the current filters.</p>
         </section>
       ) : (
         <section className="search-page__results">
@@ -104,6 +160,8 @@ export function SearchResultsPage() {
                       to={withSearchParams('/search', {
                         q: appendSearchTerm(query, tag),
                         chain: preferredChainId,
+                        scope: currentChainOnly ? 'current-chain' : undefined,
+                        kind: activeCategory === 'all' ? undefined : activeCategory,
                       })}
                     >
                       <SearchHighlight text={tag} query={query} />

@@ -95,21 +95,31 @@ function ViewModeToggle(props: { simpleMode: boolean; onToggle: () => void }) {
       aria-pressed={props.simpleMode}
       onClick={props.onToggle}
     >
-      <span>View mode</span>
-      <strong>{props.simpleMode ? 'Simple' : 'Normal'}</strong>
+      <span>Workspace mode</span>
+      <strong>{props.simpleMode ? 'Guided' : 'Advanced'}</strong>
     </button>
   );
 }
 
 function PageShellContent() {
   const location = useLocation();
-  const { simpleMode, setSimpleMode } = useUiPreferences();
+  const { simpleMode, setSimpleMode, recordLastChainRoute } = useUiPreferences();
   const [navOpen, setNavOpen] = useState(false);
   const [workspaceDrawerRegistered, setWorkspaceDrawerRegistered] = useState(false);
+  const chainRouteMatch = matchPath('/chains/:chainId/*', location.pathname);
+  const activeChainId = chainRouteMatch?.params.chainId ?? null;
 
   useEffect(() => {
     setNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!activeChainId) {
+      return;
+    }
+
+    recordLastChainRoute(activeChainId, `${location.pathname}${location.search}`);
+  }, [activeChainId, location.pathname, location.search, recordLastChainRoute]);
 
   const closeNav = useCallback(() => {
     setNavOpen(false);
@@ -198,7 +208,7 @@ function PageShellContent() {
                   <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
                     <div className="section-heading">
                       <h3>App</h3>
-                      <span className="pill">{simpleMode ? 'Simple' : 'Normal'}</span>
+                      <span className="pill">{simpleMode ? 'Guided' : 'Advanced'}</span>
                     </div>
                     <AppNavigationLinks onNavigate={closeNav} simpleMode={simpleMode} />
                   </section>
@@ -208,8 +218,8 @@ function PageShellContent() {
 
           <div className="page-shell__desktop-note" role="note">
             {simpleMode
-              ? 'Simple mode works best on desktop or a wider window.'
-              : 'Normal mode keeps more data visible at once on desktop or a wider window.'}
+              ? 'Guided mode works best on desktop or a wider window.'
+              : 'Advanced mode keeps more data visible at once on desktop or a wider window.'}
           </div>
           <main className="page-shell__main">
             <Outlet />

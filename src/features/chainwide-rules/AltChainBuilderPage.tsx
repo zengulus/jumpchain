@@ -6,6 +6,7 @@ import { db } from '../../db/database';
 import { createBlankEffect, deleteChainRecord, saveChainEntity, saveChainRecord } from '../workspace/records';
 import {
   AutosaveStatusIndicator,
+  ConfirmActionDialog,
   EmptyWorkspaceCard,
   PlainLanguageHint,
   StatusNoticeBanner,
@@ -22,6 +23,7 @@ import {
   updateGuideSearchParams,
   type SimpleModePageGuideState,
 } from '../workspace/simpleModeGuides';
+import { createSafetySnapshot } from '../workspace/safety';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import {
@@ -309,6 +311,8 @@ export function AltChainBuilderPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [hideSelected, setHideSelected] = useState(false);
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [confirmChosenStarterOpen, setConfirmChosenStarterOpen] = useState(false);
+  const [isApplyingChosenStarter, setIsApplyingChosenStarter] = useState(false);
   const guideRequested = readGuideRequested(searchParams);
   const chainAutosave = useAutosaveRecord(workspace.chain, {
     onSave: async (nextValue) => {
@@ -403,16 +407,40 @@ export function AltChainBuilderPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Switching to Chosen will replace the current Alt-Chain selections with the Chosen starter package. You'll lose your current selection progress. Continue?",
-    );
+    setConfirmChosenStarterOpen(true);
+  }
 
-    if (!confirmed) {
+  async function confirmChosenStarterPackage() {
+    if (!workspace.activeBranch) {
       return;
     }
 
-    updateBuilder(applyAltChainBuilderChosenStarterPackage(builder));
-    setHideSelected(false);
+    setIsApplyingChosenStarter(true);
+
+    try {
+      await saveChainEntity(draftChain);
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: 'Apply Alt-Chain Chosen Starter Package',
+        details: 'Created before replacing the current Alt-Chain builder selections.',
+      });
+
+      updateBuilder(applyAltChainBuilderChosenStarterPackage(builder));
+      setHideSelected(false);
+      setNotice({
+        tone: 'success',
+        message: `Applied the Chosen starter package. "${snapshot.title}" was created first.`,
+      });
+      setConfirmChosenStarterOpen(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to apply the Chosen starter package.',
+      });
+    } finally {
+      setIsApplyingChosenStarter(false);
+    }
   }
 
   function updateBuilderGuideState(updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState) {
@@ -500,6 +528,14 @@ export function AltChainBuilderPage() {
     }
 
     try {
+      await saveChainEntity(draftChain);
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: returnToRules ? 'Post Alt-Chain Builder Entries and Return to Rules' : 'Post Alt-Chain Builder Entries',
+        details: 'Created before syncing generated Alt-Chain entries into chainwide effects.',
+      });
+
       await saveChainEntity(nextChain);
       updateBuilder(syncedState);
 
@@ -543,8 +579,8 @@ export function AltChainBuilderPage() {
         tone: 'success',
         message:
           generatedSpecs.length > 0
-            ? `Posted ${generatedSpecs.length} Alt-Chain builder entries into chainwide effects.`
-            : 'Removed previously generated Alt-Chain builder entries because no named picks are recorded now.',
+            ? `Posted ${generatedSpecs.length} Alt-Chain builder entries into chainwide effects. "${snapshot.title}" was created first.`
+            : `Removed previously generated Alt-Chain builder entries because no named picks are recorded now. "${snapshot.title}" was created first.`,
       });
 
       if (returnToRules) {
@@ -1021,6 +1057,18 @@ export function AltChainBuilderPage() {
           </section>
         </>
       )}
+
+      <ConfirmActionDialog
+        open={confirmChosenStarterOpen}
+        tone="danger"
+        title="Replace the current Alt-Chain picks with Chosen?"
+        description="Switching to Chosen applies the starter package and replaces the current Alt-Chain selection progress."
+        confirmLabel="Apply Chosen Starter"
+        isBusy={isApplyingChosenStarter}
+        details={<p>A safety snapshot of the active branch will be created before the current selections are replaced.</p>}
+        onCancel={() => setConfirmChosenStarterOpen(false)}
+        onConfirm={() => void confirmChosenStarterPackage()}
+      />
     </div>
   );
 }

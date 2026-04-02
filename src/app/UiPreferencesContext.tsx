@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   SIMPLE_MODE_GUIDE_DEFAULT_KEY,
   createEmptySimpleModeGuideRegistryState,
@@ -21,16 +21,23 @@ interface StoredUiPreferences {
   simpleMode?: unknown;
   simpleModeGuideRegistry?: unknown;
   simpleModeWizardByChain?: unknown;
+  lastVisitedChainId?: unknown;
+  lastChainRouteByChain?: unknown;
 }
 
 interface UiPreferencesState {
   simpleMode: boolean;
   simpleModeGuideRegistry: SimpleModeGuideRegistryState;
+  lastVisitedChainId: string | null;
+  lastChainRouteByChain: Record<string, string>;
 }
 
 interface UiPreferencesValue {
   simpleMode: boolean;
   setSimpleMode: (next: boolean) => void;
+  lastVisitedChainId: string | null;
+  getLastChainRoute: (chainId: string, fallbackPath?: string) => string;
+  recordLastChainRoute: (chainId: string, nextPath: string) => void;
   getOverviewGuideState: (scopeKey: string) => SimpleModeOverviewGuideState;
   updateOverviewGuideState: (
     scopeKey: string,
@@ -58,6 +65,32 @@ const UiPreferencesContext = createContext<UiPreferencesValue | undefined>(undef
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createDefaultChainRoute(chainId: string) {
+  return `/chains/${chainId}/overview`;
+}
+
+function isStoredChainRoute(chainId: string, path: string) {
+  const chainPrefix = `/chains/${chainId}`;
+
+  return path === chainPrefix || path.startsWith(`${chainPrefix}/`) || path.startsWith(`${chainPrefix}?`);
+}
+
+function readLastChainRouteByChain(value: unknown) {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([chainId, path]) =>
+        typeof chainId === 'string'
+        && chainId.length > 0
+        && typeof path === 'string'
+        && isStoredChainRoute(chainId, path),
+    ),
+  ) as Record<string, string>;
 }
 
 function readPromptState(value: unknown): SimpleModeGuidePromptState {
@@ -198,6 +231,8 @@ function readStoredUiPreferences(): UiPreferencesState {
     return {
       simpleMode: false,
       simpleModeGuideRegistry: createEmptySimpleModeGuideRegistryState(),
+      lastVisitedChainId: null,
+      lastChainRouteByChain: {},
     };
   }
 
@@ -208,11 +243,18 @@ function readStoredUiPreferences(): UiPreferencesState {
       return {
         simpleMode: false,
         simpleModeGuideRegistry: createEmptySimpleModeGuideRegistryState(),
+        lastVisitedChainId: null,
+        lastChainRouteByChain: {},
       };
     }
 
     const parsed = JSON.parse(rawValue) as StoredUiPreferences;
     const simpleModeGuideRegistry = readSimpleModeGuideRegistry(parsed.simpleModeGuideRegistry);
+    const lastChainRouteByChain = readLastChainRouteByChain(parsed.lastChainRouteByChain);
+    const lastVisitedChainId =
+      typeof parsed.lastVisitedChainId === 'string' && parsed.lastVisitedChainId.length > 0
+        ? parsed.lastVisitedChainId
+        : null;
 
     if (isRecord(parsed.simpleModeWizardByChain)) {
       for (const [scopeKey, legacyState] of Object.entries(parsed.simpleModeWizardByChain)) {
@@ -230,11 +272,15 @@ function readStoredUiPreferences(): UiPreferencesState {
     return {
       simpleMode: typeof parsed.simpleMode === 'boolean' ? parsed.simpleMode : false,
       simpleModeGuideRegistry,
+      lastVisitedChainId,
+      lastChainRouteByChain,
     };
   } catch {
     return {
       simpleMode: false,
       simpleModeGuideRegistry: createEmptySimpleModeGuideRegistryState(),
+      lastVisitedChainId: null,
+      lastChainRouteByChain: {},
     };
   }
 }
@@ -254,12 +300,50 @@ export function UiPreferencesProvider(props: { children: ReactNode }) {
     }
   }, [preferences]);
 
-  function setSimpleMode(next: boolean) {
-    setPreferences((current) => ({
-      ...current,
-      simpleMode: next,
-    }));
-  }
+  const setSimpleMode = useCallback((next: boolean) => {
+    setPreferences((current) =>
+      current.simpleMode === next
+        ? current
+        : {
+            ...current,
+            simpleMode: next,
+          },
+    );
+  }, []);
+
+  const getLastChainRoute = useCallback((chainId: string, fallbackPath = createDefaultChainRoute(chainId)) => {
+    const storedPath = preferences.lastChainRouteByChain[chainId];
+
+    if (!storedPath || !isStoredChainRoute(chainId, storedPath)) {
+      return fallbackPath;
+    }
+
+    return storedPath;
+  }, [preferences.lastChainRouteByChain]);
+
+  const recordLastChainRoute = useCallback((chainId: string, nextPath: string) => {
+    if (!isStoredChainRoute(chainId, nextPath)) {
+      return;
+    }
+
+    setPreferences((current) => {
+      if (
+        current.lastVisitedChainId === chainId
+        && current.lastChainRouteByChain[chainId] === nextPath
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        lastVisitedChainId: chainId,
+        lastChainRouteByChain: {
+          ...current.lastChainRouteByChain,
+          [chainId]: nextPath,
+        },
+      };
+    });
+  }, []);
 
   function getOverviewGuideState(scopeKey: string) {
     return (
@@ -395,6 +479,9 @@ export function UiPreferencesProvider(props: { children: ReactNode }) {
     () => ({
       simpleMode: preferences.simpleMode,
       setSimpleMode,
+      lastVisitedChainId: preferences.lastVisitedChainId,
+      getLastChainRoute,
+      recordLastChainRoute,
       getOverviewGuideState,
       updateOverviewGuideState,
       getBranchGuideState,
@@ -404,7 +491,13 @@ export function UiPreferencesProvider(props: { children: ReactNode }) {
       updateChainGuideState,
       listChainGuideStates,
     }),
-    [preferences.simpleMode, preferences.simpleModeGuideRegistry],
+    [
+      getLastChainRoute,
+      preferences.lastVisitedChainId,
+      preferences.simpleMode,
+      preferences.simpleModeGuideRegistry,
+      recordLastChainRoute,
+    ],
   );
 
   return <UiPreferencesContext.Provider value={value}>{props.children}</UiPreferencesContext.Provider>;

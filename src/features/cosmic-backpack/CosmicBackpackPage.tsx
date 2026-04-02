@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { saveChainEntity } from '../workspace/records';
 import {
+  ConfirmActionDialog,
   AutosaveStatusIndicator,
   EmptyWorkspaceCard,
   PlainLanguageHint,
@@ -27,6 +28,7 @@ import {
   type CosmicBackpackGuideStepId,
   type SimpleModePageGuideState,
 } from '../workspace/simpleModeGuides';
+import { createSafetySnapshot } from '../workspace/safety';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { SearchHighlight } from '../search/SearchHighlight';
@@ -478,6 +480,8 @@ export function CosmicBackpackPage() {
   const { simpleMode, getChainGuideState, updateChainGuideState } = useUiPreferences();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const { message: simpleAffirmation, showAffirmation } = useSimpleModeAffirmation();
   const highlightQuery = searchParams.get('highlight') ?? '';
   const guideRequested = simpleMode && readGuideRequested(searchParams);
@@ -579,16 +583,40 @@ export function CosmicBackpackPage() {
   }
 
   function handleReset() {
-    if (!window.confirm('Reset the Cosmic Backpack plan for this branch? This clears the current selections and notes.')) {
+    setConfirmResetOpen(true);
+  }
+
+  async function confirmReset() {
+    if (!workspace.activeBranch) {
       return;
     }
 
-    updateState(() => createDefaultCosmicBackpackState());
-    setNotice({
-      tone: 'success',
-      message: 'Cosmic Backpack plan reset.',
-    });
-    showAffirmation('Cosmic Backpack reset. You can rebuild it a piece at a time whenever you want.');
+    setIsResetting(true);
+
+    try {
+      await saveChainEntity(draftChain);
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: 'Reset Cosmic Backpack Plan',
+        details: 'Created before clearing the current Backpack selections and notes.',
+      });
+
+      updateState(() => createDefaultCosmicBackpackState());
+      setNotice({
+        tone: 'success',
+        message: `Cosmic Backpack plan reset. "${snapshot.title}" was created first.`,
+      });
+      showAffirmation('Cosmic Backpack reset. You can rebuild it a piece at a time whenever you want.');
+      setConfirmResetOpen(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to reset the Cosmic Backpack plan.',
+      });
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   function handleGuideDismiss() {
@@ -921,6 +949,18 @@ export function CosmicBackpackPage() {
           }))
         }
         defaultOpen={guideRequested && currentGuideStepId === 'upgrades'}
+      />
+
+      <ConfirmActionDialog
+        open={confirmResetOpen}
+        tone="danger"
+        title="Reset the Cosmic Backpack plan?"
+        description="This clears the current selections, appearance notes, container form, and planning notes for this branch."
+        confirmLabel="Reset Backpack Plan"
+        isBusy={isResetting}
+        details={<p>A safety snapshot of the current branch will be created before anything is cleared.</p>}
+        onCancel={() => setConfirmResetOpen(false)}
+        onConfirm={() => void confirmReset()}
       />
     </div>
   );

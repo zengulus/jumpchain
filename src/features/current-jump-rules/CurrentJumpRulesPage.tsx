@@ -27,6 +27,7 @@ import {
   AdvancedJsonDetails,
   AssistiveHint,
   AutosaveStatusIndicator,
+  ConfirmActionDialog,
   EmptyWorkspaceCard,
   JsonEditorField,
   PlainLanguageHint,
@@ -35,6 +36,7 @@ import {
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
+import { createSafetySnapshot } from '../workspace/safety';
 import { mergeAutosaveStatuses, useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
@@ -82,6 +84,8 @@ export function CurrentJumpRulesPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(builtInRulesModulePresets[0]?.id ?? 'manual-blank');
+  const [confirmPresetOpen, setConfirmPresetOpen] = useState(false);
+  const [isApplyingPreset, setIsApplyingPreset] = useState(false);
   const effectiveState = getEffectiveCurrentJumpState(workspace);
   const currentJump = effectiveState.currentJump;
   const rulesProfile = effectiveState.branchRulesProfile;
@@ -211,7 +215,46 @@ export function CurrentJumpRulesPage() {
       return;
     }
 
-    updateRulesProfileSettings(applyRulesModulePreset(draftRulesSettings, selectedPreset));
+    setConfirmPresetOpen(true);
+  }
+
+  async function confirmApplyPreset() {
+    if (!selectedPreset || !workspace.activeBranch) {
+      return;
+    }
+
+    setIsApplyingPreset(true);
+
+    try {
+      if (draftRulesProfile) {
+        await saveChainRecord(db.houseRuleProfiles, draftRulesProfile);
+      }
+
+      if (draftRulesContext) {
+        await saveChainRecord(db.jumpRulesContexts, draftRulesContext);
+      }
+
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: `Apply Rules Preset: ${selectedPreset.name}`,
+        details: 'Created before bulk-updating the branch rule defaults from a built-in preset.',
+      });
+
+      updateRulesProfileSettings(applyRulesModulePreset(draftRulesSettings, selectedPreset));
+      setNotice({
+        tone: 'success',
+        message: `Applied "${selectedPreset.name}". "${snapshot.title}" was created first.`,
+      });
+      setConfirmPresetOpen(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to apply the selected preset.',
+      });
+    } finally {
+      setIsApplyingPreset(false);
+    }
   }
 
   async function handleCreateContext() {
@@ -734,6 +777,23 @@ export function CurrentJumpRulesPage() {
           </article>
         )}
       </section>
+
+      <ConfirmActionDialog
+        open={confirmPresetOpen}
+        title={selectedPreset ? `Apply "${selectedPreset.name}" to branch defaults?` : 'Apply preset to branch defaults?'}
+        description="This bulk-updates the branch rules profile with the selected built-in preset."
+        confirmLabel="Apply Preset"
+        isBusy={isApplyingPreset}
+        details={
+          <p>
+            {presetDiff.length > 0
+              ? `${presetDiff.length} fields will change, and a safety snapshot will be created first.`
+              : 'This preset already matches the current branch defaults, but a safety snapshot will still be created first.'}
+          </p>
+        }
+        onCancel={() => setConfirmPresetOpen(false)}
+        onConfirm={() => void confirmApplyPreset()}
+      />
     </div>
   );
 }

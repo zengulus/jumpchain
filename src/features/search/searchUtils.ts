@@ -33,6 +33,16 @@ export interface UniversalSearchResult {
   score: number;
 }
 
+export type UniversalSearchCategory =
+  | 'all'
+  | 'chains'
+  | 'characters'
+  | 'jumps'
+  | 'purchases'
+  | 'rules'
+  | 'notes'
+  | 'backups';
+
 const kindLabels: Record<UniversalSearchResultKind, string> = {
   chain: 'Chain',
   branch: 'Branch',
@@ -61,6 +71,30 @@ const kindPriority: Record<UniversalSearchResultKind, number> = {
   note: 21,
   snapshot: 18,
   'cosmic-backpack': 16,
+};
+
+export const universalSearchCategoryOptions: Array<{
+  id: UniversalSearchCategory;
+  label: string;
+}> = [
+  { id: 'all', label: 'All' },
+  { id: 'chains', label: 'Chains' },
+  { id: 'characters', label: 'Characters' },
+  { id: 'jumps', label: 'Jumps' },
+  { id: 'purchases', label: 'Purchases' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'backups', label: 'Backups' },
+];
+
+const universalSearchCategoryKinds: Record<Exclude<UniversalSearchCategory, 'all'>, UniversalSearchResultKind[]> = {
+  chains: ['chain'],
+  characters: ['jumper', 'companion'],
+  jumps: ['jump'],
+  purchases: ['participation', 'selection', 'alt-form'],
+  rules: ['effect', 'cosmic-backpack'],
+  notes: ['note'],
+  backups: ['branch', 'snapshot'],
 };
 
 function escapeRegExp(value: string) {
@@ -124,6 +158,12 @@ function cleanTagList(tags: string[]) {
 
 export function normalizeSearchQuery(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function readUniversalSearchCategory(value: string | null | undefined): UniversalSearchCategory {
+  return universalSearchCategoryOptions.some((option) => option.id === value)
+    ? (value as UniversalSearchCategory)
+    : 'all';
 }
 
 export function extractSearchTerms(query: string) {
@@ -359,6 +399,28 @@ export function queryUniversalSearchResults(input: {
     }))
     .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title))
     .slice(0, 120);
+}
+
+export function filterUniversalSearchResults(input: {
+  results: UniversalSearchResult[];
+  preferredChainId?: string;
+  currentChainOnly?: boolean;
+  category?: UniversalSearchCategory;
+}) {
+  const category = input.category ?? 'all';
+  const allowedKinds = category === 'all' ? null : universalSearchCategoryKinds[category];
+
+  return input.results.filter((result) => {
+    if (input.currentChainOnly && (!input.preferredChainId || result.chainId !== input.preferredChainId)) {
+      return false;
+    }
+
+    if (allowedKinds && !allowedKinds.includes(result.kind)) {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 interface SearchPurchaseSubtypeDefinition {

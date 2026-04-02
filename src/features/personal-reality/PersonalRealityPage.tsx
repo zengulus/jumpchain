@@ -26,14 +26,18 @@ import { SetupGuidePanels, personalRealitySetupGuide } from '../supplement-guide
 import {
   AssistiveHint,
   AutosaveStatusIndicator,
+  ConfirmActionDialog,
   EmptyWorkspaceCard,
   PlainLanguageHint,
   ReadinessPill,
   SimpleModeAffirmation,
+  StatusNoticeBanner,
+  type StatusNotice,
   TooltipFrame,
   WorkspaceModuleHeader,
   useSimpleModeAffirmation,
 } from '../workspace/shared';
+import { createSafetySnapshot } from '../workspace/safety';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { saveChainEntity } from '../workspace/records';
@@ -1232,6 +1236,9 @@ export function PersonalRealityPage() {
     pageNumber: number;
     state: PersonalRealityState;
   } | null>(null);
+  const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const pageNumber = getPageNumber(searchParams);
   const currentPage = personalRealityPages.find((entry) => entry.number === pageNumber) ?? personalRealityPages[0];
   const currentSection = getSectionForPage(currentPage.number);
@@ -1327,20 +1334,44 @@ export function PersonalRealityPage() {
   }
 
   function handleResetBuild() {
-    const confirmed = window.confirm(
-      'Reset the Personal Reality build for this branch? This clears the current worksheet, page notes, and global notes.',
-    );
+    setConfirmResetOpen(true);
+  }
 
-    if (!confirmed) {
+  async function confirmResetBuild() {
+    if (!workspace.activeBranch) {
       return;
     }
 
-    setResetUndoState({
-      pageNumber: currentPage.number,
-      state,
-    });
-    updateState(() => createDefaultPersonalRealityState(), { preserveResetUndo: true });
-    navigateToPage(2);
+    setIsResetting(true);
+
+    try {
+      await saveChainEntity(draftChain);
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: 'Reset Personal Reality Build',
+        details: 'Created before clearing the current Personal Reality worksheet and notes.',
+      });
+
+      setResetUndoState({
+        pageNumber: currentPage.number,
+        state,
+      });
+      updateState(() => createDefaultPersonalRealityState(), { preserveResetUndo: true });
+      navigateToPage(2);
+      setNotice({
+        tone: 'success',
+        message: `Personal Reality reset. "${snapshot.title}" was created first.`,
+      });
+      setConfirmResetOpen(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to reset the Personal Reality build.',
+      });
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   function handleUndoReset() {
@@ -1376,6 +1407,8 @@ export function PersonalRealityPage() {
           </>
         }
       />
+
+      <StatusNoticeBanner notice={notice} />
 
       {simpleMode ? (
         <details className="details-panel" open={hasPersonalRealityStarted}>
@@ -1878,6 +1911,18 @@ export function PersonalRealityPage() {
           ) : null}
         </aside>
       </section>
+
+      <ConfirmActionDialog
+        open={confirmResetOpen}
+        tone="danger"
+        title="Reset the Personal Reality build?"
+        description="This clears the current worksheet, page notes, and global notes for this branch."
+        confirmLabel="Reset Build"
+        isBusy={isResetting}
+        details={<p>A safety snapshot of the active branch will be created before the current Personal Reality build is cleared.</p>}
+        onCancel={() => setConfirmResetOpen(false)}
+        onConfirm={() => void confirmResetBuild()}
+      />
     </div>
   );
 }

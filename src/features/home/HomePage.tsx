@@ -5,7 +5,7 @@ import { detectImportSource } from '../../domain/import/sourceDetection';
 import { createBlankChain, deleteChain, exportNativeSave, importNativeSave, listChainOverviews, type ChainOverview } from '../../db/persistence';
 import { downloadJson } from '../../utils/download';
 import { readJsonFile } from '../../utils/file';
-import { ReadinessPill } from '../workspace/shared';
+import { ConfirmActionDialog, ReadinessPill } from '../workspace/shared';
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString();
@@ -13,6 +13,10 @@ function formatTimestamp(value: string) {
 
 function toFileSlug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function getDefaultChainPath(chainId: string) {
+  return `/chains/${chainId}/overview`;
 }
 
 function getSimpleChainStatus(chain: ChainOverview) {
@@ -40,19 +44,24 @@ function getSimpleChainStatus(chain: ChainOverview) {
 }
 
 export function HomePage() {
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, lastVisitedChainId, getLastChainRoute } = useUiPreferences();
   const [chains, setChains] = useState<ChainOverview[]>([]);
   const [draftTitle, setDraftTitle] = useState('Untitled Chain');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [busyChainId, setBusyChainId] = useState<string | null>(null);
+  const [pendingDeleteChain, setPendingDeleteChain] = useState<ChainOverview | null>(null);
   const draftTitleInputRef = useRef<HTMLInputElement | null>(null);
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
   const totalJumpers = chains.reduce((total, chain) => total + chain.jumperCount, 0);
   const totalJumps = chains.reduce((total, chain) => total + chain.jumpCount, 0);
   const importedChainCount = chains.filter((chain) => chain.importReportCount > 0).length;
   const latestChain = chains[0] ?? null;
+  const lastVisitedChain = lastVisitedChainId ? chains.find((chain) => chain.chainId === lastVisitedChainId) ?? null : null;
+  const resumeChain = lastVisitedChain ?? latestChain;
+  const resumePath = resumeChain ? getLastChainRoute(resumeChain.chainId, getDefaultChainPath(resumeChain.chainId)) : null;
+  const resumeLabel = lastVisitedChain ? 'Resume Last Workspace' : 'Resume Latest Chain';
 
   async function refreshChains() {
     const nextChains = await listChainOverviews();
@@ -92,26 +101,27 @@ export function HomePage() {
     }
   }
 
-  async function handleDeleteChain(chain: ChainOverview) {
-    const confirmed = window.confirm(
-      `Delete "${chain.title}" from IndexedDB? This removes the chain, its branches, snapshots, notes, and imported data.`,
-    );
+  function handleDeleteChain(chain: ChainOverview) {
+    setPendingDeleteChain(chain);
+  }
 
-    if (!confirmed) {
+  async function confirmDeleteChain() {
+    if (!pendingDeleteChain) {
       return;
     }
 
-    setBusyChainId(chain.chainId);
+    setBusyChainId(pendingDeleteChain.chainId);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
-      await deleteChain(chain.chainId);
-      setStatusMessage(`Deleted "${chain.title}" and all chain-owned records from IndexedDB.`);
+      await deleteChain(pendingDeleteChain.chainId);
+      setStatusMessage(`Deleted "${pendingDeleteChain.title}" and all chain-owned records from IndexedDB.`);
       await refreshChains();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to delete chain.');
     } finally {
+      setPendingDeleteChain(null);
       setBusyChainId(null);
     }
   }
@@ -163,14 +173,19 @@ export function HomePage() {
                   <button className="button" type="button" onClick={() => draftTitleInputRef.current?.focus()} disabled={isBusy}>
                     Create Chain
                   </button>
-                  {latestChain ? (
-                    <Link className="button button--secondary" to={`/chains/${latestChain.chainId}/overview`}>
-                      Resume Latest Chain
+                  {resumePath ? (
+                    <Link className="button button--secondary" to={resumePath}>
+                      {resumeLabel}
                     </Link>
                   ) : null}
                 </>
               ) : (
                 <>
+                  {resumePath ? (
+                    <Link className="button" to={resumePath}>
+                      {resumeLabel}
+                    </Link>
+                  ) : null}
                   <button
                     className="button button--secondary"
                     type="button"
@@ -194,8 +209,8 @@ export function HomePage() {
                   Stored chains
                 </div>
                 <div className="metric">
-                  <strong>{latestChain ? latestChain.title : 'No chain yet'}</strong>
-                  Latest chain
+                  <strong>{resumeChain ? resumeChain.title : 'No chain yet'}</strong>
+                  {lastVisitedChain ? 'Last workspace' : 'Latest chain'}
                 </div>
               </>
             ) : (
@@ -296,6 +311,9 @@ export function HomePage() {
           <div className="entity-grid entity-grid--two">
             {chains.map((chain) => {
               const simpleChainStatus = getSimpleChainStatus(chain);
+              const defaultChainPath = getDefaultChainPath(chain.chainId);
+              const resumeChainPath = getLastChainRoute(chain.chainId, defaultChainPath);
+              const hasResumeContext = resumeChainPath !== defaultChainPath;
 
               return (
                 <article className="entity-card" key={chain.chainId}>
@@ -333,8 +351,8 @@ export function HomePage() {
                   )}
                   {!simpleMode ? <p>Last updated {formatTimestamp(chain.updatedAt)}</p> : null}
                   <div className="entity-actions">
-                    <Link className="button" to={`/chains/${chain.chainId}/overview`}>
-                      {simpleMode ? 'Open Chain' : 'Open Workspace'}
+                    <Link className="button" to={resumeChainPath}>
+                      {simpleMode ? (hasResumeContext ? 'Resume Chain' : 'Open Chain') : hasResumeContext ? 'Resume Workspace' : 'Open Workspace'}
                     </Link>
                     {simpleMode ? (
                       <details className="details-panel">
@@ -354,7 +372,7 @@ export function HomePage() {
                           <button
                             className="button button--danger"
                             type="button"
-                            onClick={() => void handleDeleteChain(chain)}
+                            onClick={() => handleDeleteChain(chain)}
                             disabled={busyChainId === chain.chainId}
                           >
                             {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
@@ -374,7 +392,7 @@ export function HomePage() {
                         <button
                           className="button button--danger"
                           type="button"
-                          onClick={() => void handleDeleteChain(chain)}
+                          onClick={() => handleDeleteChain(chain)}
                           disabled={busyChainId === chain.chainId}
                         >
                           {busyChainId === chain.chainId ? 'Deleting...' : 'Delete Chain'}
@@ -388,6 +406,18 @@ export function HomePage() {
           </div>
         )}
       </section>
+
+      <ConfirmActionDialog
+        open={pendingDeleteChain !== null}
+        tone="danger"
+        title={pendingDeleteChain ? `Delete "${pendingDeleteChain.title}"?` : 'Delete chain?'}
+        description="This removes the chain and its branches, snapshots, notes, and imported data from IndexedDB."
+        confirmLabel="Delete Chain"
+        isBusy={pendingDeleteChain ? busyChainId === pendingDeleteChain.chainId : false}
+        details={<p>This action cannot be undone from inside the app after the chain is removed.</p>}
+        onCancel={() => setPendingDeleteChain(null)}
+        onConfirm={() => void confirmDeleteChain()}
+      />
     </div>
   );
 }

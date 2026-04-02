@@ -1,23 +1,68 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { SearchHighlight } from './SearchHighlight';
 import { useUniversalSearchData } from './UniversalSearchContext';
-import { queryUniversalSearchResults, readRouteSearchValue, withSearchParams } from './searchUtils';
+import {
+  extractSearchTerms,
+  filterUniversalSearchResults,
+  queryUniversalSearchResults,
+  readRouteSearchValue,
+  readUniversalSearchCategory,
+  universalSearchCategoryOptions,
+  withSearchParams,
+  type UniversalSearchCategory,
+} from './searchUtils';
+
+interface SearchCommandItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  to: string;
+}
+
+interface SearchPaletteItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  snippet?: string;
+  to: string;
+  kindLabel: string;
+  isCommand: boolean;
+}
+
+function matchesTerms(query: string, ...values: string[]) {
+  const terms = extractSearchTerms(query);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const haystack = values.join(' ').toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
 
 export function UniversalSearchBar() {
-  const { simpleMode } = useUiPreferences();
+  const { simpleMode, lastVisitedChainId, getLastChainRoute } = useUiPreferences();
   const location = useLocation();
   const navigate = useNavigate();
   const { data: searchData, ensureLoaded, isLoading } = useUniversalSearchData();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [draftQuery, setDraftQuery] = useState(() => readRouteSearchValue(location.search));
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [activeCategory, setActiveCategory] = useState<UniversalSearchCategory>(() =>
+    readUniversalSearchCategory(new URLSearchParams(location.search).get('kind')),
+  );
+  const [currentChainOnly, setCurrentChainOnly] = useState(
+    () => new URLSearchParams(location.search).get('scope') === 'current-chain',
+  );
   const currentChainId = matchPath('/chains/:chainId/*', location.pathname)?.params.chainId;
   const preferredChainId = currentChainId ?? new URLSearchParams(location.search).get('chain') ?? undefined;
   const trimmedQuery = draftQuery.trim();
   const deferredTrimmedQuery = useDeferredValue(trimmedQuery);
-  const results = useMemo(
+  const rawResults = useMemo(
     () =>
       searchData
         ? queryUniversalSearchResults({
@@ -28,21 +73,135 @@ export function UniversalSearchBar() {
         : [],
     [deferredTrimmedQuery, preferredChainId, searchData],
   );
-  const previewResults = results.slice(0, 12);
+  const filteredResults = useMemo(
+    () =>
+      filterUniversalSearchResults({
+        results: rawResults,
+        preferredChainId,
+        currentChainOnly,
+        category: activeCategory,
+      }),
+    [activeCategory, currentChainOnly, preferredChainId, rawResults],
+  );
+  const previewResults = filteredResults.slice(0, 8);
   const searchPagePath = withSearchParams('/search', {
     q: trimmedQuery,
     chain: preferredChainId,
+    scope: currentChainOnly ? 'current-chain' : undefined,
+    kind: activeCategory === 'all' ? undefined : activeCategory,
   });
-  const searchLabel = simpleMode ? 'Search existing records' : 'Search everything';
+  const searchLabel = simpleMode ? 'Search existing records' : 'Search and commands';
   const searchPlaceholder = simpleMode
     ? 'Find a chain, jumper, or jump you already made...'
-    : 'Search chains, jumpers, jumps, effects, notes...';
-  const searchPanelTitle = simpleMode ? 'Search results' : 'Universal Search';
+    : 'Search chains, jumpers, jumps, effects, notes, or press Ctrl/Cmd+K';
+  const searchPanelTitle = simpleMode ? 'Search results' : 'Search and command palette';
   const submitLabel = simpleMode ? 'Find' : 'Search';
+  const commandActions = useMemo<SearchCommandItem[]>(() => {
+    const actions: SearchCommandItem[] = [
+      {
+        id: 'command-home',
+        title: 'Open Home',
+        subtitle: 'Chains, creation, imports, and exports.',
+        to: '/',
+      },
+      {
+        id: 'command-import',
+        title: 'Open Import Review',
+        subtitle: 'Review external JSON and stage imports safely.',
+        to: '/import',
+      },
+    ];
+
+    if (trimmedQuery.length > 0) {
+      actions.unshift({
+        id: 'command-search-page',
+        title: `View all results for "${trimmedQuery}"`,
+        subtitle: 'Open the full results page with the current filters applied.',
+        to: searchPagePath,
+      });
+    }
+
+    if (lastVisitedChainId) {
+      actions.unshift({
+        id: 'command-resume-last',
+        title: 'Resume Last Workspace',
+        subtitle: 'Jump back to the last chain page you worked in.',
+        to: getLastChainRoute(lastVisitedChainId),
+      });
+    }
+
+    if (currentChainId) {
+      actions.push(
+        {
+          id: 'command-chain-overview',
+          title: 'Open Current Chain Overview',
+          subtitle: 'See setup progress and branch-wide orientation.',
+          to: `/chains/${currentChainId}/overview`,
+        },
+        {
+          id: 'command-chain-jumpers',
+          title: 'Open Current Chain Jumpers',
+          subtitle: 'Edit the character records in this chain.',
+          to: `/chains/${currentChainId}/jumpers`,
+        },
+        {
+          id: 'command-chain-jumps',
+          title: 'Open Current Chain Jumps',
+          subtitle: 'Go straight to jump planning and participation.',
+          to: `/chains/${currentChainId}/jumps`,
+        },
+        {
+          id: 'command-chain-notes',
+          title: 'Open Current Chain Notes',
+          subtitle: 'Review or add supporting rulings and notes.',
+          to: `/chains/${currentChainId}/notes`,
+        },
+        {
+          id: 'command-chain-backups',
+          title: 'Open Current Chain Backups',
+          subtitle: 'Export, branch, or restore with safety tools.',
+          to: `/chains/${currentChainId}/backups`,
+        },
+      );
+    }
+
+    return actions.filter((action) => matchesTerms(trimmedQuery, action.title, action.subtitle));
+  }, [currentChainId, getLastChainRoute, lastVisitedChainId, searchPagePath, trimmedQuery]);
+  const paletteItems = useMemo<SearchPaletteItem[]>(
+    () => [
+      ...commandActions.map((action) => ({
+        ...action,
+        kindLabel: 'Command',
+        isCommand: true,
+      })),
+      ...previewResults.map((result) => ({
+        id: result.id,
+        title: result.title,
+        subtitle: result.subtitle,
+        snippet: result.snippet,
+        to: result.to,
+        kindLabel: result.kindLabel,
+        isCommand: false,
+      })),
+    ],
+    [commandActions, previewResults],
+  );
 
   useEffect(() => {
     setDraftQuery(readRouteSearchValue(location.search));
+    setActiveCategory(readUniversalSearchCategory(new URLSearchParams(location.search).get('kind')));
+    setCurrentChainOnly(new URLSearchParams(location.search).get('scope') === 'current-chain');
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!preferredChainId && currentChainOnly) {
+      setCurrentChainOnly(false);
+    }
+  }, [currentChainOnly, preferredChainId]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [activeCategory, currentChainOnly, draftQuery, isOpen, paletteItems.length]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -58,6 +217,28 @@ export function UniversalSearchBar() {
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    function handleGlobalKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        ensureLoaded();
+        setIsOpen(true);
+        window.setTimeout(() => {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }, 0);
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [ensureLoaded]);
+
+  function handleSelectPath(to: string) {
+    navigate(to);
+    setIsOpen(false);
+  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,9 +256,13 @@ export function UniversalSearchBar() {
     <div className={`page-shell__search${simpleMode ? ' is-simple' : ''}`} ref={containerRef}>
       <form className="page-shell__search-form" onSubmit={handleSubmit}>
         <label className="page-shell__search-field" htmlFor="site-search">
-          <span className="page-shell__search-label">{searchLabel}</span>
+          <div className="page-shell__search-heading">
+            <span className="page-shell__search-label">{searchLabel}</span>
+            <span className="page-shell__search-shortcut">Ctrl/Cmd+K</span>
+          </div>
           <input
             id="site-search"
+            ref={inputRef}
             type="search"
             value={draftQuery}
             placeholder={searchPlaceholder}
@@ -93,6 +278,28 @@ export function UniversalSearchBar() {
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 setIsOpen(false);
+                return;
+              }
+
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                ensureLoaded();
+                setIsOpen(true);
+                setSelectedIndex((currentValue) => Math.min(currentValue + 1, Math.max(0, paletteItems.length - 1)));
+                return;
+              }
+
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                ensureLoaded();
+                setIsOpen(true);
+                setSelectedIndex((currentValue) => Math.max(0, currentValue - 1));
+                return;
+              }
+
+              if (event.key === 'Enter' && isOpen && paletteItems.length > 0) {
+                event.preventDefault();
+                handleSelectPath(paletteItems[Math.min(selectedIndex, paletteItems.length - 1)].to);
               }
             }}
           />
@@ -102,58 +309,129 @@ export function UniversalSearchBar() {
         </button>
       </form>
 
-      {isOpen && trimmedQuery.length > 0 ? (
+      {isOpen ? (
         <div className="page-shell__search-panel">
           <div className="page-shell__search-panel-header">
             <strong>{searchPanelTitle}</strong>
-            <span>{searchData ? `${results.length} matches` : isLoading ? 'Building index...' : 'Type to search'}</span>
+            <span>
+              {searchData
+                ? `${commandActions.length + filteredResults.length} items`
+                : isLoading
+                  ? 'Building index...'
+                  : 'Type or browse commands'}
+            </span>
           </div>
 
-          {trimmedQuery.length < 2 ? (
+          <div className="search-filter-row">
+            {preferredChainId ? (
+              <button
+                className={`search-filter-chip${currentChainOnly ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setCurrentChainOnly(!currentChainOnly)}
+              >
+                Current Chain
+              </button>
+            ) : null}
+            {universalSearchCategoryOptions.map((option) => (
+              <button
+                className={`search-filter-chip${activeCategory === option.id ? ' is-active' : ''}`}
+                key={option.id}
+                type="button"
+                onClick={() => setActiveCategory(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {commandActions.length > 0 ? (
+            <section className="page-shell__search-section">
+              <div className="page-shell__search-section-heading">
+                <strong>Commands</strong>
+                <span>{commandActions.length}</span>
+              </div>
+              <div className="page-shell__search-results">
+                {commandActions.map((action, index) => (
+                  <button
+                    className={`page-shell__search-result page-shell__search-result--command${selectedIndex === index ? ' is-selected' : ''}`}
+                    key={action.id}
+                    type="button"
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={() => handleSelectPath(action.to)}
+                  >
+                    <div className="page-shell__search-result-topline">
+                      <strong>
+                        <SearchHighlight text={action.title} query={trimmedQuery} />
+                      </strong>
+                      <span className="pill pill--soft">Command</span>
+                    </div>
+                    <span className="page-shell__search-result-subtitle">
+                      <SearchHighlight text={action.subtitle} query={trimmedQuery} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {trimmedQuery.length === 0 ? (
+            <div className="page-shell__search-empty">Start typing to search stored data, or use the commands above.</div>
+          ) : trimmedQuery.length < 2 ? (
             <div className="page-shell__search-empty">
               {simpleMode
-                ? 'Type at least two characters to search through things you have already stored here.'
-                : 'Type at least two characters to search across stored data and module pages.'}
+                ? 'Type at least two characters to search stored data. Commands are ready immediately.'
+                : 'Type at least two characters to search stored data. Commands are ready immediately.'}
             </div>
           ) : !searchData ? (
             <div className="page-shell__search-empty">Loading the current search index from IndexedDB...</div>
           ) : previewResults.length === 0 ? (
-            <div className="page-shell__search-empty">No matches yet for that query.</div>
+            <div className="page-shell__search-empty">No stored records match that query with the current filters.</div>
           ) : (
-            <>
+            <section className="page-shell__search-section">
+              <div className="page-shell__search-section-heading">
+                <strong>Results</strong>
+                <span>{filteredResults.length}</span>
+              </div>
               <div className="page-shell__search-results">
-                {previewResults.map((result) => (
-                  <Link
-                    className="page-shell__search-result"
-                    key={result.id}
-                    to={result.to}
-                    onClick={() => setIsOpen(false)}
-                  >
-                    <div className="page-shell__search-result-topline">
-                      <strong>
-                        <SearchHighlight text={result.title} query={trimmedQuery} />
-                      </strong>
-                      <span className="pill pill--soft">{result.kindLabel}</span>
-                    </div>
-                    <span className="page-shell__search-result-subtitle">
-                      <SearchHighlight text={result.subtitle} query={trimmedQuery} />
-                    </span>
-                    {result.snippet ? (
-                      <p>
-                        <SearchHighlight text={result.snippet} query={trimmedQuery} />
-                      </p>
-                    ) : null}
-                  </Link>
-                ))}
-              </div>
+                {previewResults.map((result, index) => {
+                  const paletteIndex = commandActions.length + index;
 
-              <div className="page-shell__search-panel-footer">
-                <Link className="button button--secondary" to={searchPagePath} onClick={() => setIsOpen(false)}>
-                  View All Results
-                </Link>
+                  return (
+                    <button
+                      className={`page-shell__search-result${selectedIndex === paletteIndex ? ' is-selected' : ''}`}
+                      key={result.id}
+                      type="button"
+                      onMouseEnter={() => setSelectedIndex(paletteIndex)}
+                      onClick={() => handleSelectPath(result.to)}
+                    >
+                      <div className="page-shell__search-result-topline">
+                        <strong>
+                          <SearchHighlight text={result.title} query={trimmedQuery} />
+                        </strong>
+                        <span className="pill pill--soft">{result.kindLabel}</span>
+                      </div>
+                      <span className="page-shell__search-result-subtitle">
+                        <SearchHighlight text={result.subtitle} query={trimmedQuery} />
+                      </span>
+                      {result.snippet ? (
+                        <p>
+                          <SearchHighlight text={result.snippet} query={trimmedQuery} />
+                        </p>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
-            </>
+            </section>
           )}
+
+          {trimmedQuery.length > 0 ? (
+            <div className="page-shell__search-panel-footer">
+              <button className="button button--secondary" type="button" onClick={() => handleSelectPath(searchPagePath)}>
+                View All Results
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

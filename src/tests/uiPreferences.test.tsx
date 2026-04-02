@@ -25,17 +25,29 @@ beforeEach(() => {
 });
 
 function PreferenceProbe() {
-  const { simpleMode, setSimpleMode, getOverviewGuideState } = useUiPreferences();
+  const {
+    simpleMode,
+    setSimpleMode,
+    lastVisitedChainId,
+    getLastChainRoute,
+    recordLastChainRoute,
+    getOverviewGuideState,
+  } = useUiPreferences();
   const overviewGuideState = getOverviewGuideState('chain-1:branch-1');
 
   return (
     <div>
       <span data-testid="mode">{simpleMode ? 'simple' : 'advanced'}</span>
+      <span data-testid="last-chain">{lastVisitedChainId ?? 'none'}</span>
+      <span data-testid="last-route">{getLastChainRoute('chain-1')}</span>
       <span data-testid="overview-step">{overviewGuideState.currentStepId ?? 'none'}</span>
       <span data-testid="overview-prompt">{overviewGuideState.promptState}</span>
       <span data-testid="overview-iconic">{overviewGuideState.iconicDecision}</span>
       <button type="button" onClick={() => setSimpleMode(!simpleMode)}>
         Toggle mode
+      </button>
+      <button type="button" onClick={() => recordLastChainRoute('chain-1', '/chains/chain-1/jumps/jump-2?participant=jumper-1')}>
+        Remember route
       </button>
     </div>
   );
@@ -73,6 +85,8 @@ describe('UI preferences', () => {
         branch: {},
         chain: {},
       },
+      lastVisitedChainId: null,
+      lastChainRouteByChain: {},
     });
 
     firstRender.unmount();
@@ -126,6 +140,36 @@ describe('UI preferences', () => {
     );
 
     expect(screen.getByTestId('mode').textContent).toBe('advanced');
+  });
+
+  it('persists and restores the last visited chain route', () => {
+    const firstRender = render(
+      <UiPreferencesProvider>
+        <PreferenceProbe />
+      </UiPreferencesProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remember route' }));
+
+    expect(screen.getByTestId('last-chain').textContent).toBe('chain-1');
+    expect(screen.getByTestId('last-route').textContent).toBe('/chains/chain-1/jumps/jump-2?participant=jumper-1');
+    expect(JSON.parse(window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) ?? '{}')).toMatchObject({
+      lastVisitedChainId: 'chain-1',
+      lastChainRouteByChain: {
+        'chain-1': '/chains/chain-1/jumps/jump-2?participant=jumper-1',
+      },
+    });
+
+    firstRender.unmount();
+
+    render(
+      <UiPreferencesProvider>
+        <PreferenceProbe />
+      </UiPreferencesProvider>,
+    );
+
+    expect(screen.getByTestId('last-chain').textContent).toBe('chain-1');
+    expect(screen.getByTestId('last-route').textContent).toBe('/chains/chain-1/jumps/jump-2?participant=jumper-1');
   });
 });
 

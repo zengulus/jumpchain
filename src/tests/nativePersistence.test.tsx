@@ -1,7 +1,7 @@
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
-import { UiPreferencesProvider } from '../app/UiPreferencesContext';
+import { UI_PREFERENCES_STORAGE_KEY, UiPreferencesProvider } from '../app/UiPreferencesContext';
 import { HomePage } from '../features/home/HomePage';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
@@ -560,5 +560,43 @@ describe('native persistence and round-trip safety', () => {
     });
 
     view.unmount();
+  });
+
+  it('uses the remembered chain route for home page resume links', async () => {
+    await resetDatabase();
+    const bundle = await createBlankChain('Resume Target');
+
+    window.localStorage.setItem(
+      UI_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        simpleMode: true,
+        simpleModeGuideRegistry: {
+          branch: {},
+          chain: {},
+        },
+        lastVisitedChainId: bundle.chain.id,
+        lastChainRouteByChain: {
+          [bundle.chain.id]: `/chains/${bundle.chain.id}/jumps/custom-jump?participant=jumper-1`,
+        },
+      }),
+    );
+
+    render(
+      <UiPreferencesProvider>
+        <MemoryRouter>
+          <HomePage />
+        </MemoryRouter>
+      </UiPreferencesProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Resume Last Workspace' }).getAttribute('href')).toBe(
+        `/chains/${bundle.chain.id}/jumps/custom-jump?participant=jumper-1`,
+      );
+    });
+
+    expect(screen.getByRole('link', { name: 'Resume Chain' }).getAttribute('href')).toBe(
+      `/chains/${bundle.chain.id}/jumps/custom-jump?participant=jumper-1`,
+    );
   });
 });

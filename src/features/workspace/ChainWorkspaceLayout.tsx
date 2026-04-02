@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Navigate, NavLink, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, matchPath, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { usePageShellNav } from '../../components/PageShell';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
@@ -8,7 +8,7 @@ import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import { getChainBundle } from '../../db/persistence';
 import { readGuideRequested } from './simpleModeGuides';
-import { AssistiveHint, ReadinessPill, TooltipFrame, type ReadinessTone } from './shared';
+import { AssistiveHint, ReadinessPill, TooltipFrame, WorkspaceFocusBar, type ReadinessTone } from './shared';
 
 export interface ChainWorkspaceOutletContext {
   chainId: string;
@@ -63,6 +63,23 @@ interface WorkspaceQuickAction {
 
 const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<ReactNode | null>> | null>(null);
 type WorkspacePresentationMode = 'overview' | 'editor' | 'deep-task';
+
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  overview: 'Overview',
+  jumpers: 'Jumpers',
+  companions: 'Companions',
+  jumps: 'Jumps',
+  participation: 'Participation',
+  effects: 'Effects',
+  'alt-chain-builder': 'Alt-Chain Builder',
+  'chainwide-rules': 'Chainwide Rules',
+  'current-jump-rules': 'Current Jump Rules',
+  bodymod: 'Iconic',
+  'cosmic-backpack': 'Cosmic Backpack',
+  timeline: 'Timeline',
+  notes: 'Notes',
+  backups: 'Backups',
+};
 
 interface WorkspacePresentationPreferences {
   mode: WorkspacePresentationMode;
@@ -312,6 +329,26 @@ export function ChainWorkspaceLayout() {
   const coreSetupReady = hasJumpers && hasJumps;
   const showGuidedSetup = simpleMode && !coreSetupReady;
   const guidedSetupActive = simpleMode && readGuideRequested(searchParams);
+  const focusedJumpId =
+    matchPath('/chains/:chainId/jumps/:jumpId', location.pathname)?.params.jumpId
+    ?? matchPath('/chains/:chainId/participation/:jumpId', location.pathname)?.params.jumpId
+    ?? null;
+  const focusedJump = focusedJumpId
+    ? workspace.jumps.find((jump) => jump.id === focusedJumpId) ?? null
+    : currentJump;
+  const selectedCompanion =
+    workspace.companions.find((companion) => companion.id === searchParams.get('companion')) ??
+    null;
+  const focusedParticipantId =
+    searchParams.get('participant')
+    ?? (activeModuleKey === 'jumps' ? searchParams.get('jumper') : null);
+  const focusedParticipantJumper = focusedParticipantId
+    ? workspace.jumpers.find((jumper) => jumper.id === focusedParticipantId) ?? null
+    : null;
+  const focusedParticipantCompanion = focusedParticipantId
+    ? workspace.companions.find((companion) => companion.id === focusedParticipantId) ?? null
+    : null;
+  const focusedParticipant = focusedParticipantJumper ?? focusedParticipantCompanion;
 
   function buildSearch(nextJumperId: string) {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -493,6 +530,18 @@ export function ChainWorkspaceLayout() {
         ? 'Overview is already showing the next setup step.'
         : `Next core step: ${nextCoreAction.title}.`
       : `Quickest route back in: ${primaryQuickAction.title}.`;
+  const focusBarMeta = [
+    activeBranch ? `Branch: ${activeBranch.title}` : '',
+    focusedJump ? `Jump: ${focusedJump.title}` : currentJump ? `Current jump: ${currentJump.title}` : '',
+    activeModuleKey === 'jumpers' || activeModuleKey === 'bodymod'
+      ? selectedJumper ? `Jumper: ${selectedJumper.name}` : ''
+      : activeModuleKey === 'companions'
+        ? selectedCompanion ? `Companion: ${selectedCompanion.name}` : ''
+        : focusedParticipant
+          ? `${focusedParticipantCompanion ? 'Companion' : focusedParticipantJumper ? 'Jumper' : 'Participant'}: ${focusedParticipant.name}`
+          : '',
+  ].filter(Boolean);
+  const showFocusBar = presentation.mode === 'deep-task' || headerAttachment !== null;
 
   const moduleGroups: WorkspaceModuleGroup[] = [
     {
@@ -777,7 +826,17 @@ export function ChainWorkspaceLayout() {
             </aside>
 
             <div className="workspace-main">
-              {headerAttachment ? <section className="workspace-header-attachment">{headerAttachment}</section> : null}
+              {showFocusBar ? (
+                <section className="workspace-header-attachment">
+                  <WorkspaceFocusBar
+                    eyebrow={presentation.mode === 'deep-task' ? 'Deep work' : 'Workspace context'}
+                    title={presentation.mode === 'deep-task' ? focusedJump?.title ?? MODULE_LABELS[activeModuleKey] : MODULE_LABELS[activeModuleKey]}
+                    subtitle={state.bundle.chain.title}
+                    meta={focusBarMeta}
+                    aside={headerAttachment}
+                  />
+                </section>
+              ) : null}
               <section className="workspace-content">
                 <Outlet context={outletContext as ChainWorkspaceOutletContext} />
               </section>

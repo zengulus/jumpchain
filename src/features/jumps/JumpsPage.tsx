@@ -23,7 +23,7 @@ import {
 } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-import { useWorkspacePresentation } from '../workspace/ChainWorkspaceLayout';
+import { useWorkspaceHeaderAttachment, useWorkspacePresentation } from '../workspace/ChainWorkspaceLayout';
 import {
   createBranchGuideScopeKey,
   createParticipationGuideKey,
@@ -202,8 +202,20 @@ export function JumpsPage() {
   const showJumpChooser = workspace.jumps.length > 1 || hasJumpSearch || !selectedJump;
   const showJumpChooserCount = workspace.jumps.length > 1 && hasJumpSearch;
   const showJumpSearch = !activeGuideVisible && (workspace.jumps.length > 1 || hasJumpSearch || !selectedJump);
+  const activeTabLabel = JUMP_WORKSPACE_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Basics';
+  const workspaceHeaderAttachment = useMemo(
+    () =>
+      selectedJump ? (
+        <>
+          <span className="pill pill--soft">{activeTabLabel}</span>
+          <AutosaveStatusIndicator status={jumpAutosave.status} />
+        </>
+      ) : null,
+    [activeTabLabel, jumpAutosave.status, selectedJump],
+  );
 
   useWorkspacePresentation(presentation);
+  useWorkspaceHeaderAttachment(workspaceHeaderAttachment);
 
   function getFirstIncompleteStage(reviewState: Partial<Record<JumpGuidedStage, true>>) {
     return JUMP_GUIDED_STAGES.find((stage) => !reviewState[stage.id])?.id ?? 'purchases';
@@ -912,7 +924,7 @@ export function JumpsPage() {
       />
 
       <StatusNoticeBanner notice={notice} />
-      <AutosaveStatusIndicator status={jumpAutosave.status} />
+      {selectedJump ? null : <AutosaveStatusIndicator status={jumpAutosave.status} />}
 
       {workspace.jumps.length === 0 ? (
         <EmptyWorkspaceCard
