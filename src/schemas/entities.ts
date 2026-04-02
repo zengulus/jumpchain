@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { iconicSelectionKinds } from '../domain/bodymod/types';
+import type { CompanionParticipation, JumperParticipation } from '../domain/jump/types';
 import {
   AccessModeSchema,
   BaseRecordSchema,
@@ -122,7 +123,32 @@ export const JumperParticipationSchema = ChainScopedRecordSchema.extend({
   supplementInvestments: z.record(z.string(), z.unknown()),
   drawbackOverrides: z.record(z.string(), z.unknown()),
   importSourceMetadata: JsonMapSchema,
-});
+}) satisfies z.ZodType<JumperParticipation>;
+
+export const CompanionParticipationSchema = ChainScopedRecordSchema.extend({
+  jumpId: IdentifierSchema,
+  companionId: IdentifierSchema,
+  status: ParticipationStatusSchema,
+  notes: z.string(),
+  purchases: z.array(z.unknown()),
+  drawbacks: z.array(z.unknown()),
+  retainedDrawbacks: z.array(z.unknown()),
+  origins: z.record(z.string(), z.unknown()),
+  budgets: z.record(z.string(), z.number()),
+  stipends: z.record(z.string(), z.record(z.string(), z.number())),
+  narratives: z.object({
+    accomplishments: z.string(),
+    challenges: z.string(),
+    goals: z.string(),
+  }),
+  altForms: z.array(z.unknown()),
+  bankDeposit: z.number(),
+  currencyExchanges: z.array(z.unknown()),
+  supplementPurchases: z.record(z.string(), z.unknown()),
+  supplementInvestments: z.record(z.string(), z.unknown()),
+  drawbackOverrides: z.record(z.string(), z.unknown()),
+  importSourceMetadata: JsonMapSchema,
+}) satisfies z.ZodType<CompanionParticipation>;
 
 export const EffectSchema = ChainScopedRecordSchema.merge(ScopedOwnershipSchema).extend({
   title: z.string().min(1),

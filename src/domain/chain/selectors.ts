@@ -5,7 +5,7 @@ import type { Chain } from './types';
 import type { Effect } from '../effects/types';
 import type { ImportReport } from '../import/types';
 import type { Companion, Jumper } from '../jumper/types';
-import type { Jump, JumperParticipation } from '../jump/types';
+import type { Jump, WorkspaceParticipation } from '../jump/types';
 import type { Note } from '../notes/types';
 import type { PresetProfile } from '../presets/types';
 import {
@@ -27,7 +27,7 @@ export interface BranchWorkspace {
   jumpers: Jumper[];
   companions: Companion[];
   jumps: Jump[];
-  participations: JumperParticipation[];
+  participations: WorkspaceParticipation[];
   effects: Effect[];
   bodymodProfiles: BodymodProfile[];
   jumpRulesContexts: JumpRulesContext[];
@@ -233,7 +233,7 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
   const jumpers: Jumper[] = [];
   const companions: Companion[] = [];
   const branchJumps: Jump[] = [];
-  const participations: JumperParticipation[] = [];
+  const participations: WorkspaceParticipation[] = [];
   const effects: Effect[] = [];
   const bodymodProfiles: BodymodProfile[] = [];
   const jumpRulesContexts: JumpRulesContext[] = [];
@@ -263,7 +263,21 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
 
   for (const participation of bundle.participations) {
     if (participation.branchId === branchId) {
-      participations.push(participation);
+      participations.push({
+        ...participation,
+        participantId: participation.jumperId,
+        participantKind: 'jumper',
+      });
+    }
+  }
+
+  for (const participation of bundle.companionParticipations) {
+    if (participation.branchId === branchId) {
+      participations.push({
+        ...participation,
+        participantId: participation.companionId,
+        participantKind: 'companion',
+      });
     }
   }
 
@@ -448,7 +462,10 @@ export function getActiveChainDrawbackBudgetContributions(workspace: BranchWorks
 
 export function getEffectiveParticipationBudgetState(
   workspace: BranchWorkspace,
-  participation: Pick<JumperParticipation, 'budgets' | 'importSourceMetadata' | 'drawbacks' | 'retainedDrawbacks' | 'jumperId'> | null,
+  participation: Pick<
+    WorkspaceParticipation,
+    'budgets' | 'drawbacks' | 'importSourceMetadata' | 'participantId' | 'participantKind' | 'retainedDrawbacks'
+  > | null,
 ): EffectiveParticipationBudgetState {
   if (participation === null) {
     const cachedState = nullParticipationBudgetStateCache.get(workspace);
@@ -474,10 +491,7 @@ export function getEffectiveParticipationBudgetState(
     participation && Object.keys(importedBaseBudgets).length === 0 && Object.keys(participation.budgets).length === 0
       ? { '0': 1000 }
       : {};
-  const isCompanionParticipation =
-    participation !== null &&
-    workspace.companions.some((companion) => companion.id === participation.jumperId) &&
-    !workspace.jumpers.some((jumper) => jumper.id === participation.jumperId);
+  const isCompanionParticipation = participation?.participantKind === 'companion';
   const inheritedBaseBudgets = isCompanionParticipation
     ? applyCompanionBudgetShare(
         {

@@ -3,8 +3,7 @@ import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
-import { db } from '../../db/database';
-import { saveChainRecord } from '../workspace/records';
+import { saveParticipationRecord } from '../workspace/records';
 import {
   AssistiveHint,
   AutosaveStatusIndicator,
@@ -2571,7 +2570,7 @@ export function ParticipationEditorCard(props: {
 }) {
   const participationAutosave = useAutosaveRecord(props.participation, {
     onSave: async (nextValue) => {
-      await saveChainRecord(db.participations, nextValue);
+      await saveParticipationRecord(nextValue);
     },
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save participation changes.'),
   });
@@ -2599,13 +2598,15 @@ export function ParticipationEditorCard(props: {
         importSourceMetadata: draftParticipation.importSourceMetadata,
         drawbacks: draftParticipation.drawbacks,
         retainedDrawbacks: draftParticipation.retainedDrawbacks,
-        jumperId: draftParticipation.jumperId,
+        participantId: draftParticipation.participantId,
+        participantKind: draftParticipation.participantKind,
       }),
     [
       draftParticipation.budgets,
       draftParticipation.drawbacks,
       draftParticipation.importSourceMetadata,
-      draftParticipation.jumperId,
+      draftParticipation.participantId,
+      draftParticipation.participantKind,
       draftParticipation.retainedDrawbacks,
       props.workspace,
     ],
@@ -2690,7 +2691,7 @@ export function ParticipationEditorCard(props: {
     ? (searchParams.get('participationTab') as ParticipationTab)
     : null;
   const branchGuideScopeKey = props.workspace.activeBranch ? createBranchGuideScopeKey(chainId, props.workspace.activeBranch.id) : null;
-  const participationGuideKey = createParticipationGuideKey(props.participation.jumpId, props.participation.jumperId);
+  const participationGuideKey = createParticipationGuideKey(props.participation.jumpId, props.participation.participantId);
   const participationGuideState =
     branchGuideScopeKey
       ? getBranchGuideState(branchGuideScopeKey, 'participation', participationGuideKey)

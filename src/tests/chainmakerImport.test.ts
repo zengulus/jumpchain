@@ -48,7 +48,7 @@ describe('ChainMaker v2 import foundation', () => {
       },
     });
 
-    expect(envelope.schemaVersion).toBe(1);
+    expect(envelope.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(envelope.chains[0].chain.title).toBe('[untitled chain]');
   });
 

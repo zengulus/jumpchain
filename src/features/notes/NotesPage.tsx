@@ -22,6 +22,12 @@ import { useChainWorkspace } from '../workspace/useChainWorkspace';
 type NoteFilter = 'all' | Note['noteType'];
 
 function getOwnerOptions(workspace: ReturnType<typeof useChainWorkspace>['workspace']) {
+  const jumpNameById = new Map(workspace.jumps.map((jump) => [jump.id, jump.title]));
+  const participantNameById = new Map([
+    ...workspace.jumpers.map((jumper) => [jumper.id, jumper.name] as const),
+    ...workspace.companions.map((companion) => [companion.id, companion.name] as const),
+  ]);
+
   return {
     chain: [{ value: workspace.chain.id, label: workspace.chain.title }],
     jump: workspace.jumps.map((jump) => ({ value: jump.id, label: jump.title })),
@@ -29,9 +35,7 @@ function getOwnerOptions(workspace: ReturnType<typeof useChainWorkspace>['worksp
     companion: workspace.companions.map((companion) => ({ value: companion.id, label: companion.name })),
     participation: workspace.participations.map((participation) => ({
       value: participation.id,
-      label: `${workspace.jumpers.find((jumper) => jumper.id === participation.jumperId)?.name ?? 'Jumper'} @ ${
-        workspace.jumps.find((jump) => jump.id === participation.jumpId)?.title ?? 'Jump'
-      }`,
+      label: `${participantNameById.get(participation.participantId) ?? 'Participant'} @ ${jumpNameById.get(participation.jumpId) ?? 'Jump'}`,
     })),
     snapshot: workspace.snapshots.map((snapshot) => ({ value: snapshot.id, label: snapshot.title })),
   } as const;

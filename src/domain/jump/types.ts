@@ -17,9 +17,8 @@ export interface Jump extends ChainScopedRecord {
   importSourceMetadata: JsonMap;
 }
 
-export interface JumperParticipation extends ChainScopedRecord {
+export interface ParticipationRecord extends ChainScopedRecord {
   jumpId: string;
-  jumperId: string;
   status: ParticipationStatus;
   notes: string;
   purchases: unknown[];
@@ -40,4 +39,17 @@ export interface JumperParticipation extends ChainScopedRecord {
   supplementInvestments: Record<string, unknown>;
   drawbackOverrides: Record<string, unknown>;
   importSourceMetadata: JsonMap;
+}
+
+export interface JumperParticipation extends ParticipationRecord {
+  jumperId: string;
+}
+
+export interface CompanionParticipation extends ParticipationRecord {
+  companionId: string;
+}
+
+export interface WorkspaceParticipation extends ParticipationRecord {
+  participantId: string;
+  participantKind: 'jumper' | 'companion';
 }

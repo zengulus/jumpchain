@@ -1,6 +1,6 @@
 import type { BodymodProfile } from '../../domain/bodymod/types';
 import type { Companion, Jumper } from '../../domain/jumper/types';
-import type { Jump, JumperParticipation } from '../../domain/jump/types';
+import type { Jump, WorkspaceParticipation } from '../../domain/jump/types';
 import type { CosmicBackpackState } from '../cosmic-backpack/model';
 
 export const SIMPLE_MODE_GUIDE_QUERY_PARAM = 'guide';
@@ -9,7 +9,7 @@ export const SIMPLE_MODE_GUIDE_DEFAULT_KEY = 'default';
 export type SimpleModeSupplementDecision = 'undecided' | 'yes' | 'not-now' | 'skip-future';
 export type SimpleModeGuidePromptState = 'pending' | 'accepted' | 'dismissed';
 export type BranchGuideSurface = 'overview' | 'jumpers' | 'companions' | 'jumps' | 'participation' | 'bodymod';
-export type ChainGuideSurface = 'cosmic-backpack';
+export type ChainGuideSurface = 'cosmic-backpack' | 'chainwide-rules';
 export type SimpleModeGuideSurface = BranchGuideSurface | ChainGuideSurface;
 export type OverviewGuideStepId = 'jumper' | 'jump' | 'participation';
 export type JumperGuideStepId = 'identity' | 'details';
@@ -18,6 +18,7 @@ export type JumpGuideStepId = 'basics' | 'party' | 'purchases';
 export type ParticipationGuideStepId = 'beginnings' | 'purchases' | 'wrap-up';
 export type BodymodGuideStepId = 'create-profile' | 'tier-and-concept' | 'signature-package';
 export type CosmicBackpackGuideStepId = 'free-options' | 'notes-and-appearance' | 'upgrades';
+export type ChainwideRulesGuideStepId = 'enable-builder' | 'starting-point' | 'exchange-rate-and-notes' | 'drawbacks';
 
 export interface SimpleModePageGuideState {
   currentStepId: string | null;
@@ -44,7 +45,13 @@ export interface SimpleModeGuideScopeState {
 
 export interface SimpleModeGuideRegistryState {
   branch: Record<string, SimpleModeGuideScopeState>;
-  chain: Record<string, { 'cosmic-backpack': Record<string, SimpleModePageGuideState> }>;
+  chain: Record<
+    string,
+    {
+      'cosmic-backpack': Record<string, SimpleModePageGuideState>;
+      'chainwide-rules': Record<string, SimpleModePageGuideState>;
+    }
+  >;
 }
 
 export function createBranchGuideScopeKey(chainId: string, branchId: string) {
@@ -271,7 +278,7 @@ export function isJumpGuideStepComplete(
 }
 
 export function isParticipationGuideStepComplete(
-  participation: JumperParticipation | null | undefined,
+  participation: WorkspaceParticipation | null | undefined,
   guideState: SimpleModePageGuideState,
   stepId: ParticipationGuideStepId,
 ) {

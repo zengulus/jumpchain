@@ -7,7 +7,7 @@ import type { Branch } from '../domain/branch/types';
 import type { Effect } from '../domain/effects/types';
 import type { ImportReport } from '../domain/import/types';
 import type { Companion, Jumper } from '../domain/jumper/types';
-import type { Jump, JumperParticipation } from '../domain/jump/types';
+import type { CompanionParticipation, Jump, JumperParticipation } from '../domain/jump/types';
 import type { Note } from '../domain/notes/types';
 import type { PresetProfile } from '../domain/presets/types';
 import type { HouseRuleProfile, JumpRulesContext } from '../domain/rules/types';
@@ -52,6 +52,7 @@ interface ClonedBranchBundle {
   companions: Companion[];
   jumps: Jump[];
   participations: JumperParticipation[];
+  companionParticipations: CompanionParticipation[];
   effects: Effect[];
   bodymodProfiles: BodymodProfile[];
   jumpRulesContexts: JumpRulesContext[];
@@ -79,18 +80,6 @@ function remapOptionalId(id: string | null | undefined, map: Map<string, string>
   }
 
   return remapId(id, map);
-}
-
-function remapParticipantId(id: string, maps: EntityIdMaps) {
-  if (maps.jumper.has(id)) {
-    return remapId(id, maps.jumper);
-  }
-
-  if (maps.companion.has(id)) {
-    return remapId(id, maps.companion);
-  }
-
-  return id;
 }
 
 function remapOwnerEntityId(ownerEntityType: Effect['ownerEntityType'] | Note['ownerEntityType'] | AttachmentRef['ownerEntityType'], ownerEntityId: string, maps: EntityIdMaps) {
@@ -132,7 +121,10 @@ function createBundleIdMaps(bundle: NativeChainBundle): EntityIdMaps {
     jumper: createEntityIdMap(bundle.jumpers, 'jumper'),
     companion: createEntityIdMap(bundle.companions, 'companion'),
     jump: createEntityIdMap(bundle.jumps, 'jump'),
-    participation: createEntityIdMap(bundle.participations, 'part'),
+    participation: createEntityIdMap(
+      [...bundle.participations, ...bundle.companionParticipations],
+      'part',
+    ),
     effect: createEntityIdMap(bundle.effects, 'effect'),
     bodymodProfile: createEntityIdMap(bundle.bodymodProfiles, 'bodymod'),
     jumpRulesContext: createEntityIdMap(bundle.jumpRulesContexts, 'rules'),
@@ -155,7 +147,12 @@ function filterBranchBundleToJump(branchBundle: NativeChainBundle, selectedJumpI
   const keptJumps = branchBundle.jumps.filter((jump) => jump.orderIndex <= selectedJump.orderIndex);
   const keptJumpIds = new Set(keptJumps.map((jump) => jump.id));
   const keptParticipations = branchBundle.participations.filter((participation) => keptJumpIds.has(participation.jumpId));
-  const keptParticipationIds = new Set(keptParticipations.map((participation) => participation.id));
+  const keptCompanionParticipations = branchBundle.companionParticipations.filter((participation) =>
+    keptJumpIds.has(participation.jumpId),
+  );
+  const keptParticipationIds = new Set(
+    [...keptParticipations, ...keptCompanionParticipations].map((participation) => participation.id),
+  );
 
   const shouldKeepOwnedRecord = (ownerEntityType: Note['ownerEntityType'] | Effect['ownerEntityType'] | AttachmentRef['ownerEntityType'], ownerEntityId: string) => {
     if (ownerEntityType === 'jump') {
@@ -177,6 +174,7 @@ function filterBranchBundleToJump(branchBundle: NativeChainBundle, selectedJumpI
     },
     jumps: keptJumps,
     participations: keptParticipations,
+    companionParticipations: keptCompanionParticipations,
     jumpRulesContexts: branchBundle.jumpRulesContexts.filter((context) => context.jumpId === null || context.jumpId === undefined || keptJumpIds.has(context.jumpId)),
     effects: branchBundle.effects.filter((effect) => shouldKeepOwnedRecord(effect.ownerEntityType, effect.ownerEntityId)),
     notes: branchBundle.notes.filter((note) => shouldKeepOwnedRecord(note.ownerEntityType, note.ownerEntityId)),
@@ -218,7 +216,7 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     id: remapId(jump.id, maps.jump),
     chainId,
     branchId: remapId(jump.branchId, maps.branch),
-    participantJumperIds: jump.participantJumperIds.map((participantId) => remapParticipantId(participantId, maps)),
+    participantJumperIds: jump.participantJumperIds.map((participantId) => remapId(participantId, maps.jumper)),
   }));
 
   const clonedParticipations: JumperParticipation[] = validatedBundle.participations.map((participation) => ({
@@ -227,7 +225,16 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     chainId,
     branchId: remapId(participation.branchId, maps.branch),
     jumpId: remapId(participation.jumpId, maps.jump),
-    jumperId: remapParticipantId(participation.jumperId, maps),
+    jumperId: remapId(participation.jumperId, maps.jumper),
+  }));
+
+  const clonedCompanionParticipations: CompanionParticipation[] = validatedBundle.companionParticipations.map((participation) => ({
+    ...participation,
+    id: remapId(participation.id, maps.participation),
+    chainId,
+    branchId: remapId(participation.branchId, maps.branch),
+    jumpId: remapId(participation.jumpId, maps.jump),
+    companionId: remapId(participation.companionId, maps.companion),
   }));
 
   const clonedEffects: Effect[] = validatedBundle.effects.map((effect) => ({
@@ -310,6 +317,7 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     companions: clonedCompanions,
     jumps: clonedJumps,
     participations: clonedParticipations,
+    companionParticipations: clonedCompanionParticipations,
     effects: clonedEffects,
     bodymodProfiles: clonedBodymodProfiles,
     jumpRulesContexts: clonedJumpRulesContexts,
@@ -372,7 +380,7 @@ function cloneBranchBundleToExistingChain(
     id: remapId(jump.id, maps.jump),
     chainId,
     branchId: newBranchId,
-    participantJumperIds: jump.participantJumperIds.map((participantId) => remapParticipantId(participantId, maps)),
+    participantJumperIds: jump.participantJumperIds.map((participantId) => remapId(participantId, maps.jumper)),
     createdAt: now,
     updatedAt: now,
   }));
@@ -383,7 +391,18 @@ function cloneBranchBundleToExistingChain(
     chainId,
     branchId: newBranchId,
     jumpId: remapId(participation.jumpId, maps.jump),
-    jumperId: remapParticipantId(participation.jumperId, maps),
+    jumperId: remapId(participation.jumperId, maps.jumper),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  const companionParticipations: CompanionParticipation[] = branchBundle.companionParticipations.map((participation) => ({
+    ...participation,
+    id: remapId(participation.id, maps.participation),
+    chainId,
+    branchId: newBranchId,
+    jumpId: remapId(participation.jumpId, maps.jump),
+    companionId: remapId(participation.companionId, maps.companion),
     createdAt: now,
     updatedAt: now,
   }));
@@ -502,6 +521,7 @@ function cloneBranchBundleToExistingChain(
     companions,
     jumps,
     participations,
+    companionParticipations,
     effects,
     bodymodProfiles,
     jumpRulesContexts,
@@ -533,6 +553,7 @@ async function writeBundles(bundles: NativeChainBundle[]) {
     db.companions,
     db.jumps,
     db.participations,
+    db.companionParticipations,
     db.effects,
     db.bodymodProfiles,
     db.jumpRulesContexts,
@@ -555,6 +576,7 @@ async function writeBundles(bundles: NativeChainBundle[]) {
       await db.companions.bulkPut(validatedBundles.flatMap((bundle) => bundle.companions));
       await db.jumps.bulkPut(validatedBundles.flatMap((bundle) => bundle.jumps));
       await db.participations.bulkPut(validatedBundles.flatMap((bundle) => bundle.participations));
+      await db.companionParticipations.bulkPut(validatedBundles.flatMap((bundle) => bundle.companionParticipations));
       await db.effects.bulkPut(validatedBundles.flatMap((bundle) => bundle.effects));
       await db.bodymodProfiles.bulkPut(validatedBundles.flatMap((bundle) => bundle.bodymodProfiles));
       await db.jumpRulesContexts.bulkPut(validatedBundles.flatMap((bundle) => bundle.jumpRulesContexts));
@@ -615,6 +637,7 @@ export async function createBlankChain(title: string): Promise<NativeChainBundle
     companions: [],
     jumps: [],
     participations: [],
+    companionParticipations: [],
     effects: [],
     bodymodProfiles: [],
     jumpRulesContexts: [],
@@ -673,6 +696,7 @@ export async function saveImportedChainBundle(
         db.companions,
         db.jumps,
         db.participations,
+        db.companionParticipations,
         db.effects,
         db.bodymodProfiles,
         db.jumpRulesContexts,
@@ -697,6 +721,7 @@ export async function saveImportedChainBundle(
         await db.companions.bulkPut(clonedBranch.companions);
         await db.jumps.bulkPut(clonedBranch.jumps);
         await db.participations.bulkPut(clonedBranch.participations);
+        await db.companionParticipations.bulkPut(clonedBranch.companionParticipations);
         await db.effects.bulkPut(clonedBranch.effects);
         await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
         await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);
@@ -746,6 +771,10 @@ export async function saveImportedChainBundle(
       updatedAt: now,
     })),
     participations: bundle.participations.map((participation) => ({
+      ...participation,
+      updatedAt: now,
+    })),
+    companionParticipations: bundle.companionParticipations.map((participation) => ({
       ...participation,
       updatedAt: now,
     })),
@@ -804,6 +833,7 @@ export async function getChainBundle(chainId: string): Promise<NativeChainBundle
     companions,
     jumps,
     participations,
+    companionParticipations,
     effects,
     bodymodProfiles,
     jumpRulesContexts,
@@ -819,6 +849,7 @@ export async function getChainBundle(chainId: string): Promise<NativeChainBundle
     db.companions.where('chainId').equals(chainId).toArray(),
     db.jumps.where('chainId').equals(chainId).toArray(),
     db.participations.where('chainId').equals(chainId).toArray(),
+    db.companionParticipations.where('chainId').equals(chainId).toArray(),
     db.effects.where('chainId').equals(chainId).toArray(),
     db.bodymodProfiles.where('chainId').equals(chainId).toArray(),
     db.jumpRulesContexts.where('chainId').equals(chainId).toArray(),
@@ -837,6 +868,7 @@ export async function getChainBundle(chainId: string): Promise<NativeChainBundle
     companions,
     jumps,
     participations,
+    companionParticipations,
     effects,
     bodymodProfiles,
     jumpRulesContexts,
@@ -881,18 +913,19 @@ export async function getBranchBundle(chainId: string, branchId: string): Promis
       activeJumpId: workspace.currentJump?.id ?? null,
     },
     branches: [workspace.activeBranch],
-    jumpers: workspace.jumpers,
-    companions: workspace.companions,
-    jumps: workspace.jumps,
-    participations: workspace.participations,
-    effects: workspace.effects,
-    bodymodProfiles: workspace.bodymodProfiles,
-    jumpRulesContexts: workspace.jumpRulesContexts,
-    houseRuleProfiles: workspace.houseRuleProfiles,
-    presetProfiles: workspace.presetProfiles,
-    snapshots: workspace.snapshots,
-    notes: workspace.notes,
-    attachments: workspace.attachments,
+    jumpers: bundle.jumpers.filter((record) => record.branchId === branchId),
+    companions: bundle.companions.filter((record) => record.branchId === branchId),
+    jumps: bundle.jumps.filter((record) => record.branchId === branchId),
+    participations: bundle.participations.filter((record) => record.branchId === branchId),
+    companionParticipations: bundle.companionParticipations.filter((record) => record.branchId === branchId),
+    effects: bundle.effects.filter((record) => record.branchId === branchId),
+    bodymodProfiles: bundle.bodymodProfiles.filter((record) => record.branchId === branchId),
+    jumpRulesContexts: bundle.jumpRulesContexts.filter((record) => record.branchId === branchId),
+    houseRuleProfiles: bundle.houseRuleProfiles.filter((record) => record.branchId === branchId),
+    presetProfiles: bundle.presetProfiles.filter((record) => record.branchId === branchId),
+    snapshots: bundle.snapshots.filter((record) => record.branchId === branchId),
+    notes: bundle.notes.filter((record) => record.branchId === branchId),
+    attachments: bundle.attachments.filter((record) => record.branchId === branchId),
     importReports: workspace.importReports,
   });
 }
@@ -982,6 +1015,7 @@ export async function deleteChain(chainId: string): Promise<void> {
       db.companions,
       db.jumps,
       db.participations,
+      db.companionParticipations,
       db.effects,
       db.bodymodProfiles,
       db.jumpRulesContexts,
@@ -999,6 +1033,7 @@ export async function deleteChain(chainId: string): Promise<void> {
         db.companions.where('chainId').equals(chainId).delete(),
         db.jumps.where('chainId').equals(chainId).delete(),
         db.participations.where('chainId').equals(chainId).delete(),
+        db.companionParticipations.where('chainId').equals(chainId).delete(),
         db.effects.where('chainId').equals(chainId).delete(),
         db.bodymodProfiles.where('chainId').equals(chainId).delete(),
         db.jumpRulesContexts.where('chainId').equals(chainId).delete(),
@@ -1100,6 +1135,7 @@ export async function createBranchFromJump(
       db.companions,
       db.jumps,
       db.participations,
+      db.companionParticipations,
       db.effects,
       db.bodymodProfiles,
       db.jumpRulesContexts,
@@ -1123,6 +1159,7 @@ export async function createBranchFromJump(
       await db.companions.bulkPut(clonedBranch.companions);
       await db.jumps.bulkPut(clonedBranch.jumps);
       await db.participations.bulkPut(clonedBranch.participations);
+      await db.companionParticipations.bulkPut(clonedBranch.companionParticipations);
       await db.effects.bulkPut(clonedBranch.effects);
       await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
       await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);
@@ -1234,6 +1271,7 @@ export async function restoreSnapshotAsBranch(
       db.companions,
       db.jumps,
       db.participations,
+      db.companionParticipations,
       db.effects,
       db.bodymodProfiles,
       db.jumpRulesContexts,
@@ -1257,6 +1295,7 @@ export async function restoreSnapshotAsBranch(
       await db.companions.bulkPut(clonedBranch.companions);
       await db.jumps.bulkPut(clonedBranch.jumps);
       await db.participations.bulkPut(clonedBranch.participations);
+      await db.companionParticipations.bulkPut(clonedBranch.companionParticipations);
       await db.effects.bulkPut(clonedBranch.effects);
       await db.bodymodProfiles.bulkPut(clonedBranch.bodymodProfiles);
       await db.jumpRulesContexts.bulkPut(clonedBranch.jumpRulesContexts);

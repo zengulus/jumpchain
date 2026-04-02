@@ -46,7 +46,7 @@ describe('participation budget inspector', () => {
       throw new Error('Expected a participation in the sample workspace.');
     }
 
-    const jumper = workspace.jumpers.find((entry) => entry.id === participation.jumperId);
+    const jumper = workspace.jumpers.find((entry) => entry.id === participation.participantId);
 
     if (!jumper) {
       throw new Error('Expected the participation jumper to be present.');

@@ -350,10 +350,13 @@ describe('workspace selectors', () => {
       ],
       participations: [
         ...session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+      ],
+      companionParticipations: [
+        ...session.bundle.companionParticipations,
         {
           ...stripParticipationDrawbacks(baseParticipation),
           id: companionParticipationId,
-          jumperId: companionId,
+          companionId,
           budgets: {},
           drawbacks: [
             {
@@ -431,10 +434,13 @@ describe('workspace selectors', () => {
       ],
       participations: [
         ...session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+      ],
+      companionParticipations: [
+        ...session.bundle.companionParticipations,
         {
           ...stripParticipationDrawbacks(baseParticipation),
           id: companionParticipationId,
-          jumperId: companionId,
+          companionId,
           budgets: {},
           importSourceMetadata: {},
         },

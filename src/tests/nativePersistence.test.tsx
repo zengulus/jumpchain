@@ -25,6 +25,8 @@ import {
   createBlankBodymodProfile,
   createBlankCompanion,
   createBlankEffect,
+  createBlankJump,
+  createBlankJumperParticipation,
   createBlankJumper,
   saveChainEntity,
   saveChainRecord,
@@ -88,6 +90,50 @@ describe('native persistence and round-trip safety', () => {
     }
 
     expect(errorMessage).toBe('Unsupported native schema version: 99');
+  });
+
+  it('migrates legacy companion participation rows into the dedicated companion table', async () => {
+    await resetDatabase();
+    const bundle = await createBlankChain('Legacy Companion Migration');
+    const branchId = bundle.chain.activeBranchId;
+    const companion = {
+      ...createBlankCompanion(bundle.chain.id, branchId),
+      name: 'Legacy Ally',
+    };
+    const jump = {
+      ...createBlankJump(bundle.chain.id, branchId, 0),
+      participantJumperIds: [companion.id],
+    };
+    const legacyParticipation = {
+      ...createBlankJumperParticipation(bundle.chain.id, branchId, jump.id, companion.id),
+      status: 'active' as const,
+    };
+
+    const migratedEnvelope = migrateNativeSaveEnvelope({
+      formatVersion: NATIVE_FORMAT_VERSION,
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      chains: [
+        {
+          ...bundle,
+          chain: {
+            ...bundle.chain,
+            schemaVersion: 1,
+          },
+          companions: [companion],
+          jumps: [jump],
+          participations: [legacyParticipation],
+        },
+      ],
+      metadata: {},
+    });
+
+    expect(migratedEnvelope.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migratedEnvelope.chains[0].participations).toHaveLength(0);
+    expect(migratedEnvelope.chains[0].companionParticipations).toHaveLength(1);
+    expect(migratedEnvelope.chains[0].companionParticipations[0].companionId).toBe(companion.id);
+    expect(migratedEnvelope.chains[0].jumps[0].participantJumperIds).toEqual([]);
   });
 
   it('exports native saves with required top-level metadata fields', async () => {

@@ -306,7 +306,7 @@ export function ChainOverviewPage() {
 
       const participation =
         workspace.participations.find(
-          (entry) => createParticipationGuideKey(entry.jumpId, entry.jumperId) === guideKey,
+          (entry) => createParticipationGuideKey(entry.jumpId, entry.participantId) === guideKey,
         ) ?? null;
       const incompleteStep = PARTICIPATION_GUIDE_STEPS.find(
         (stepId) => !isParticipationGuideStepComplete(participation, guideState, stepId),
@@ -374,6 +374,11 @@ export function ChainOverviewPage() {
   }
 
   const nextTarget = getNextCoreTarget() ?? getNextOptionalTarget();
+  const currentJumpParticipantId = currentJump
+    ? currentJump.participantJumperIds[0]
+      ?? workspace.participations.find((entry) => entry.jumpId === currentJump.id)?.participantId
+      ?? null
+    : null;
   const supplementPromptAvailable =
     simpleMode
     && !nextTarget
@@ -404,10 +409,10 @@ export function ChainOverviewPage() {
           : 'No participation records yet.',
       tone: workspace.participations.length > 0 ? 'core' : 'start',
       action:
-        currentJump && currentJump.participantJumperIds[0]
+        currentJump && currentJumpParticipantId
           ? buildPath(`/chains/${chainId}/jumps/${currentJump.id}`, {
               panel: 'participation',
-              participant: currentJump.participantJumperIds[0],
+              participant: currentJumpParticipantId,
             })
           : currentJump
             ? `/chains/${chainId}/jumps/${currentJump.id}`

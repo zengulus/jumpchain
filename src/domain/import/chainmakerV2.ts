@@ -942,6 +942,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     companions: [],
     jumps,
     participations,
+    companionParticipations: [],
     effects,
     bodymodProfiles,
     jumpRulesContexts,

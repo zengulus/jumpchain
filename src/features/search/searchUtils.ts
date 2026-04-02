@@ -554,7 +554,7 @@ function buildSelectionRoute(
   tab: 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks' | 'alt-forms',
 ) {
   return withSearchParams(`/chains/${chainId}/jumps/${jumpId}`, {
-    jumper: participantId,
+    participant: participantId,
     panel: 'participation',
     participationTab: tab,
   });
@@ -656,8 +656,8 @@ export function buildUniversalSearchIndex(input: {
     for (const participation of workspace.participations) {
       const jump = jumpById.get(participation.jumpId);
       const participant =
-        jumperById.get(participation.jumperId) ??
-        companionById.get(participation.jumperId) ??
+        jumperById.get(participation.participantId) ??
+        companionById.get(participation.participantId) ??
         null;
       const rawSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(participation.importSourceMetadata).purchaseSubtypes);
       const purchaseSubtypeDefinitions = ensurePurchaseSubtypeDefinitions(
@@ -686,7 +686,7 @@ export function buildUniversalSearchIndex(input: {
           participation.importSourceMetadata,
         ),
         to: withSearchParams(`/chains/${bundle.chain.id}/jumps/${participation.jumpId}`, {
-          jumper: participation.jumperId,
+          participant: participation.participantId,
           panel: 'participation',
         }),
         extraText: [
@@ -718,7 +718,7 @@ export function buildUniversalSearchIndex(input: {
           to: buildSelectionRoute(
             bundle.chain.id,
             participation.jumpId,
-            participation.jumperId,
+            participation.participantId,
             getPurchaseTabForSelection(purchase, purchaseClassification),
           ),
           tags,
@@ -738,7 +738,7 @@ export function buildUniversalSearchIndex(input: {
           title,
           subtitle: `${getSelectionKindTitle(record)} | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
           snippet: buildSearchSnippet('', record.description, record.summary, tags),
-          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.jumperId, 'drawbacks'),
+          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.participantId, 'drawbacks'),
           tags,
           extraText: [record.description, record.summary, record.source, tags],
         });
@@ -754,7 +754,7 @@ export function buildUniversalSearchIndex(input: {
           title: cleanLabel(fields.name, 'Alt form note'),
           subtitle: `Alt form | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
           snippet: buildSearchSnippet('', fields.notes, fields.source),
-          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.jumperId, 'alt-forms'),
+          to: buildSelectionRoute(bundle.chain.id, participation.jumpId, participation.participantId, 'alt-forms'),
           extraText: [fields.source, fields.notes],
         });
       }

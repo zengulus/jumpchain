@@ -1,7 +1,28 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UI_PREFERENCES_STORAGE_KEY, UiPreferencesProvider, useUiPreferences } from '../app/UiPreferencesContext';
 import { AssistiveHint, TooltipFrame } from '../features/workspace/shared';
+
+const localStorageState = new Map<string, string>();
+
+beforeEach(() => {
+  localStorageState.clear();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => localStorageState.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        localStorageState.set(key, String(value));
+      },
+      removeItem: (key: string) => {
+        localStorageState.delete(key);
+      },
+      clear: () => {
+        localStorageState.clear();
+      },
+    },
+  });
+});
 
 function PreferenceProbe() {
   const { simpleMode, setSimpleMode, getOverviewGuideState } = useUiPreferences();
@@ -22,6 +43,7 @@ function PreferenceProbe() {
 
 afterEach(() => {
   window.localStorage.clear();
+  cleanup();
 });
 
 describe('UI preferences', () => {

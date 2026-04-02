@@ -6,7 +6,7 @@ import type { Companion } from '../../domain/jumper/types';
 import { db } from '../../db/database';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery } from '../search/searchUtils';
-import { createBlankCompanion, deleteChainRecord, saveChainRecord } from '../workspace/records';
+import { createBlankCompanion, deleteCompanionCascade, saveChainRecord } from '../workspace/records';
 import {
   AdvancedJsonDetails,
   AutosaveStatusIndicator,
@@ -215,7 +215,7 @@ export function CompanionsPage() {
     }
 
     try {
-      await deleteChainRecord(db.companions, selectedCompanion.id, chainId);
+      await deleteCompanionCascade(chainId, selectedCompanion.id);
       setSearchParams((currentParams) => {
         const nextParams = new URLSearchParams(currentParams);
         nextParams.delete('companion');

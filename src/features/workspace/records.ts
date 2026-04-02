@@ -5,7 +5,7 @@ import type { BodymodProfile } from '../../domain/bodymod/types';
 import type { Chain } from '../../domain/chain/types';
 import type { Effect } from '../../domain/effects/types';
 import type { Companion, Jumper } from '../../domain/jumper/types';
-import type { Jump, JumperParticipation } from '../../domain/jump/types';
+import type { CompanionParticipation, Jump, JumperParticipation, WorkspaceParticipation } from '../../domain/jump/types';
 import type { Note } from '../../domain/notes/types';
 import { createDefaultRulesModuleSettings, type RulesDefaults } from '../../domain/rules/customization';
 import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/types';
@@ -132,18 +132,19 @@ export function createBlankJump(chainId: string, branchId: string, orderIndex: n
   };
 }
 
-export function createBlankParticipation(chainId: string, branchId: string, jumpId: string, participantId: string): JumperParticipation {
+function createBlankParticipationFields(
+  chainId: string,
+  branchId: string,
+  jumpId: string,
+): Omit<JumperParticipation, 'id' | 'jumperId'> {
   const now = createTimestamp();
 
   return {
-    id: createId('part'),
     chainId,
     branchId,
     createdAt: now,
     updatedAt: now,
     jumpId,
-    // Legacy field name: this now stores either a jumper ID or a companion ID.
-    jumperId: participantId,
     status: 'planned',
     notes: '',
     purchases: [],
@@ -167,39 +168,209 @@ export function createBlankParticipation(chainId: string, branchId: string, jump
   };
 }
 
+export function createBlankJumperParticipation(
+  chainId: string,
+  branchId: string,
+  jumpId: string,
+  jumperId: string,
+): JumperParticipation {
+  return {
+    id: createId('part'),
+    ...createBlankParticipationFields(chainId, branchId, jumpId),
+    jumperId,
+  };
+}
+
+export function createBlankCompanionParticipation(
+  chainId: string,
+  branchId: string,
+  jumpId: string,
+  companionId: string,
+): CompanionParticipation {
+  return {
+    id: createId('part'),
+    ...createBlankParticipationFields(chainId, branchId, jumpId),
+    companionId,
+  };
+}
+
+export function createBlankParticipation(
+  chainId: string,
+  branchId: string,
+  jumpId: string,
+  participant: Pick<WorkspaceParticipation, 'participantId' | 'participantKind'>,
+): JumperParticipation | CompanionParticipation {
+  return participant.participantKind === 'companion'
+    ? createBlankCompanionParticipation(chainId, branchId, jumpId, participant.participantId)
+    : createBlankJumperParticipation(chainId, branchId, jumpId, participant.participantId);
+}
+
+export async function saveParticipationRecord(
+  participation: JumperParticipation | CompanionParticipation | WorkspaceParticipation,
+) {
+  if ('participantKind' in participation) {
+    if (participation.participantKind === 'companion') {
+      const { participantId, participantKind, ...rest } = participation;
+      await saveChainRecord(db.companionParticipations, {
+        ...rest,
+        companionId: participantId,
+      });
+      return;
+    }
+
+    const { participantId, participantKind, ...rest } = participation;
+    await saveChainRecord(db.participations, {
+      ...rest,
+      jumperId: participantId,
+    });
+    return;
+  }
+
+  if ('companionId' in participation) {
+    await saveChainRecord(db.companionParticipations, participation);
+    return;
+  }
+
+  await saveChainRecord(db.participations, participation);
+}
+
 export async function syncJumpParticipantMembership(
   chainId: string,
   jump: Jump,
   participantId: string,
+  participantKind: WorkspaceParticipation['participantKind'],
   include: boolean,
 ) {
   await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
-  const participantJumperIds = include
-    ? Array.from(new Set([...jump.participantJumperIds, participantId]))
-    : jump.participantJumperIds.filter((id) => id !== participantId);
+  const participantJumperIds =
+    participantKind === 'jumper'
+      ? include
+        ? Array.from(new Set([...jump.participantJumperIds, participantId]))
+        : jump.participantJumperIds.filter((id) => id !== participantId)
+      : jump.participantJumperIds;
 
-  await db.transaction('rw', [db.chains, db.jumps, db.participations], async () => {
-    await db.jumps.put({
-      ...jump,
-      participantJumperIds,
-      updatedAt,
-    });
+  await db.transaction(
+    'rw',
+    [db.chains, db.jumps, db.participations, db.companionParticipations],
+    async () => {
+      await db.jumps.put({
+        ...jump,
+        participantJumperIds,
+        updatedAt,
+      });
 
-    const existingParticipations = await db.participations.where('[jumpId+jumperId]').equals([jump.id, participantId]).toArray();
+      if (participantKind === 'companion') {
+        const existingParticipations = await db.companionParticipations
+          .where('[jumpId+companionId]')
+          .equals([jump.id, participantId])
+          .toArray();
 
-    if (include) {
-      if (existingParticipations.length === 0) {
-        await db.participations.put(createBlankParticipation(chainId, jump.branchId, jump.id, participantId));
+        if (include) {
+          if (existingParticipations.length === 0) {
+            await db.companionParticipations.put(
+              createBlankCompanionParticipation(chainId, jump.branchId, jump.id, participantId),
+            );
+          }
+        } else if (existingParticipations.length > 0) {
+          await db.companionParticipations.bulkDelete(existingParticipations.map((participation) => participation.id));
+        }
+      } else {
+        const existingParticipations = await db.participations
+          .where('[jumpId+jumperId]')
+          .equals([jump.id, participantId])
+          .toArray();
+
+        if (include) {
+          if (existingParticipations.length === 0) {
+            await db.participations.put(createBlankJumperParticipation(chainId, jump.branchId, jump.id, participantId));
+          }
+        } else if (existingParticipations.length > 0) {
+          await db.participations.bulkDelete(existingParticipations.map((participation) => participation.id));
+        }
       }
-    } else if (existingParticipations.length > 0) {
-      await db.participations.bulkDelete(existingParticipations.map((participation) => participation.id));
-    }
 
-    await db.chains.update(chainId, { updatedAt });
-  });
+      await db.chains.update(chainId, { updatedAt });
+    },
+  );
 
   return participantJumperIds;
+}
+
+export async function deleteCompanionCascade(chainId: string, companionId: string) {
+  await ensureDatabaseOpen();
+  const updatedAt = createTimestamp();
+
+  await db.transaction(
+    'rw',
+    [
+      db.chains,
+      db.companions,
+      db.jumps,
+      db.participations,
+      db.companionParticipations,
+      db.notes,
+      db.effects,
+      db.attachments,
+    ],
+    async () => {
+      const companionParticipationIds = await db.companionParticipations
+        .where('companionId')
+        .equals(companionId)
+        .primaryKeys();
+      const legacyParticipationIds = await db.participations.where('jumperId').equals(companionId).primaryKeys();
+      const allParticipationIds = [...companionParticipationIds, ...legacyParticipationIds].map((id) => String(id));
+      const impactedJumps = await db.jumps.toArray();
+
+      await db.companions.delete(companionId);
+      await db.companionParticipations.where('companionId').equals(companionId).delete();
+      await db.participations.where('jumperId').equals(companionId).delete();
+
+      const jumpsToUpdate = impactedJumps
+        .filter((jump) => jump.participantJumperIds.includes(companionId))
+        .map((jump) => ({
+          ...jump,
+          participantJumperIds: jump.participantJumperIds.filter((participantId) => participantId !== companionId),
+          updatedAt,
+        }));
+
+      if (jumpsToUpdate.length > 0) {
+        await db.jumps.bulkPut(jumpsToUpdate);
+      }
+
+      await deleteOwnedRecordsForEntity('companion', companionId);
+
+      for (const participationId of allParticipationIds) {
+        await deleteOwnedRecordsForEntity('participation', participationId);
+      }
+
+      await db.chains.update(chainId, { updatedAt });
+    },
+  );
+}
+
+async function deleteOwnedRecordsForEntity(ownerEntityType: Note['ownerEntityType'], ownerEntityId: string) {
+  const notes = await db.notes
+    .filter((note) => note.ownerEntityType === ownerEntityType && note.ownerEntityId === ownerEntityId)
+    .primaryKeys();
+  const effects = await db.effects
+    .filter((effect) => effect.ownerEntityType === ownerEntityType && effect.ownerEntityId === ownerEntityId)
+    .primaryKeys();
+  const attachments = await db.attachments
+    .filter((attachment) => attachment.ownerEntityType === ownerEntityType && attachment.ownerEntityId === ownerEntityId)
+    .primaryKeys();
+
+  if (notes.length > 0) {
+    await db.notes.bulkDelete(notes.map((id) => String(id)));
+  }
+
+  if (effects.length > 0) {
+    await db.effects.bulkDelete(effects.map((id) => String(id)));
+  }
+
+  if (attachments.length > 0) {
+    await db.attachments.bulkDelete(attachments.map((id) => String(id)));
+  }
 }
 
 export function createBlankEffect(chainId: string, branchId: string, ownerEntityId: string): Effect {

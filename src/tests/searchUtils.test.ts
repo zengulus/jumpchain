@@ -12,7 +12,7 @@ function createChain(id: string, title: string): Chain {
     createdAt: now,
     updatedAt: now,
     title,
-    schemaVersion: 1,
+    schemaVersion: 2,
     formatVersion: 'test',
     activeBranchId: `${id}-branch`,
     activeJumpId: `${id}-jump`,
@@ -193,6 +193,7 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
         },
       },
     ],
+    companionParticipations: [],
     effects: [
       {
         id: `${chainId}-effect`,

@@ -7,7 +7,7 @@ import { switchActiveJump } from '../../db/persistence';
 import { ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
-import { createBlankJump, createBlankParticipation, saveChainRecord, syncJumpParticipantMembership } from '../workspace/records';
+import { createBlankJump, createBlankParticipation, saveChainRecord, saveParticipationRecord, syncJumpParticipantMembership } from '../workspace/records';
 import {
   AdvancedJsonDetails,
   AutosaveStatusIndicator,
@@ -132,18 +132,26 @@ export function JumpsPage() {
   });
   const focusedParticipant =
     focusedParticipantId ? allParticipants.find((participant) => participant.id === focusedParticipantId) ?? null : null;
+  const jumpParticipantIds = draftJump
+    ? new Set([
+        ...draftJump.participantJumperIds,
+        ...workspace.participations
+          .filter((participation) => participation.jumpId === draftJump.id && participation.participantKind === 'companion')
+          .map((participation) => participation.participantId),
+      ])
+    : new Set<string>();
   const jumpParticipants =
-    draftJump ? allParticipants.filter((participant) => draftJump.participantJumperIds.includes(participant.id)) : [];
+    draftJump ? allParticipants.filter((participant) => jumpParticipantIds.has(participant.id)) : [];
   const pendingFocusedParticipant =
-    draftJump && focusedParticipant && !draftJump.participantJumperIds.includes(focusedParticipant.id) ? focusedParticipant : null;
+    draftJump && focusedParticipant && !jumpParticipantIds.has(focusedParticipant.id) ? focusedParticipant : null;
   const activeParticipationParticipant =
-    draftJump && focusedParticipant && draftJump.participantJumperIds.includes(focusedParticipant.id)
+    draftJump && focusedParticipant && jumpParticipantIds.has(focusedParticipant.id)
       ? focusedParticipant
       : jumpParticipants[0] ?? null;
   const activeParticipation =
     draftJump && activeParticipationParticipant
       ? workspace.participations.find(
-          (participation) => participation.jumpId === draftJump.id && participation.jumperId === activeParticipationParticipant.id,
+          (participation) => participation.jumpId === draftJump.id && participation.participantId === activeParticipationParticipant.id,
         ) ?? null
       : null;
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
@@ -407,23 +415,31 @@ export function JumpsPage() {
 
   async function toggleParticipant(participantId: string) {
     const targetJump = draftJump ?? selectedJump;
+    const participant = allParticipants.find((entry) => entry.id === participantId) ?? null;
 
-    if (!targetJump) {
+    if (!targetJump || !participant) {
       return;
     }
 
-    const alreadyParticipating = targetJump.participantJumperIds.includes(participantId);
+    const currentParticipantIds = jumpParticipants.map((entry) => entry.id);
+    const alreadyParticipating = currentParticipantIds.includes(participantId);
     const nextParticipantIds = alreadyParticipating
-      ? targetJump.participantJumperIds.filter((id) => id !== participantId)
-      : Array.from(new Set([...targetJump.participantJumperIds, participantId]));
+      ? currentParticipantIds.filter((id) => id !== participantId)
+      : Array.from(new Set([...currentParticipantIds, participantId]));
 
-    jumpAutosave.updateDraft({
-      ...targetJump,
-      participantJumperIds: nextParticipantIds,
-    });
+    if (participant.kind === 'jumper') {
+      const nextJumperIds = alreadyParticipating
+        ? targetJump.participantJumperIds.filter((id) => id !== participantId)
+        : Array.from(new Set([...targetJump.participantJumperIds, participantId]));
+
+      jumpAutosave.updateDraft({
+        ...targetJump,
+        participantJumperIds: nextJumperIds,
+      });
+    }
 
     try {
-      await syncJumpParticipantMembership(chainId, targetJump, participantId, !alreadyParticipating);
+      await syncJumpParticipantMembership(chainId, targetJump, participantId, participant.kind, !alreadyParticipating);
 
       if (alreadyParticipating && focusedParticipantId === participantId) {
         setFocusedParticipant(nextParticipantIds[0] ?? null);
@@ -457,13 +473,14 @@ export function JumpsPage() {
 
   async function ensureParticipation(participantId: string) {
     const targetJump = draftJump ?? selectedJump;
+    const participant = allParticipants.find((entry) => entry.id === participantId) ?? null;
 
-    if (!workspace.activeBranch || !targetJump) {
+    if (!workspace.activeBranch || !targetJump || !participant) {
       return;
     }
 
     const existing = workspace.participations.find(
-      (participation) => participation.jumpId === targetJump.id && participation.jumperId === participantId,
+      (participation) => participation.jumpId === targetJump.id && participation.participantId === participantId,
     );
 
     if (existing) {
@@ -480,9 +497,14 @@ export function JumpsPage() {
     }
 
     try {
-      await saveChainRecord(db.participations, createBlankParticipation(chainId, workspace.activeBranch.id, targetJump.id, participantId));
+      await saveParticipationRecord(
+        createBlankParticipation(chainId, workspace.activeBranch.id, targetJump.id, {
+          participantId,
+          participantKind: participant.kind,
+        }),
+      );
 
-      if (!targetJump.participantJumperIds.includes(participantId)) {
+      if (participant.kind === 'jumper' && !targetJump.participantJumperIds.includes(participantId)) {
         const nextParticipantIds = [...targetJump.participantJumperIds, participantId];
 
         jumpAutosave.updateDraft({
@@ -690,7 +712,7 @@ export function JumpsPage() {
 
           <div className="selection-editor-list">
             {allParticipants.map((participant) => {
-              const isParticipating = draftJump.participantJumperIds.includes(participant.id);
+              const isParticipating = jumpParticipantIds.has(participant.id);
               const isFocused = focusedParticipantId === participant.id;
 
               return (
