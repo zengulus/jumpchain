@@ -33,8 +33,10 @@ import {
   type AltChainBuilderOptionGroup,
 } from './catalog';
 import {
+  ALT_CHAIN_BUILDER_METADATA_KEY,
   ALT_CHAIN_EXCHANGE_RATE_CONFIGS,
   ALT_CHAIN_STARTING_POINT_CONFIGS,
+  applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
   describeAltChainBuilderSelection,
@@ -132,7 +134,11 @@ function getAltChainOptionKindLabel(kind: AltChainBuilderOption['kind']) {
   return kind === 'accommodation' ? 'Accommodation' : 'Complication';
 }
 
-function getAltChainSearchPlaceholder(kind: AltChainBuilderOption['kind']) {
+function getAltChainSearchPlaceholder(kind?: AltChainBuilderOption['kind']) {
+  if (!kind) {
+    return 'Find an accommodation or complication by name, note, or group...';
+  }
+
   return kind === 'accommodation'
     ? 'Find an accommodation by name, note, or group...'
     : 'Find a complication by name, note, or group...';
@@ -144,10 +150,14 @@ function AltChainOptionSection(props: {
   options: AltChainBuilderOption[];
   state: AltChainBuilderState;
   searchQuery: string;
+  hideSelected: boolean;
   onCountChange: (optionId: string, nextValue: unknown) => void;
 }) {
-  const visibleOptions = props.options.filter((option) => matchesQuery(option, props.searchQuery));
-  const selectedCount = visibleOptions.reduce((total, option) => total + getAltChainBuilderSelectionCount(props.state, option.id), 0);
+  const matchingOptions = props.options.filter((option) => matchesQuery(option, props.searchQuery));
+  const visibleOptions = matchingOptions.filter(
+    (option) => !props.hideSelected || getAltChainBuilderSelectionCount(props.state, option.id) <= 0,
+  );
+  const selectedCount = matchingOptions.reduce((total, option) => total + getAltChainBuilderSelectionCount(props.state, option.id), 0);
 
   if (visibleOptions.length === 0) {
     return null;
@@ -159,7 +169,7 @@ function AltChainOptionSection(props: {
         <span>{props.title}</span>
         <div className="inline-meta">
           <span className={`pill alt-chain-token alt-chain-token--${props.kind}`}>{selectedCount} selected</span>
-          <span className="pill pill--soft">{visibleOptions.length} options</span>
+          <span className="pill pill--soft">{visibleOptions.length} {props.hideSelected ? 'shown' : 'options'}</span>
         </div>
       </summary>
 
@@ -284,6 +294,7 @@ export function AltChainBuilderPage() {
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const [hideSelected, setHideSelected] = useState(false);
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const guideRequested = readGuideRequested(searchParams);
   const chainAutosave = useAutosaveRecord(workspace.chain, {
@@ -293,7 +304,14 @@ export function AltChainBuilderPage() {
     getErrorMessage: (error) => (error instanceof Error ? error.message : 'Unable to save Alt-Chain builder changes.'),
   });
   const draftChain = chainAutosave.draft ?? workspace.chain;
-  const builder = parseAltChainBuilderState(asRecord(draftChain.importSourceMetadata).altChainBuilder);
+  const rawImportSourceMetadata = asRecord(draftChain.importSourceMetadata);
+  const hasStoredBuilderMetadata = Object.prototype.hasOwnProperty.call(rawImportSourceMetadata, ALT_CHAIN_BUILDER_METADATA_KEY);
+  const parsedBuilder = parseAltChainBuilderState(rawImportSourceMetadata[ALT_CHAIN_BUILDER_METADATA_KEY]);
+  const shouldSeedChosenStarter =
+    !hasStoredBuilderMetadata &&
+    parsedBuilder.startingPoint === 'chosen' &&
+    Object.keys(parsedBuilder.selectionCounts).length === 0;
+  const builder = shouldSeedChosenStarter ? applyAltChainBuilderChosenStarterPackage(parsedBuilder) : parsedBuilder;
   const summary = buildAltChainBuilderSummary(builder);
   const guideState = getChainGuideState(chainId, 'alt-chain-builder', SIMPLE_MODE_GUIDE_DEFAULT_KEY);
   const currentGuideStepId = getFirstIncompleteGuideStep(
@@ -309,7 +327,7 @@ export function AltChainBuilderPage() {
     simpleMode &&
     !guideState.dismissed &&
     guideState.updatedAt === null &&
-    !hasAltChainBuilderBeenUsed(builder);
+    !hasAltChainBuilderBeenUsed(parsedBuilder);
   const guideVisible =
     simpleMode &&
     Boolean(currentGuideStepId) &&
@@ -336,10 +354,18 @@ export function AltChainBuilderPage() {
     setSearchParams((currentParams) => updateGuideSearchParams(currentParams, true));
   }, [guideRequested, setSearchParams, shouldAutoOpenGuide]);
 
+  useEffect(() => {
+    if (!shouldSeedChosenStarter) {
+      return;
+    }
+
+    updateBuilder(builder);
+  }, [builder, shouldSeedChosenStarter]);
+
   function updateBuilder(nextValue: AltChainBuilderState) {
     chainAutosave.updateDraft({
       ...draftChain,
-      importSourceMetadata: updateAltChainBuilderMetadata(asRecord(draftChain.importSourceMetadata), nextValue),
+      importSourceMetadata: updateAltChainBuilderMetadata(rawImportSourceMetadata, nextValue),
     });
   }
 
@@ -352,6 +378,28 @@ export function AltChainBuilderPage() {
 
   function handleCountChange(optionId: string, rawValue: unknown) {
     updateBuilder(setAltChainBuilderSelectionCount(builder, optionId, rawValue));
+  }
+
+  function handleStartingPointChange(nextStartingPoint: AltChainStartingPoint) {
+    if (nextStartingPoint === builder.startingPoint) {
+      return;
+    }
+
+    if (nextStartingPoint !== 'chosen' || builder.startingPoint === 'chosen') {
+      updateBuilderField('startingPoint', nextStartingPoint);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Switching to Chosen will replace the current Alt-Chain selections with the Chosen starter package. You'll lose your current selection progress. Continue?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    updateBuilder(applyAltChainBuilderChosenStarterPackage(builder));
+    setHideSelected(false);
   }
 
   function updateBuilderGuideState(updater: (current: SimpleModePageGuideState) => SimpleModePageGuideState) {
@@ -508,7 +556,7 @@ export function AltChainBuilderPage() {
               key={startingPoint}
               className={`selection-list__item${builder.startingPoint === startingPoint ? ' is-active' : ''}`}
               type="button"
-              onClick={() => updateBuilderField('startingPoint', startingPoint)}
+              onClick={() => handleStartingPointChange(startingPoint)}
             >
               <strong>{config.title}</strong>
               <span>{simpleMode ? config.simpleSummary : config.description}</span>
@@ -545,14 +593,62 @@ export function AltChainBuilderPage() {
   }
 
   function renderOptionsByKind(kind: AltChainBuilderOption['kind']) {
-    const visibleGroups = (Object.keys(ALT_CHAIN_OPTION_GROUP_LABELS) as AltChainBuilderOptionGroup[]).map((group) => ({
+    const optionGroups = (Object.keys(ALT_CHAIN_OPTION_GROUP_LABELS) as AltChainBuilderOptionGroup[]).map((group) => ({
       group,
       options: altChainBuilderOptionCatalog.filter((option) => option.kind === kind && option.group === group),
     }));
+    const matchingOptionCount = optionGroups.reduce(
+      (total, { options }) => total + options.filter((option) => matchesQuery(option, searchQuery)).length,
+      0,
+    );
+    const visibleOptionCount = optionGroups.reduce(
+      (total, { options }) =>
+        total +
+        options.filter(
+          (option) =>
+            matchesQuery(option, searchQuery) && (!hideSelected || getAltChainBuilderSelectionCount(builder, option.id) <= 0),
+        ).length,
+      0,
+    );
+    const kindLabel = kind === 'accommodation' ? 'accommodations' : 'complications';
 
     return (
       <div className="stack stack--compact">
-        <label className="field">
+        {visibleOptionCount === 0 ? (
+          <div className="section-surface alt-chain-builder__empty-state">
+            <p>
+              {matchingOptionCount > 0 && hideSelected
+                ? `All matching ${kindLabel} are already selected. Turn off Hide Selected to edit them.`
+                : `No ${kindLabel} match the current search.`}
+            </p>
+          </div>
+        ) : null}
+
+        {optionGroups.map(({ group, options }) => (
+          <AltChainOptionSection
+            key={`${kind}-${group}`}
+            title={ALT_CHAIN_OPTION_GROUP_LABELS[group]}
+            kind={kind}
+            options={options}
+            state={builder}
+            searchQuery={searchQuery}
+            hideSelected={hideSelected}
+            onCountChange={handleCountChange}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderOptionToolbar(kind?: AltChainBuilderOption['kind']) {
+    const matchingOptions = altChainBuilderOptionCatalog.filter(
+      (option) => (!kind || option.kind === kind) && matchesQuery(option, searchQuery),
+    );
+    const matchingSelectedCount = matchingOptions.filter((option) => getAltChainBuilderSelectionCount(builder, option.id) > 0).length;
+
+    return (
+      <section className="alt-chain-builder__toolbar">
+        <label className="field alt-chain-builder__toolbar-search">
           <span>Filter options</span>
           <input
             value={searchQuery}
@@ -561,18 +657,19 @@ export function AltChainBuilderPage() {
           />
         </label>
 
-        {visibleGroups.map(({ group, options }) => (
-          <AltChainOptionSection
-            key={`${kind}-${group}`}
-            title={ALT_CHAIN_OPTION_GROUP_LABELS[group]}
-            kind={kind}
-            options={options}
-            state={builder}
-            searchQuery={searchQuery}
-            onCountChange={handleCountChange}
-          />
-        ))}
-      </div>
+        <div className="alt-chain-builder__toolbar-actions">
+          <button
+            aria-pressed={hideSelected}
+            className={`choice-chip alt-chain-builder__filter-toggle${hideSelected ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setHideSelected((currentValue) => !currentValue)}
+          >
+            <span>Hide Selected</span>
+            <span>{hideSelected ? 'On' : 'Off'}</span>
+          </button>
+          <span className="pill pill--soft">{matchingSelectedCount} {hideSelected ? 'hidden' : 'selected'}</span>
+        </div>
+      </section>
     );
   }
 
@@ -657,6 +754,7 @@ export function AltChainBuilderPage() {
             <span className="pill">Step {currentGuideStepNumber} of {GUIDE_STEPS.length}</span>
           </div>
           <p>{currentGuideStep.description}</p>
+          {renderOptionToolbar('accommodation')}
           {renderOptionsByKind('accommodation')}
           <div className="actions">
             <button className="button button--secondary" type="button" onClick={() => handleGuideStepChange('exchange-rate')}>
@@ -678,6 +776,7 @@ export function AltChainBuilderPage() {
             <span className="pill">Step {currentGuideStepNumber} of {GUIDE_STEPS.length}</span>
           </div>
           <p>{currentGuideStep.description}</p>
+          {renderOptionToolbar('complication')}
           {renderOptionsByKind('complication')}
           <div className="actions">
             <button className="button button--secondary" type="button" onClick={() => handleGuideStepChange('accommodations')}>
@@ -797,7 +896,7 @@ export function AltChainBuilderPage() {
                 term="Post to chainwide effects"
                 meaning="turn the named Accommodations into chain rules and the named Complications into chain drawbacks on the rules page."
               />
-              <p>The starting point and exchange rate stay on the chain as builder metadata. Chosen gives you a swappable 22 Accommodation / 2 Complication budget, and the named options you select here get generated as rule entries.</p>
+              <p>The starting point and exchange rate stay on the chain as builder metadata. Chosen starts from the usual starter package, but you can swap those picks around within the 22 Accommodation / 2 Complication budget, and the named options you select here get generated as rule entries.</p>
             </section>
           ) : null}
 
@@ -874,6 +973,8 @@ export function AltChainBuilderPage() {
               />
             </label>
           </section>
+
+          {renderOptionToolbar()}
 
           <section className="card stack alt-chain-kind-card alt-chain-kind-card--accommodation">
             <div className="section-heading">

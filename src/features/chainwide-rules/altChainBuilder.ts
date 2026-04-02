@@ -101,7 +101,7 @@ export const ALT_CHAIN_STARTING_POINT_CONFIGS: Record<AltChainStartingPoint, Alt
   },
 };
 
-const ALT_CHAIN_LEGACY_VERSION_3_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> = {
+export const ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS: Record<string, number> = {
   supplements: 2,
   'under-warranty': 3,
   'not-alone': 4,
@@ -201,7 +201,7 @@ function migrateLegacySelectionCounts(
 
   const nextSelectionCounts = { ...selectionCounts };
 
-  for (const [optionId, legacyCount] of Object.entries(ALT_CHAIN_LEGACY_VERSION_3_CHOSEN_STARTER_SELECTION_COUNTS)) {
+  for (const [optionId, legacyCount] of Object.entries(ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS)) {
     const option = altChainBuilderOptionsById[optionId];
 
     if (!option) {
@@ -220,6 +220,10 @@ function migrateLegacySelectionCounts(
   }
 
   return normalizeSelectionCounts(nextSelectionCounts);
+}
+
+export function createAltChainChosenStarterSelectionCounts() {
+  return normalizeSelectionCounts(ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS);
 }
 
 export function createDefaultAltChainBuilderState(): AltChainBuilderState {
@@ -294,6 +298,14 @@ export function setAltChainBuilderSelectionCount(state: AltChainBuilderState, op
   return {
     ...state,
     selectionCounts: normalizeSelectionCounts(nextSelectionCounts),
+  };
+}
+
+export function applyAltChainBuilderChosenStarterPackage(state: AltChainBuilderState): AltChainBuilderState {
+  return {
+    ...state,
+    startingPoint: 'chosen',
+    selectionCounts: createAltChainChosenStarterSelectionCounts(),
   };
 }
 

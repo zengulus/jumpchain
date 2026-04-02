@@ -25,14 +25,14 @@ export function WorkspaceModuleHeader(props: {
 }) {
   return (
     <div className="workspace-module-header">
-      <div className="stack stack--compact">
+      <div className="stack stack--compact workspace-module-header__copy">
         <div className="section-heading">
           <h2>{props.title}</h2>
           {props.badge ? <span className="pill">{props.badge}</span> : null}
         </div>
         <p>{props.description}</p>
       </div>
-      {props.actions ? <div className="actions">{props.actions}</div> : null}
+      {props.actions ? <div className="actions workspace-module-header__actions">{props.actions}</div> : null}
     </div>
   );
 }

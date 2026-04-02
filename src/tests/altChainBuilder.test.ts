@@ -1,4 +1,5 @@
 import {
+  applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
   createDefaultAltChainBuilderState,
@@ -106,6 +107,25 @@ describe('alt-chain builder helpers', () => {
     expect(getAltChainBuilderSelectionCount(parsed, 'supplements')).toBe(2);
     expect(getAltChainBuilderSelectionCount(parsed, 'under-warranty')).toBe(3);
     expect(getAltChainBuilderSelectionCount(parsed, 'not-alone')).toBe(5);
+  });
+
+  it('applies the chosen starter package without wiping the rest of the builder state', () => {
+    const seeded = applyAltChainBuilderChosenStarterPackage({
+      ...createDefaultAltChainBuilderState(),
+      enabled: true,
+      startingPoint: 'stranded',
+      exchangeRate: 'masochist',
+      notes: 'Keep these notes.',
+    });
+
+    expect(seeded.startingPoint).toBe('chosen');
+    expect(seeded.exchangeRate).toBe('masochist');
+    expect(seeded.notes).toBe('Keep these notes.');
+    expect(seeded.selectionCounts).toEqual({
+      supplements: 2,
+      'under-warranty': 3,
+      'not-alone': 4,
+    });
   });
 
   it('builds worksheet totals from explicit recorded selections', () => {
