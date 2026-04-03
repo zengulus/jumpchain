@@ -1,13 +1,17 @@
 import {
+  ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+  ALT_CHAIN_BUILDER_TRANSFER_VERSION,
   ALT_CHAIN_CHOSEN_STARTER_SELECTION_COUNTS,
   ALT_CHAIN_CHOSEN_STARTER_EXTRA_SUPPLEMENT_COUNT,
   applyAltChainBuilderChosenStarterPackage,
   buildAltChainBuilderGeneratedEffectSpecs,
   buildAltChainBuilderSummary,
+  createAltChainBuilderTransferPayload,
   createDefaultAltChainBuilderState,
   getAltChainBuilderSelectionCount,
   getAltChainSupplementSelectionSummary,
   hasAltChainBuilderBeenUsed,
+  parseAltChainBuilderTransferPayload,
   parseAltChainBuilderState,
   setAltChainSupplementExtraSelectionCount,
   setAltChainBuilderSelectionCount,
@@ -310,5 +314,123 @@ describe('alt-chain builder helpers', () => {
       'iconic',
       'three-boons',
     ]);
+  });
+
+  it('creates a dedicated alt-chain builder transfer payload', () => {
+    const payload = createAltChainBuilderTransferPayload({
+      chainId: 'chain-1',
+      chainTitle: 'Builder Chain',
+      branchId: 'branch-1',
+      branchTitle: 'Main Branch',
+      exportedAt: '2026-04-03T10:30:00.000Z',
+      builder: setAltChainBuilderSelectionCount(
+        {
+          ...createDefaultAltChainBuilderState(),
+          enabled: true,
+          startingPoint: 'stranded',
+        },
+        'grant',
+        2,
+      ),
+    });
+
+    expect(payload).toEqual({
+      format: ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+      version: ALT_CHAIN_BUILDER_TRANSFER_VERSION,
+      exportedAt: '2026-04-03T10:30:00.000Z',
+      source: {
+        chainId: 'chain-1',
+        chainTitle: 'Builder Chain',
+        branchId: 'branch-1',
+        branchTitle: 'Main Branch',
+      },
+      builder: {
+        version: 5,
+        enabled: true,
+        startingPoint: 'stranded',
+        exchangeRate: 'favored',
+        selectionCounts: {
+          grant: 2,
+        },
+        supplementSelections: {
+          iconic: false,
+          cosmicBackpack: false,
+          threeBoons: false,
+          extraSelections: 0,
+        },
+        notes: '',
+        lastSyncedAt: null,
+      },
+    });
+  });
+
+  it('parses a dedicated alt-chain builder transfer payload', () => {
+    const payload = parseAltChainBuilderTransferPayload({
+      format: ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+      version: ALT_CHAIN_BUILDER_TRANSFER_VERSION,
+      exportedAt: '2026-04-03T10:30:00.000Z',
+      source: {
+        chainId: 'chain-1',
+        chainTitle: 'Builder Chain',
+        branchId: 'branch-1',
+        branchTitle: 'Main Branch',
+      },
+      builder: {
+        version: 5,
+        enabled: true,
+        startingPoint: 'stranded',
+        exchangeRate: 'survivor',
+        selectionCounts: {
+          'braving-the-gauntlets': 2,
+          'budget-cuts': 3,
+        },
+        supplementSelections: {
+          iconic: true,
+          cosmicBackpack: false,
+          threeBoons: true,
+          extraSelections: 1,
+        },
+        notes: 'Imported builder state.',
+        lastSyncedAt: '2026-04-02T10:00:00.000Z',
+      },
+    });
+
+    expect(payload.source.chainTitle).toBe('Builder Chain');
+    expect(payload.builder.startingPoint).toBe('stranded');
+    expect(payload.builder.exchangeRate).toBe('survivor');
+    expect(payload.builder.selectionCounts).toEqual({
+      'braving-the-gauntlets': 1,
+      'budget-cuts': 3,
+    });
+    expect(payload.builder.supplementSelections).toEqual({
+      iconic: true,
+      cosmicBackpack: false,
+      threeBoons: true,
+      extraSelections: 1,
+    });
+  });
+
+  it('rejects non-transfer files when parsing dedicated alt-chain builder payloads', () => {
+    let firstError = '';
+    let secondError = '';
+
+    try {
+      parseAltChainBuilderTransferPayload({ builder: createDefaultAltChainBuilderState() });
+    } catch (error) {
+      firstError = error instanceof Error ? error.message : String(error);
+    }
+
+    try {
+      parseAltChainBuilderTransferPayload({
+        format: ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+        version: 99,
+        builder: createDefaultAltChainBuilderState(),
+      });
+    } catch (error) {
+      secondError = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(firstError).toBe('This file is not a Jumpchain Tracker Alt-Chain Builder export.');
+    expect(secondError).toBe('Unsupported Alt-Chain Builder export version: 99');
   });
 });

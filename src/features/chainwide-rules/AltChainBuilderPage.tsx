@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { Effect } from '../../domain/effects/types';
 import { db } from '../../db/database';
+import { downloadJson } from '../../utils/download';
+import { readJsonFile } from '../../utils/file';
 import { createBlankEffect, deleteChainRecord, saveChainEntity, saveChainRecord } from '../workspace/records';
 import {
   AutosaveStatusIndicator,
@@ -36,6 +38,7 @@ import {
 } from './catalog';
 import {
   ALT_CHAIN_BUILDER_METADATA_KEY,
+  createAltChainBuilderTransferPayload,
   ALT_CHAIN_EXCHANGE_RATE_CONFIGS,
   ALT_CHAIN_STARTING_POINT_CONFIGS,
   altChainTrackedSupplementIds,
@@ -51,13 +54,16 @@ import {
   hasAltChainBuilderBeenUsed,
   isAltChainBuilderGeneratedEffect,
   markAltChainBuilderSynced,
+  parseAltChainBuilderTransferPayload,
   parseAltChainBuilderState,
   setAltChainSupplementExtraSelectionCount,
   setAltChainBuilderSelectionCount,
   setAltChainTrackedSupplementSelected,
   updateAltChainBuilderMetadata,
+  type AltChainBuilderTransferPayload,
   type AltChainTrackedSupplementId,
   type AltChainBuilderState,
+  type AltChainBuilderSummary,
   type AltChainExchangeRate,
   type AltChainStartingPoint,
 } from './altChainBuilder';
@@ -136,6 +142,16 @@ function formatTimestamp(value: string | null) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(parsedDate);
+}
+
+function toFileSlug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+interface PendingAltChainBuilderImport {
+  fileName: string;
+  payload: AltChainBuilderTransferPayload;
+  summary: AltChainBuilderSummary;
 }
 
 function getAltChainOptionKindLabel(kind: AltChainBuilderOption['kind']) {
@@ -366,11 +382,14 @@ export function AltChainBuilderPage() {
   const { simpleMode, getChainGuideState, updateChainGuideState } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hideSelected, setHideSelected] = useState(false);
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [confirmChosenStarterOpen, setConfirmChosenStarterOpen] = useState(false);
   const [isApplyingChosenStarter, setIsApplyingChosenStarter] = useState(false);
+  const [pendingImport, setPendingImport] = useState<PendingAltChainBuilderImport | null>(null);
+  const [isImportingBuilder, setIsImportingBuilder] = useState(false);
   const guideRequested = readGuideRequested(searchParams);
   const chainAutosave = useAutosaveRecord(workspace.chain, {
     onSave: async (nextValue) => {
@@ -649,6 +668,100 @@ export function AltChainBuilderPage() {
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to post Alt-Chain builder entries into chainwide effects.',
       });
+    }
+  }
+
+  function handleExportBuilder() {
+    if (!workspace.activeBranch) {
+      return;
+    }
+
+    const payload = createAltChainBuilderTransferPayload({
+      chainId,
+      chainTitle: draftChain.title,
+      branchId: workspace.activeBranch.id,
+      branchTitle: workspace.activeBranch.title,
+      builder,
+    });
+
+    downloadJson(`${toFileSlug(draftChain.title) || 'jumpchain'}-alt-chain-builder.json`, payload);
+    setNotice({
+      tone: 'success',
+      message: `Downloaded Alt-Chain Builder state for "${draftChain.title}".`,
+    });
+  }
+
+  async function handleImportSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const raw = await readJsonFile(file);
+      const payload = parseAltChainBuilderTransferPayload(raw);
+
+      setPendingImport({
+        fileName: file.name,
+        payload,
+        summary: buildAltChainBuilderSummary(payload.builder),
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to read the Alt-Chain Builder import file.',
+      });
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  async function confirmBuilderImport() {
+    if (!pendingImport || !workspace.activeBranch) {
+      return;
+    }
+
+    setIsImportingBuilder(true);
+
+    try {
+      await saveChainEntity(draftChain);
+      const snapshot = await createSafetySnapshot({
+        chainId,
+        branchId: workspace.activeBranch.id,
+        actionLabel: 'Import Alt-Chain Builder State',
+        details: `Created before replacing Alt-Chain Builder metadata with "${pendingImport.fileName}".`,
+      });
+      const nextChain = {
+        ...draftChain,
+        importSourceMetadata: updateAltChainBuilderMetadata(asRecord(draftChain.importSourceMetadata), pendingImport.payload.builder),
+      };
+
+      await saveChainEntity(nextChain);
+      chainAutosave.updateDraft(nextChain);
+      setSearchQuery('');
+      setHideSelected(false);
+
+      if (hasAltChainBuilderBeenUsed(pendingImport.payload.builder)) {
+        updateBuilderGuideState((current) => setGuideDismissed(current, true));
+        setGuideRequestedState(false);
+      }
+
+      setNotice({
+        tone: 'success',
+        message:
+          `Imported Alt-Chain Builder state from "${pendingImport.fileName}" `
+          + `(${pendingImport.payload.source.chainTitle} / ${pendingImport.payload.source.branchTitle}). `
+          + `"${snapshot.title}" was created first.`,
+      });
+      setPendingImport(null);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to import Alt-Chain Builder state.',
+      });
+    } finally {
+      setIsImportingBuilder(false);
     }
   }
 
@@ -966,6 +1079,14 @@ export function AltChainBuilderPage() {
 
   return (
     <div className="stack">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={(event) => void handleImportSelection(event)}
+      />
+
       <WorkspaceModuleHeader
         title="Alt-Chain Builder"
         description={
@@ -975,20 +1096,27 @@ export function AltChainBuilderPage() {
         }
         badge={formatAltChainBuilderSelection(builder)}
         actions={
-          guideVisible ? (
+          <>
             <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
-              Back To Chainwide Rules
+              {guideVisible ? 'Back To Chainwide Rules' : 'Open Chainwide Rules'}
             </Link>
-          ) : (
-            <>
-              <Link className="button button--secondary" to={`/chains/${chainId}/rules`}>
-                Open Chainwide Rules
-              </Link>
+            <button className="button button--secondary" type="button" onClick={handleExportBuilder}>
+              Export Builder
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={isImportingBuilder}
+            >
+              Import Builder
+            </button>
+            {guideVisible ? null : (
               <button className="button" type="button" onClick={() => void handlePostToChainwideEffects(false)}>
                 Post To Chainwide Effects
               </button>
-            </>
-          )
+            )}
+          </>
         }
       />
 
@@ -1132,6 +1260,41 @@ export function AltChainBuilderPage() {
         details={<p>A safety snapshot of the active branch will be created before the current selections are replaced.</p>}
         onCancel={() => setConfirmChosenStarterOpen(false)}
         onConfirm={() => void confirmChosenStarterPackage()}
+      />
+
+      <ConfirmActionDialog
+        open={pendingImport !== null}
+        tone="danger"
+        title={pendingImport ? `Import Alt-Chain Builder state from "${pendingImport.fileName}"?` : 'Import Alt-Chain Builder state?'}
+        description="This replaces the current Alt-Chain Builder selections, notes, starting point, exchange rate, and last sync marker for this chain."
+        confirmLabel="Import Builder State"
+        isBusy={isImportingBuilder}
+        details={
+          pendingImport ? (
+            <div className="stack stack--compact">
+              <p>
+                Source: {pendingImport.payload.source.chainTitle} / {pendingImport.payload.source.branchTitle}. This import only updates Alt-Chain Builder metadata. It does not post or remove chainwide effects automatically.
+              </p>
+              <div className="inline-meta">
+                <span className="metric">
+                  <strong>{pendingImport.summary.recordedAccommodationCount}</strong>
+                  Accommodation load
+                </span>
+                <span className="metric">
+                  <strong>{pendingImport.summary.recordedComplicationCount}</strong>
+                  Complication load
+                </span>
+                <span className="metric">
+                  <strong>{pendingImport.summary.availableExtraAccommodationCredit}</strong>
+                  Extra A credit
+                </span>
+              </div>
+              <p>A safety snapshot of the active branch will be created before the current builder state is replaced.</p>
+            </div>
+          ) : undefined
+        }
+        onCancel={() => setPendingImport(null)}
+        onConfirm={() => void confirmBuilderImport()}
       />
     </div>
   );

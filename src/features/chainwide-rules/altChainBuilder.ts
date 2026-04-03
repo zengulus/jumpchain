@@ -10,6 +10,8 @@ import {
 
 export const ALT_CHAIN_BUILDER_METADATA_KEY = 'altChainBuilder';
 export const ALT_CHAIN_BUILDER_EFFECT_SOURCE = 'alt-chain-builder';
+export const ALT_CHAIN_BUILDER_TRANSFER_FORMAT = 'jumpchain-alt-chain-builder';
+export const ALT_CHAIN_BUILDER_TRANSFER_VERSION = 1;
 export const altChainTrackedSupplementIds = ['iconic', 'cosmic-backpack', 'three-boons'] as const;
 
 export type AltChainTrackedSupplementId = (typeof altChainTrackedSupplementIds)[number];
@@ -36,6 +38,19 @@ export interface AltChainBuilderState {
   supplementSelections: AltChainSupplementSelections;
   notes: string;
   lastSyncedAt: string | null;
+}
+
+export interface AltChainBuilderTransferPayload {
+  format: typeof ALT_CHAIN_BUILDER_TRANSFER_FORMAT;
+  version: typeof ALT_CHAIN_BUILDER_TRANSFER_VERSION;
+  exportedAt: string;
+  source: {
+    chainId: string;
+    chainTitle: string;
+    branchId: string;
+    branchTitle: string;
+  };
+  builder: AltChainBuilderState;
 }
 
 export interface AltChainStartingPointConfig {
@@ -183,6 +198,10 @@ function isAltChainStartingPoint(value: unknown): value is AltChainStartingPoint
 
 function isAltChainExchangeRate(value: unknown): value is AltChainExchangeRate {
   return typeof value === 'string' && altChainExchangeRates.includes(value as AltChainExchangeRate);
+}
+
+function readNonEmptyString(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
 }
 
 function normalizeSelectionCount(value: unknown, maxSelections?: number) {
@@ -356,6 +375,59 @@ export function updateAltChainBuilderMetadata(importSourceMetadata: JsonMap, nex
       notes: nextState.notes,
       lastSyncedAt: nextState.lastSyncedAt,
     },
+  };
+}
+
+export function createAltChainBuilderTransferPayload(input: {
+  chainId: string;
+  chainTitle: string;
+  branchId: string;
+  branchTitle: string;
+  builder: AltChainBuilderState;
+  exportedAt?: string;
+}): AltChainBuilderTransferPayload {
+  return {
+    format: ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+    version: ALT_CHAIN_BUILDER_TRANSFER_VERSION,
+    exportedAt: readNonEmptyString(input.exportedAt, new Date().toISOString()),
+    source: {
+      chainId: input.chainId,
+      chainTitle: input.chainTitle,
+      branchId: input.branchId,
+      branchTitle: input.branchTitle,
+    },
+    builder: parseAltChainBuilderState(input.builder),
+  };
+}
+
+export function parseAltChainBuilderTransferPayload(raw: unknown): AltChainBuilderTransferPayload {
+  const record = isRecord(raw) ? raw : null;
+
+  if (!record || record.format !== ALT_CHAIN_BUILDER_TRANSFER_FORMAT) {
+    throw new Error('This file is not a Jumpchain Tracker Alt-Chain Builder export.');
+  }
+
+  if (record.version !== ALT_CHAIN_BUILDER_TRANSFER_VERSION) {
+    throw new Error(`Unsupported Alt-Chain Builder export version: ${String(record.version ?? 'unknown')}`);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(record, 'builder')) {
+    throw new Error('The Alt-Chain Builder export is missing its builder payload.');
+  }
+
+  const source = isRecord(record.source) ? record.source : {};
+
+  return {
+    format: ALT_CHAIN_BUILDER_TRANSFER_FORMAT,
+    version: ALT_CHAIN_BUILDER_TRANSFER_VERSION,
+    exportedAt: readNonEmptyString(record.exportedAt, 'Unknown export time'),
+    source: {
+      chainId: readNonEmptyString(source.chainId, 'unknown-chain'),
+      chainTitle: readNonEmptyString(source.chainTitle, 'Imported chain'),
+      branchId: readNonEmptyString(source.branchId, 'unknown-branch'),
+      branchTitle: readNonEmptyString(source.branchTitle, 'Imported branch'),
+    },
+    builder: parseAltChainBuilderState(record.builder),
   };
 }
 
