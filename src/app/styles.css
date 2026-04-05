@@ -1254,6 +1254,12 @@ button {
   align-self: start;
 }
 
+.workspace-header-attachment--inline {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
 .workspace-focus-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

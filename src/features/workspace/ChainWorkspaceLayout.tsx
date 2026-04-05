@@ -943,7 +943,9 @@ export function ChainWorkspaceLayout() {
 
             <div className="workspace-main">
               {showFocusBar ? (
-                <section className="workspace-header-attachment">
+                <section
+                  className={`workspace-header-attachment${!simpleMode && presentation.mode === 'deep-task' ? ' workspace-header-attachment--inline' : ''}`}
+                >
                   <WorkspaceFocusBar
                     eyebrow={simpleMode ? (presentation.mode === 'deep-task' ? 'Deep work' : 'Workspace context') : undefined}
                     title={presentation.mode === 'deep-task' ? focusedJump?.title ?? MODULE_LABELS[activeModuleKey] : MODULE_LABELS[activeModuleKey]}
