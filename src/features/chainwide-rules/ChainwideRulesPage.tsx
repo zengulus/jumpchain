@@ -277,9 +277,18 @@ export function ChainwideRulesPage() {
           </div>
 
           <p className="field-hint">
-            Companions now carry their own purchase tracks automatically. They use 80% of the usual CP baseline and 80% of
-            chainwide drawback CP, while drawback value taken inside a jump pays out at full value.
+            Companions now carry their own purchase tracks automatically. They use 80% of the usual CP baseline. Jump-local
+            drawbacks still pay companions at full value, while chainwide drawback CP only applies when you enable it below.
           </p>
+
+          <label className="field field--checkbox">
+            <input
+              type="checkbox"
+              checked={draftChain.chainSettings.chainDrawbacksForCompanions}
+              onChange={(event) => updateChainSetting('chainDrawbacksForCompanions', event.target.checked)}
+            />
+            <span>Chain drawbacks also pay companions</span>
+          </label>
 
           <label className="field field--checkbox">
             <input

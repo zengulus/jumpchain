@@ -510,7 +510,11 @@ export function getEffectiveParticipationBudgetState(
         ...participation.budgets,
       }
     : {};
-  const contributingChainDrawbacks = getActiveChainDrawbackBudgetContributions(workspace);
+  const activeChainDrawbackContributions = getActiveChainDrawbackBudgetContributions(workspace);
+  const contributingChainDrawbacks =
+    isCompanionParticipation && !workspace.chain.chainSettings.chainDrawbacksForCompanions
+      ? []
+      : activeChainDrawbackContributions;
   const contributingParticipationDrawbacks = participation
     ? [
         ...participation.drawbacks.map((selection, index) => ({

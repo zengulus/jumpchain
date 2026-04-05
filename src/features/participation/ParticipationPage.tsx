@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
@@ -2272,22 +2272,28 @@ function ParticipationEditorTabs(props: {
   tabs: Array<{ id: ParticipationTab; label: string; count?: number }>;
   activeTab: ParticipationTab;
   onChange: (tab: ParticipationTab) => void;
+  aside?: ReactNode;
 }) {
+  const { simpleMode } = useUiPreferences();
+
   return (
-    <div className="editor-tab-list" role="tablist" aria-label="Participation sections">
-      {props.tabs.map((tab) => (
-        <button
-          key={tab.id}
-          className={`editor-tab${props.activeTab === tab.id ? ' is-active' : ''}`}
-          type="button"
-          role="tab"
-          aria-selected={props.activeTab === tab.id}
-          onClick={() => props.onChange(tab.id)}
-        >
-          <span>{tab.label}</span>
-          {typeof tab.count === 'number' ? <span className="pill">{tab.count}</span> : null}
-        </button>
-      ))}
+    <div className="editor-tab-bar">
+      <div className="editor-tab-list" role="tablist" aria-label="Participation sections">
+        {props.tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`editor-tab${props.activeTab === tab.id ? ' is-active' : ''}`}
+            type="button"
+            role="tab"
+            aria-selected={props.activeTab === tab.id}
+            onClick={() => props.onChange(tab.id)}
+          >
+            <span>{tab.label}</span>
+            {simpleMode && typeof tab.count === 'number' ? <span className="pill">{tab.count}</span> : null}
+          </button>
+        ))}
+      </div>
+      {props.aside ? <div className="editor-tab-bar__aside">{props.aside}</div> : null}
     </div>
   );
 }
@@ -2741,6 +2747,7 @@ export function ParticipationEditorCard(props: {
     [draftParticipation.budgets, effectiveBudgetState.baseBudgets],
   );
   const [activeTab, setActiveTab] = useState<ParticipationTab>(requestedTab ?? 'beginnings');
+  const showInlineBudgetHeader = showBudgetHeader && (simpleMode || participationPurchaseTabs.includes(activeTab));
 
   const perkPurchases = useMemo(
     () => filterPurchasesBySection(draftParticipation.purchases, 'perk', purchaseClassification),
@@ -3165,25 +3172,27 @@ export function ParticipationEditorCard(props: {
 
   return (
     <article className="card editor-sheet stack" key={props.participant.id}>
-      <div className="participation-editor__sticky-header stack stack--compact">
-        <div className="section-heading">
-          <div className="inline-meta">
-            <h3>{props.participant.name}</h3>
-            <span className="pill pill--soft">{props.participant.kind}</span>
+      <div className={`participation-editor__sticky-header stack stack--compact${simpleMode ? '' : ' participation-editor__sticky-header--compact'}`}>
+        {simpleMode ? (
+          <div className="section-heading">
+            <div className="inline-meta">
+              <h3>{props.participant.name}</h3>
+              <span className="pill pill--soft">{props.participant.kind}</span>
+            </div>
+            <div className="actions">
+              {!activeGuideVisible ? (
+                <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
+                  {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
+                </button>
+              ) : null}
+              <span className="pill">{draftParticipation.status}</span>
+            </div>
           </div>
-          <div className="actions">
-            {simpleMode && !activeGuideVisible ? (
-              <button className="button button--secondary" type="button" onClick={handleReopenGuide}>
-                {guideRequested && !participationGuideState.dismissed ? 'Guide Open' : 'Reopen Setup'}
-              </button>
-            ) : null}
-            <span className="pill">{draftParticipation.status}</span>
-          </div>
-        </div>
+        ) : null}
 
-        <AutosaveStatusIndicator status={participationAutosave.status} />
+        {simpleMode ? <AutosaveStatusIndicator status={participationAutosave.status} /> : null}
 
-        {showBudgetHeader ? (
+        {showInlineBudgetHeader && simpleMode ? (
           <ParticipationBudgetSummaryGrid
             cpBaseValue={cpBaseValue}
             cpBudgetLabel={cpBudgetLabel}
@@ -3193,7 +3202,26 @@ export function ParticipationEditorCard(props: {
           />
         ) : null}
 
-        <ParticipationEditorTabs tabs={tabs} activeTab={activeTab} onChange={handleParticipationTabChange} />
+        {showInlineBudgetHeader && !simpleMode ? (
+          <div className="participation-budget-inline" aria-label="Budget snapshot">
+            <strong>{cpCurrentValue !== null ? formatNumericValue(cpCurrentValue) : 'No current CP'}</strong>
+            <span>{cpBudgetLabel ? `${cpBudgetLabel} remaining` : 'Current CP'}</span>
+            {cpBaseValue !== null ? <span>{formatNumericValue(cpBaseValue)} start</span> : null}
+            {cpJumpDrawbackGrant !== null && cpJumpDrawbackGrant !== 0 ? (
+              <span>{`${cpJumpDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpJumpDrawbackGrant)} jump`}</span>
+            ) : null}
+            {cpChainDrawbackGrant !== null && cpChainDrawbackGrant !== 0 ? (
+              <span>{`${cpChainDrawbackGrant > 0 ? '+' : ''}${formatNumericValue(cpChainDrawbackGrant)} chain`}</span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <ParticipationEditorTabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onChange={handleParticipationTabChange}
+          aside={!simpleMode ? <AutosaveStatusIndicator status={participationAutosave.status} /> : undefined}
+        />
       </div>
 
       {activeGuideVisible ? (
@@ -3227,9 +3255,11 @@ export function ParticipationEditorCard(props: {
       {activeTab === 'beginnings' ? (
         <div className="stack stack--compact">
           <div className="editor-section">
-            <div className="editor-section__header">
-              <h4>Core Participation</h4>
-            </div>
+            {simpleMode ? (
+              <div className="editor-section__header">
+                <h4>Core Participation</h4>
+              </div>
+            ) : null}
 
             <div className="stack stack--compact">
               <div className="field-grid field-grid--two">

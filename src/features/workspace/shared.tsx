@@ -303,6 +303,8 @@ export function useSimpleModeAffirmation() {
 }
 
 export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) {
+  const { simpleMode } = useUiPreferences();
+
   if (status.phase === 'idle') {
     return null;
   }
@@ -329,6 +331,10 @@ export function AutosaveStatusIndicator({ status }: { status: AutosaveStatus }) 
         Saving...
       </div>
     );
+  }
+
+  if (!simpleMode) {
+    return null;
   }
 
   return (

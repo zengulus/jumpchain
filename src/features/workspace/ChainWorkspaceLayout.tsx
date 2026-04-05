@@ -903,29 +903,33 @@ export function ChainWorkspaceLayout() {
                 </section>
               )}
 
-              <section className="workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact">
-                <div className="section-heading">
-                  <div className="field-label-row">
-                    <h3>Workspace</h3>
-                    <AssistiveHint
-                      placement="right"
-                      text="These links jump directly between major workspace modules. Each destination still applies the same setup-aware defaults as before."
-                      triggerLabel="Explain workspace navigation"
-                    />
-                  </div>
-                  <span className="pill">{simpleMode ? 'Guided' : 'Browse'}</span>
-                </div>
-
+              <section className={`workspace-sidebar-card workspace-sidebar-card--dense stack stack--compact${simpleMode ? '' : ' workspace-sidebar-card--nav'}`}>
                 {simpleMode ? (
-                  <div className="section-surface stack stack--compact">
+                  <>
                     <div className="section-heading">
-                      <strong>Focus</strong>
-                      <ReadinessPill tone={showGuidedSetup ? 'start' : 'core'} label={simpleNavigatorLabel} />
+                      <div className="field-label-row">
+                        <h3>Workspace</h3>
+                        <AssistiveHint
+                          placement="right"
+                          text="These links jump directly between major workspace modules. Each destination still applies the same setup-aware defaults as before."
+                          triggerLabel="Explain workspace navigation"
+                        />
+                      </div>
+                      <span className="pill">Guided</span>
                     </div>
-                    <p className="workspace-sidebar-copy">{simpleNavigatorCopy}</p>
-                  </div>
+
+                    <div className="section-surface stack stack--compact">
+                      <div className="section-heading">
+                        <strong>Focus</strong>
+                        <ReadinessPill tone={showGuidedSetup ? 'start' : 'core'} label={simpleNavigatorLabel} />
+                      </div>
+                      <p className="workspace-sidebar-copy">{simpleNavigatorCopy}</p>
+                    </div>
+                  </>
                 ) : (
-                  <p className="workspace-sidebar-copy">Move between setup, systems, and reference pages without opening a chooser first.</p>
+                  <div className="section-heading">
+                    <h3>Workspace</h3>
+                  </div>
                 )}
 
                 <WorkspaceModuleLinks
@@ -941,9 +945,9 @@ export function ChainWorkspaceLayout() {
               {showFocusBar ? (
                 <section className="workspace-header-attachment">
                   <WorkspaceFocusBar
-                    eyebrow={presentation.mode === 'deep-task' ? 'Deep work' : 'Workspace context'}
+                    eyebrow={simpleMode ? (presentation.mode === 'deep-task' ? 'Deep work' : 'Workspace context') : undefined}
                     title={presentation.mode === 'deep-task' ? focusedJump?.title ?? MODULE_LABELS[activeModuleKey] : MODULE_LABELS[activeModuleKey]}
-                    subtitle={state.bundle.chain.title}
+                    subtitle={simpleMode ? state.bundle.chain.title : undefined}
                     meta={focusBarMeta}
                     aside={headerAttachment}
                   />

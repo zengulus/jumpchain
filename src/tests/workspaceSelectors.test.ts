@@ -442,7 +442,93 @@ describe('workspace selectors', () => {
     expect(budgetState.effectiveBudgets['0']).toBe(1300);
   });
 
-  it('gives companion participations 80 percent base CP and chain drawback CP, while jump drawbacks stay full value', () => {
+  it('does not apply chain drawback CP to companions when the chain flag is disabled', () => {
+    const session = prepareChainMakerV2ImportSession(sampleChainMaker);
+    const branchId = session.bundle.chain.activeBranchId;
+    const baseParticipation = session.bundle.participations[0];
+    const now = new Date().toISOString();
+
+    if (!baseParticipation) {
+      throw new Error('Expected the sample import to include a participation.');
+    }
+
+    const companionId = 'companion-budget-test-disabled';
+    const companionParticipationId = 'companion-participation-budget-test-disabled';
+    const bundle = validateNativeChainBundle({
+      ...session.bundle,
+      companions: [
+        ...session.bundle.companions,
+        {
+          id: companionId,
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          name: 'Budget Buddy',
+          parentJumperId: session.bundle.jumpers[0]?.id ?? null,
+          role: 'Support',
+          status: 'active',
+          originJumpId: null,
+          importSourceMetadata: {},
+        },
+      ],
+      participations: [
+        ...session.bundle.participations.map((participation) => stripParticipationDrawbacks(participation)),
+      ],
+      companionParticipations: [
+        ...session.bundle.companionParticipations,
+        {
+          ...stripParticipationDrawbacks(baseParticipation),
+          id: companionParticipationId,
+          companionId,
+          budgets: {},
+          drawbacks: [
+            {
+              name: 'Companion Jump Drawback',
+              value: 100,
+              currency: 0,
+            },
+          ],
+          retainedDrawbacks: [],
+        },
+      ],
+      effects: [
+        ...session.bundle.effects,
+        {
+          id: 'effect-companion-budget-chain-drawback-disabled',
+          chainId: session.bundle.chain.id,
+          branchId,
+          createdAt: now,
+          updatedAt: now,
+          scopeType: 'chain',
+          ownerEntityType: 'chain',
+          ownerEntityId: session.bundle.chain.id,
+          title: 'Companion Chain Drawback',
+          description: '',
+          category: 'drawback',
+          state: 'active',
+          sourceEffectId: null,
+          importSourceMetadata: {
+            value: 300,
+            currency: 0,
+          },
+        },
+      ],
+    });
+
+    const workspace = buildBranchWorkspace(bundle, branchId);
+    const participation = workspace.participations.find((entry) => entry.id === companionParticipationId) ?? null;
+    const budgetState = getEffectiveParticipationBudgetState(workspace, participation);
+
+    expect(workspace.chain.chainSettings.chainDrawbacksForCompanions).toBe(false);
+    expect(budgetState.baseBudgets['0']).toBe(800);
+    expect(budgetState.chainDrawbackBudgetGrants).toEqual({});
+    expect(budgetState.contributingChainDrawbacks).toEqual([]);
+    expect(budgetState.participationDrawbackBudgetGrants['0']).toBe(100);
+    expect(budgetState.effectiveBudgets['0']).toBe(900);
+  });
+
+  it('gives companion participations 80 percent base CP and chain drawback CP when the chain flag is enabled, while jump drawbacks stay full value', () => {
     const session = prepareChainMakerV2ImportSession(sampleChainMaker);
     const branchId = session.bundle.chain.activeBranchId;
     const baseParticipation = session.bundle.participations[0];
@@ -456,6 +542,13 @@ describe('workspace selectors', () => {
     const companionParticipationId = 'companion-participation-budget-test';
     const bundle = validateNativeChainBundle({
       ...session.bundle,
+      chain: {
+        ...session.bundle.chain,
+        chainSettings: {
+          ...session.bundle.chain.chainSettings,
+          chainDrawbacksForCompanions: true,
+        },
+      },
       companions: [
         ...session.bundle.companions,
         {
@@ -522,6 +615,7 @@ describe('workspace selectors', () => {
 
     expect(budgetState.baseBudgets['0']).toBe(800);
     expect(budgetState.chainDrawbackBudgetGrants['0']).toBe(240);
+    expect(budgetState.contributingChainDrawbacks).toHaveLength(1);
     expect(budgetState.participationDrawbackBudgetGrants['0']).toBe(100);
     expect(budgetState.effectiveBudgets['0']).toBe(1140);
   });

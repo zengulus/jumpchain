@@ -93,6 +93,7 @@ function ViewModeToggle(props: { simpleMode: boolean; onToggle: () => void }) {
       className={`page-shell__mode-toggle${props.simpleMode ? ' is-active' : ''}`}
       type="button"
       aria-pressed={props.simpleMode}
+      aria-label={props.simpleMode ? 'Switch to advanced workspace mode' : 'Switch to guided workspace mode'}
       onClick={props.onToggle}
     >
       <span>Workspace mode</span>
