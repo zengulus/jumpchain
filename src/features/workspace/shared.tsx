@@ -428,6 +428,12 @@ export function AdvancedJsonDetails(props: {
   hint?: string;
   children: ReactNode;
 }) {
+  const { simpleMode } = useUiPreferences();
+
+  if (simpleMode) {
+    return null;
+  }
+
   return (
     <details className="details-panel">
       <summary className="details-panel__summary">

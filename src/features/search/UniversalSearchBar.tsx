@@ -90,30 +90,17 @@ export function UniversalSearchBar() {
     scope: currentChainOnly ? 'current-chain' : undefined,
     kind: activeCategory === 'all' ? undefined : activeCategory,
   });
-  const searchLabel = simpleMode ? 'Search existing records' : 'Search and commands';
+  const searchLabel = simpleMode ? 'Search existing records' : 'Search';
   const searchPlaceholder = simpleMode
     ? 'Find a chain, jumper, or jump you already made...'
-    : 'Search chains, jumpers, jumps, effects, notes, or press Ctrl/Cmd+K';
-  const searchPanelTitle = simpleMode ? 'Search results' : 'Search and command palette';
+    : 'Search chains, jumpers, jumps, effects, notes, or use Ctrl/Cmd+K';
+  const searchPanelTitle = simpleMode ? 'Search results' : 'Quick results';
   const submitLabel = simpleMode ? 'Find' : 'Search';
   const commandActions = useMemo<SearchCommandItem[]>(() => {
-    const actions: SearchCommandItem[] = [
-      {
-        id: 'command-home',
-        title: 'Open Home',
-        subtitle: 'Chains, creation, imports, and exports.',
-        to: '/',
-      },
-      {
-        id: 'command-import',
-        title: 'Open Import Review',
-        subtitle: 'Review external JSON and stage imports safely.',
-        to: '/import',
-      },
-    ];
+    const actions: SearchCommandItem[] = [];
 
     if (trimmedQuery.length > 0) {
-      actions.unshift({
+      actions.push({
         id: 'command-search-page',
         title: `View all results for "${trimmedQuery}"`,
         subtitle: 'Open the full results page with the current filters applied.',
@@ -121,8 +108,8 @@ export function UniversalSearchBar() {
       });
     }
 
-    if (lastVisitedChainId) {
-      actions.unshift({
+    if (trimmedQuery.length === 0 && lastVisitedChainId) {
+      actions.push({
         id: 'command-resume-last',
         title: 'Resume Last Workspace',
         subtitle: 'Jump back to the last chain page you worked in.',
@@ -130,43 +117,8 @@ export function UniversalSearchBar() {
       });
     }
 
-    if (currentChainId) {
-      actions.push(
-        {
-          id: 'command-chain-overview',
-          title: 'Open Current Chain Overview',
-          subtitle: 'See setup progress and branch-wide orientation.',
-          to: `/chains/${currentChainId}/overview`,
-        },
-        {
-          id: 'command-chain-jumpers',
-          title: 'Open Current Chain Jumpers',
-          subtitle: 'Edit the character records in this chain.',
-          to: `/chains/${currentChainId}/jumpers`,
-        },
-        {
-          id: 'command-chain-jumps',
-          title: 'Open Current Chain Jumps',
-          subtitle: 'Go straight to jump planning and participation.',
-          to: `/chains/${currentChainId}/jumps`,
-        },
-        {
-          id: 'command-chain-notes',
-          title: 'Open Current Chain Notes',
-          subtitle: 'Review or add supporting rulings and notes.',
-          to: `/chains/${currentChainId}/notes`,
-        },
-        {
-          id: 'command-chain-backups',
-          title: 'Open Current Chain Backups',
-          subtitle: 'Export, branch, or restore with safety tools.',
-          to: `/chains/${currentChainId}/backups`,
-        },
-      );
-    }
-
     return actions.filter((action) => matchesTerms(trimmedQuery, action.title, action.subtitle));
-  }, [currentChainId, getLastChainRoute, lastVisitedChainId, searchPagePath, trimmedQuery]);
+  }, [getLastChainRoute, lastVisitedChainId, searchPagePath, trimmedQuery]);
   const paletteItems = useMemo<SearchPaletteItem[]>(
     () => [
       ...commandActions.map((action) => ({
@@ -318,7 +270,7 @@ export function UniversalSearchBar() {
                 ? `${commandActions.length + filteredResults.length} items`
                 : isLoading
                   ? 'Building index...'
-                  : 'Type or browse commands'}
+                  : 'Type to search stored data'}
             </span>
           </div>
 
@@ -375,12 +327,10 @@ export function UniversalSearchBar() {
           ) : null}
 
           {trimmedQuery.length === 0 ? (
-            <div className="page-shell__search-empty">Start typing to search stored data, or use the commands above.</div>
+            <div className="page-shell__search-empty">Start typing to search stored data.</div>
           ) : trimmedQuery.length < 2 ? (
             <div className="page-shell__search-empty">
-              {simpleMode
-                ? 'Type at least two characters to search stored data. Commands are ready immediately.'
-                : 'Type at least two characters to search stored data. Commands are ready immediately.'}
+              Type at least two characters to search stored data.
             </div>
           ) : !searchData ? (
             <div className="page-shell__search-empty">Loading the current search index from IndexedDB...</div>

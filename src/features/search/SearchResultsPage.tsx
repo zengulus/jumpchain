@@ -73,7 +73,7 @@ export function SearchResultsPage() {
         <p>
           {simpleMode
             ? 'Search everything from one place, filter the results, then jump straight to the matching page.'
-            : 'Search chains, active-branch records, tagged selections, alt-form notes, effects, notes, backups, and the Cosmic Backpack planner from one place.'}
+            : 'Search stored records, narrow the results, and jump straight to the matching page.'}
         </p>
         <div className="inline-meta">
           <span className="pill">{normalizedQuery.length > 0 ? `Query: ${query}` : 'Enter a query in the header'}</span>

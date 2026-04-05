@@ -3570,166 +3570,168 @@ export function ParticipationEditorCard(props: {
         </div>
       ) : null}
 
-      <details className="details-panel">
-        <summary className="details-panel__summary">
-          <span>Advanced JSON editors</span>
-          <span className="pill">full escape hatch</span>
-        </summary>
-        <div className="details-panel__body stack stack--compact">
-          <AssistiveHint
-            as="p"
-            text="Use this only when the main tabs do not cover a case yet."
-            triggerLabel="Explain advanced JSON editors"
-          />
-          <div className="field-grid field-grid--two">
-            <JsonEditorField
-              label="Purchases"
-              value={draftParticipation.purchases}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  purchases: Array.isArray(value)
-                    ? value.map((entry) =>
-                        typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-                          ? coerceSelectionToCp(entry as Record<string, unknown>)
-                          : entry,
-                      )
-                    : [],
-                }))
-              }
+      {!simpleMode ? (
+        <details className="details-panel">
+          <summary className="details-panel__summary">
+            <span>Advanced JSON editors</span>
+            <span className="pill">full escape hatch</span>
+          </summary>
+          <div className="details-panel__body stack stack--compact">
+            <AssistiveHint
+              as="p"
+              text="Use this only when the main tabs do not cover a case yet."
+              triggerLabel="Explain advanced JSON editors"
             />
-            <JsonEditorField
-              label="Drawbacks"
-              value={draftParticipation.drawbacks}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  drawbacks: Array.isArray(value) ? value : [],
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Retained drawbacks"
-              value={draftParticipation.retainedDrawbacks}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  retainedDrawbacks: Array.isArray(value) ? value : [],
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Origins / beginnings"
-              value={draftParticipation.origins}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  origins:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? (value as Record<string, unknown>)
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Budgets"
-              value={draftParticipation.budgets}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  budgets:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? Object.fromEntries(
-                          Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, Number(entry)]),
+            <div className="field-grid field-grid--two">
+              <JsonEditorField
+                label="Purchases"
+                value={draftParticipation.purchases}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    purchases: Array.isArray(value)
+                      ? value.map((entry) =>
+                          typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+                            ? coerceSelectionToCp(entry as Record<string, unknown>)
+                            : entry,
                         )
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Stipends"
-              value={draftParticipation.stipends}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  stipends:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? buildStoredStipendsFromSections(
-                          getSectionStipends(
-                            value as Record<string, Record<string, number>>,
-                            purchaseSubtypeDefinitions,
-                            purchaseClassification,
-                          ),
-                        )
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Alt forms"
-              value={draftParticipation.altForms}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  altForms: Array.isArray(value) ? value : [],
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Supplement purchases"
-              value={draftParticipation.supplementPurchases}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  supplementPurchases:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? (value as Record<string, unknown>)
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Supplement investments"
-              value={draftParticipation.supplementInvestments}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  supplementInvestments:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? (value as Record<string, unknown>)
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Drawback overrides"
-              value={draftParticipation.drawbackOverrides}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  drawbackOverrides:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? (value as Record<string, unknown>)
-                      : {},
-                }))
-              }
-            />
-            <JsonEditorField
-              label="Import source metadata"
-              value={draftParticipation.importSourceMetadata}
-              onValidChange={(value) =>
-                updateParticipation((current) => ({
-                  ...current,
-                  importSourceMetadata:
-                    typeof value === 'object' && value !== null && !Array.isArray(value)
-                      ? (value as Record<string, unknown>)
-                      : {},
-                }))
-              }
-            />
+                      : [],
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Drawbacks"
+                value={draftParticipation.drawbacks}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    drawbacks: Array.isArray(value) ? value : [],
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Retained drawbacks"
+                value={draftParticipation.retainedDrawbacks}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    retainedDrawbacks: Array.isArray(value) ? value : [],
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Origins / beginnings"
+                value={draftParticipation.origins}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    origins:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? (value as Record<string, unknown>)
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Budgets"
+                value={draftParticipation.budgets}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    budgets:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? Object.fromEntries(
+                            Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, Number(entry)]),
+                          )
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Stipends"
+                value={draftParticipation.stipends}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    stipends:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? buildStoredStipendsFromSections(
+                            getSectionStipends(
+                              value as Record<string, Record<string, number>>,
+                              purchaseSubtypeDefinitions,
+                              purchaseClassification,
+                            ),
+                          )
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Alt forms"
+                value={draftParticipation.altForms}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    altForms: Array.isArray(value) ? value : [],
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Supplement purchases"
+                value={draftParticipation.supplementPurchases}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    supplementPurchases:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? (value as Record<string, unknown>)
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Supplement investments"
+                value={draftParticipation.supplementInvestments}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    supplementInvestments:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? (value as Record<string, unknown>)
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Drawback overrides"
+                value={draftParticipation.drawbackOverrides}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    drawbackOverrides:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? (value as Record<string, unknown>)
+                        : {},
+                  }))
+                }
+              />
+              <JsonEditorField
+                label="Import source metadata"
+                value={draftParticipation.importSourceMetadata}
+                onValidChange={(value) =>
+                  updateParticipation((current) => ({
+                    ...current,
+                    importSourceMetadata:
+                      typeof value === 'object' && value !== null && !Array.isArray(value)
+                        ? (value as Record<string, unknown>)
+                        : {},
+                  }))
+                }
+              />
+            </div>
           </div>
-        </div>
-      </details>
+        </details>
+      ) : null}
     </article>
   );
 }

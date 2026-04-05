@@ -47,10 +47,6 @@ interface OverviewTarget {
   optional?: boolean;
 }
 
-function formatTimestamp(value: string) {
-  return new Date(value).toLocaleString();
-}
-
 function formatCountLabel(value: number, singular: string, plural = `${singular}s`) {
   return `${value} ${value === 1 ? singular : plural}`;
 }
@@ -639,35 +635,20 @@ export function ChainOverviewPage() {
         )
       ) : null}
 
-      <section className="grid grid--two">
-        <article className="card stack">
-          <div className="section-heading">
-            <h3>Current Branch</h3>
-            <span className="pill">Active</span>
-          </div>
-          <p>The active branch is the working version of this chain. Everything below is scoped to {workspace.activeBranch.title}.</p>
-          <div className="inline-meta">
-            <span className="pill">{formatCountLabel(workspace.jumpers.length, 'jumper')}</span>
-            <span className="pill">{formatCountLabel(workspace.jumps.length, 'jump')}</span>
-            <span className="pill">{formatCountLabel(workspace.participations.length, 'participation')}</span>
-          </div>
-        </article>
-
-        <article className="card stack">
-          <div className="section-heading">
-            <h3>Recent Context</h3>
-            <ReadinessPill tone={currentJump ? 'core' : 'start'} label={currentJump ? 'Current jump set' : 'No current jump'} />
-          </div>
-          <p>{currentJump ? `${currentJump.title} is the current jump for this branch.` : 'Pick or create a jump to anchor the active context.'}</p>
-          <p>{latestSnapshot ? `Latest snapshot: ${latestSnapshot.title} on ${formatTimestamp(latestSnapshot.createdAt)}.` : 'No snapshots yet.'}</p>
-        </article>
-      </section>
-
       <section className="card stack">
         <div className="section-heading">
-          <h3>Workspace Surfaces</h3>
+          <h3>{simpleMode ? 'Open a workspace' : 'Modules'}</h3>
           <span className="pill">{setupCards.length}</span>
         </div>
+        <p>
+          {simpleMode
+            ? 'Open the next place you want to work without re-reading the whole branch summary first.'
+            : currentJump
+              ? `Current jump: ${currentJump.title}.${latestSnapshot ? ` Latest snapshot: ${latestSnapshot.title}.` : ''}`
+              : latestSnapshot
+                ? `Latest snapshot: ${latestSnapshot.title}.`
+                : 'Jump straight into the module you want without another orientation layer.'}
+        </p>
 
         <div className="selection-editor-list">
           {setupCards.map((card) => (

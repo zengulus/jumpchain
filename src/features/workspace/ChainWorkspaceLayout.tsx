@@ -95,7 +95,7 @@ type WorkspacePresentationOverride = Partial<WorkspacePresentationPreferences> |
 const WorkspacePresentationContext = createContext<Dispatch<SetStateAction<WorkspacePresentationOverride>> | null>(null);
 
 function getDefaultWorkspacePresentation(activeModuleKey: ModuleKey): WorkspacePresentationPreferences {
-  if (activeModuleKey === 'overview' || activeModuleKey === 'timeline' || activeModuleKey === 'backups') {
+  if (activeModuleKey === 'overview') {
     return {
       mode: 'overview',
       showHeroStats: true,
@@ -105,7 +105,7 @@ function getDefaultWorkspacePresentation(activeModuleKey: ModuleKey): WorkspaceP
 
   return {
     mode: 'editor',
-    showHeroStats: true,
+    showHeroStats: false,
     showQuickActions: false,
   };
 }
@@ -519,7 +519,9 @@ export function ChainWorkspaceLayout() {
   const primaryQuickAction = quickActions[0];
   const visibleQuickActions = simpleMode ? quickActions.slice(0, 3) : quickActions;
   const showHeroGuideAction = showGuidedSetup && !guidedSetupActive && activeModuleKey !== 'overview';
-  const showQuickActions = presentation.showQuickActions && !guidedSetupActive && (!simpleMode || !showGuidedSetup);
+  const showWorkspaceHero = presentation.mode === 'overview';
+  const showQuickActions =
+    showWorkspaceHero && presentation.showQuickActions && !guidedSetupActive && (!simpleMode || !showGuidedSetup);
   const simpleHeroSummary = guidedSetupActive
     ? 'Setup guide is open on this page.'
     : showGuidedSetup
@@ -550,7 +552,7 @@ export function ChainWorkspaceLayout() {
           ? `${focusedParticipantCompanion ? 'Companion' : focusedParticipantJumper ? 'Jumper' : 'Participant'}: ${focusedParticipant.name}`
           : '',
   ].filter(Boolean);
-  const showFocusBar = presentation.mode === 'deep-task' || headerAttachment !== null;
+  const showFocusBar = presentation.mode !== 'overview' || headerAttachment !== null;
   const iconicAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'iconic');
   const cosmicBackpackAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'cosmic-backpack');
   const threeBoonsAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'three-boons');
@@ -739,15 +741,9 @@ export function ChainWorkspaceLayout() {
       : presentation.mode === 'overview'
         ? `${activeBranch?.title ?? 'No active branch'} branch${currentJump ? ` • Current jump: ${currentJump.title}` : ' • No current jump selected'}. ${activeModuleItem?.description ?? ''}`.trim()
         : activeModuleItem?.description ?? `${activeBranch?.title ?? 'No active branch'} branch is active.`;
-  const heroSummary = simpleMode ? simpleHeroSummary : advancedHeroSummary;
-  const heroDetailCards = presentation.mode === 'deep-task'
-    ? []
-    : [
-        {
-          label: 'Current page',
-          title: activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey],
-          body: activeModuleItem?.description ?? 'Work inside the current module context.',
-        },
+  const heroSummary = showWorkspaceHero ? (simpleMode ? simpleHeroSummary : advancedHeroSummary) : null;
+  const heroDetailCards = showWorkspaceHero
+    ? [
         focusCard,
         simpleMode
           ? {
@@ -764,114 +760,98 @@ export function ChainWorkspaceLayout() {
               title: primaryQuickAction.title,
               body: primaryQuickAction.description,
             },
-      ];
+      ]
+    : [];
 
   return (
     <WorkspacePresentationContext.Provider value={setPresentationOverride}>
       <WorkspaceHeaderAttachmentContext.Provider value={setHeaderAttachment}>
         <div className="workspace-shell stack" data-workspace-mode={presentation.mode}>
-          <section className="workspace-hero">
-            <div className="workspace-hero__top">
-              <div className="stack stack--compact workspace-hero__leading">
-                <div className="workspace-hero__toolbar">
-                  <div className="inline-meta">
-                    {simpleMode ? null : <span className="pill">Active workspace</span>}
-                    <span className="pill pill--soft">{activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey]}</span>
-                    <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
-                    {presentation.mode === 'deep-task' ? null : <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>}
-                    {simpleMode ? (
-                      <ReadinessPill
-                        tone={showGuidedSetup ? 'start' : 'core'}
-                        label={showGuidedSetup ? 'Setup in progress' : 'Core ready'}
-                      />
-                    ) : null}
+          {showWorkspaceHero ? (
+            <section className="workspace-hero">
+              <div className="workspace-hero__top">
+                <div className="stack stack--compact workspace-hero__leading">
+                  <div className="workspace-hero__toolbar">
+                    <div className="inline-meta">
+                      {simpleMode ? null : <span className="pill">Active workspace</span>}
+                      <span className="pill pill--soft">{activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey]}</span>
+                      <span className="pill">{activeBranch?.title ?? 'No branch'}</span>
+                      <span className="pill">{currentJump ? `Current: ${currentJump.title}` : 'No current jump'}</span>
+                      {simpleMode ? (
+                        <ReadinessPill
+                          tone={showGuidedSetup ? 'start' : 'core'}
+                          label={showGuidedSetup ? 'Setup in progress' : 'Core ready'}
+                        />
+                      ) : null}
+                    </div>
                   </div>
+                  <h2>{state.bundle.chain.title}</h2>
+                  {heroSummary ? <p className="workspace-hero__summary">{heroSummary}</p> : null}
+                  {heroDetailCards.length > 0 ? (
+                    <div className="workspace-hero__detail-grid">
+                      {heroDetailCards.map((card) => (
+                        <section className="workspace-hero__detail-card" key={card.label}>
+                          <span>{card.label}</span>
+                          <strong>{card.title}</strong>
+                          <p>{card.body}</p>
+                        </section>
+                      ))}
+                    </div>
+                  ) : null}
+                  {showHeroGuideAction ? (
+                    <div className="actions workspace-hero__actions">
+                      <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
+                        Continue setup
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
-                <h2>{state.bundle.chain.title}</h2>
-                {heroSummary ? <p className="workspace-hero__summary">{heroSummary}</p> : null}
-                {heroDetailCards.length > 0 ? (
-                  <div className="workspace-hero__detail-grid">
-                    {heroDetailCards.map((card) => (
-                      <section className="workspace-hero__detail-card" key={card.label}>
-                        <span>{card.label}</span>
-                        <strong>{card.title}</strong>
-                        <p>{card.body}</p>
-                      </section>
-                    ))}
-                  </div>
-                ) : null}
-                {showHeroGuideAction ? (
-                  <div className="actions workspace-hero__actions">
-                    <button className="button" type="button" onClick={() => navigate(`/chains/${resolvedChainId}/overview`)}>
-                      Continue setup
-                    </button>
+                {presentation.showHeroStats ? (
+                  <div className="workspace-hero__stats">
+                    {simpleMode ? (
+                      <>
+                        <span className="metric">
+                          <strong>{setupCompletionCount}/2</strong>
+                          Core setup
+                        </span>
+                        <span className="metric">
+                          <strong>{workspace.jumpers.length}</strong>
+                          Jumpers ready
+                        </span>
+                        <span className="metric">
+                          <strong>{workspace.jumps.length}</strong>
+                          Jumps in branch
+                        </span>
+                        <span className="metric">
+                          <strong>{setupCompletionPercent}%</strong>
+                          Setup progress
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="metric">
+                          <strong>{workspace.jumpers.length}</strong>
+                          Jumpers
+                        </span>
+                        <span className="metric">
+                          <strong>{workspace.jumps.length}</strong>
+                          Jumps
+                        </span>
+                        <span className="metric">
+                          <strong>{unlockedSystemsCount}</strong>
+                          Systems unlocked
+                        </span>
+                        <span className="metric">
+                          <strong>{workspace.snapshots.length}</strong>
+                          Snapshots
+                        </span>
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div>
-              {presentation.showHeroStats ? (
-                <div className="workspace-hero__stats">
-                  {simpleMode ? (
-                    <>
-                      <span className="metric">
-                        <strong>{setupCompletionCount}/2</strong>
-                        Core setup
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.jumpers.length}</strong>
-                        Jumpers ready
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.jumps.length}</strong>
-                        Jumps in branch
-                      </span>
-                      <span className="metric">
-                        <strong>{setupCompletionPercent}%</strong>
-                        Setup progress
-                      </span>
-                    </>
-                  ) : presentation.mode === 'editor' ? (
-                    <>
-                      <span className="metric">
-                        <strong>{workspace.jumpers.length}</strong>
-                        Jumpers
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.jumps.length}</strong>
-                        Jumps
-                      </span>
-                      <span className="metric">
-                        <strong>{currentJump ? currentJump.orderIndex + 1 : '—'}</strong>
-                        Current jump
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.snapshots.length}</strong>
-                        Snapshots
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="metric">
-                        <strong>{workspace.jumpers.length}</strong>
-                        Jumpers
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.jumps.length}</strong>
-                        Jumps
-                      </span>
-                      <span className="metric">
-                        <strong>{unlockedSystemsCount}</strong>
-                        Systems unlocked
-                      </span>
-                      <span className="metric">
-                        <strong>{workspace.snapshots.length}</strong>
-                        Snapshots
-                      </span>
-                    </>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          </section>
+            </section>
+          ) : null}
 
           <div className="workspace-frame">
             {sidebarOpen ? (
@@ -948,32 +928,12 @@ export function ChainWorkspaceLayout() {
                   <p className="workspace-sidebar-copy">Move between setup, systems, and reference pages without opening a chooser first.</p>
                 )}
 
-                <div className="workspace-sidebar-current">
-                  <span className="workspace-sidebar-current__eyebrow">Current page</span>
-                  <strong>{activeModuleItem?.label ?? MODULE_LABELS[activeModuleKey]}</strong>
-                  <p>{activeModuleItem?.description ?? 'Work inside the active module context.'}</p>
-                </div>
-
                 <WorkspaceModuleLinks
                   groups={moduleGroups}
                   activeModuleKey={activeModuleKey}
                   onNavigate={closeNav}
                   simpleMode={simpleMode}
                 />
-
-                <details className="details-panel">
-                  <summary className="details-panel__summary">
-                    <span>Legacy features</span>
-                    <span className="pill">Low use</span>
-                  </summary>
-                  <div className="details-panel__body stack stack--compact">
-                    <p className="workspace-sidebar-copy">Import Review is still available for older external JSON flows.</p>
-                    <NavLink className={({ isActive }) => `workspace-menu-item${isActive ? ' active' : ''}`} to="/import" onClick={closeNav}>
-                      <strong>Import Review</strong>
-                      <span>Review and convert external jump data.</span>
-                    </NavLink>
-                  </div>
-                </details>
               </section>
             </aside>
 

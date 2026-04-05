@@ -54,16 +54,12 @@ export function HomePage() {
   const [pendingDeleteChain, setPendingDeleteChain] = useState<ChainOverview | null>(null);
   const draftTitleInputRef = useRef<HTMLInputElement | null>(null);
   const nativeImportInputRef = useRef<HTMLInputElement | null>(null);
-  const totalJumpers = chains.reduce((total, chain) => total + chain.jumperCount, 0);
-  const totalJumps = chains.reduce((total, chain) => total + chain.jumpCount, 0);
-  const importedChainCount = chains.filter((chain) => chain.importReportCount > 0).length;
   const latestChain = chains[0] ?? null;
   const lastVisitedChain = lastVisitedChainId ? chains.find((chain) => chain.chainId === lastVisitedChainId) ?? null : null;
   const resumeChain = lastVisitedChain ?? latestChain;
   const resumePath = resumeChain ? getLastChainRoute(resumeChain.chainId, getDefaultChainPath(resumeChain.chainId)) : null;
   const resumeLabel = lastVisitedChain ? 'Resume Last Workspace' : 'Resume Latest Chain';
   const resumeChainStatus = resumeChain ? getSimpleChainStatus(resumeChain) : null;
-  const chainsReadyForPlay = chains.filter((chain) => chain.jumperCount > 0 && chain.jumpCount > 0).length;
 
   async function refreshChains() {
     const nextChains = await listChainOverviews();
@@ -168,30 +164,8 @@ export function HomePage() {
             <p className="home-hero__lead">
               {simpleMode
                 ? 'Open a stored chain, create a new one, or import a trusted save.'
-                : 'Local-first continuity tracking with wide module workspaces, snapshots, imports, and page-by-page supplement planning.'}
+                : 'Local-first continuity tracking with direct access to your active chains, imports, and safety copies.'}
             </p>
-            <div className="home-hero__signals">
-              <div className="home-hero__signal">
-                <strong>{simpleMode ? 'Guided next steps' : 'Fast workspace navigation'}</strong>
-                <span>
-                  {simpleMode
-                    ? 'Keep the next useful action visible while you scaffold jumpers, jumps, and setup.'
-                    : 'Move directly between modules, search globally, and stay in context while editing.'}
-                </span>
-              </div>
-              <div className="home-hero__signal">
-                <strong>Native saves and local autosave</strong>
-                <span>Everything stays local-first, with native exports ready when you want a safety copy.</span>
-              </div>
-              <div className="home-hero__signal">
-                <strong>{simpleMode ? 'Switch modes whenever you want' : 'Guided mode is still one click away'}</strong>
-                <span>
-                  {simpleMode
-                    ? 'Start with a calmer, guided surface and swap into advanced mode when you want more density.'
-                    : 'Advanced mode keeps more information on screen, but guided mode remains available for focused setup work.'}
-                </span>
-              </div>
-            </div>
             <div className="actions">
               {simpleMode ? (
                 <>
@@ -219,9 +193,6 @@ export function HomePage() {
                   >
                     Import Native Save
                   </button>
-                  <Link className="button button--secondary" to="/import">
-                    Open Import Review
-                  </Link>
                 </>
               )}
             </div>
@@ -263,14 +234,6 @@ export function HomePage() {
                     <Link className="button" to={resumePath ?? getDefaultChainPath(resumeChain.chainId)}>
                       {lastVisitedChain ? 'Open Resume Target' : 'Open Latest Chain'}
                     </Link>
-                    <button
-                      className="button button--secondary"
-                      type="button"
-                      onClick={() => nativeImportInputRef.current?.click()}
-                      disabled={isBusy}
-                    >
-                      Import Native Save
-                    </button>
                   </div>
                 </>
               ) : (
@@ -293,42 +256,6 @@ export function HomePage() {
                   </div>
                 </>
               )}
-            </section>
-
-            <section className="home-mode-panel">
-              <div className="section-heading">
-                <h3>{simpleMode ? 'Guided mode is active' : 'Advanced mode is active'}</h3>
-                <span className="pill pill--soft">{simpleMode ? 'guided' : 'advanced'}</span>
-              </div>
-              <p>
-                {simpleMode
-                  ? 'Guided mode keeps the next setup step and the safest actions visible so the workspace never feels harder than it needs to.'
-                  : 'Advanced mode keeps more density on screen at once, which is better once you already know where you want to go.'}
-              </p>
-              <div className="summary-grid home-mode-panel__metrics">
-                <div className="metric">
-                  <strong>{chains.length}</strong>
-                  Stored chains
-                </div>
-                <div className="metric">
-                  <strong>{chainsReadyForPlay}</strong>
-                  Core-ready chains
-                </div>
-                <div className="metric">
-                  <strong>{totalJumpers}</strong>
-                  Total jumpers
-                </div>
-                <div className="metric">
-                  <strong>{totalJumps}</strong>
-                  Total jumps
-                </div>
-                {!simpleMode ? (
-                  <div className="metric">
-                    <strong>{importedChainCount}</strong>
-                    Imported chains
-                  </div>
-                ) : null}
-              </div>
             </section>
           </div>
         </section>
@@ -380,24 +307,12 @@ export function HomePage() {
             hidden
             onChange={handleNativeImportSelection}
           />
-          {simpleMode ? (
-            <details className="details-panel">
-              <summary className="details-panel__summary">
-                <span>Import other JSON</span>
-                <span className="pill">Optional</span>
-              </summary>
-              <div className="details-panel__body stack stack--compact">
-                <p>Use Import Review for external JSON that is not already a native Jumpchain Tracker save.</p>
-                <Link className="button button--secondary" to="/import">
-                  Open Import Review
-                </Link>
-              </div>
-            </details>
-          ) : (
-            <Link className="button button--secondary" to="/import">
-              Open Import Review
-            </Link>
-          )}
+          <p className="home-card-copy">
+            Use Import Review for external JSON that is not already a native Jumpchain Tracker save.
+          </p>
+          <Link className="button button--secondary" to="/import">
+            Open Import Review
+          </Link>
         </article>
       </section>
 
