@@ -4,11 +4,7 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { jumpStatuses, jumpTypes } from '../../domain/common';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
-import {
-  ParticipationBudgetShellAttachment,
-  ParticipationEditorCard,
-  type ParticipationActor,
-} from '../participation/ParticipationPage';
+import { ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
 import { createBlankJump, createBlankParticipation, saveChainRecord, saveParticipationRecord, syncJumpParticipantMembership } from '../workspace/records';
@@ -47,7 +43,6 @@ type JumpGuidedStage = Extract<JumpWorkspaceTab, 'basics' | 'party' | 'purchases
 type JumpParticipantEntry = ParticipationActor & {
   detail: string;
 };
-type WorkspaceParticipation = ReturnType<typeof useChainWorkspace>['workspace']['participations'][number];
 
 const JUMP_WORKSPACE_TABS: Array<{ id: JumpWorkspaceTab; label: string }> = [
   { id: 'basics', label: 'Basics' },
@@ -97,7 +92,6 @@ export function JumpsPage() {
   const { simpleMode, getBranchGuideState, updateBranchGuideState, updateOverviewGuideState } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
-  const [activeParticipationDraft, setActiveParticipationDraft] = useState<WorkspaceParticipation | null>(null);
   const searchQuery = searchParams.get('search') ?? '';
   const focusedParticipantId = searchParams.get('participant') ?? searchParams.get('jumper');
   const participationPanelRequested = searchParams.get('panel') === 'participation';
@@ -160,9 +154,6 @@ export function JumpsPage() {
           (participation) => participation.jumpId === draftJump.id && participation.participantId === activeParticipationParticipant.id,
         ) ?? null
       : null;
-  useEffect(() => {
-    setActiveParticipationDraft(null);
-  }, [activeParticipation?.id]);
   const { message: simpleAffirmation, showAffirmation, clearAffirmation } = useSimpleModeAffirmation();
   const [activeTab, setActiveTab] = useState<JumpWorkspaceTab>(participationPanelRequested ? 'purchases' : 'basics');
   const branchGuideScopeKey = workspace.activeBranch ? createBranchGuideScopeKey(chainId, workspace.activeBranch.id) : null;
@@ -811,7 +802,6 @@ export function JumpsPage() {
         workspace={workspace}
         showBudgetSummary={false}
         showBudgetHeader
-        onDraftChange={setActiveParticipationDraft}
       />
     ) : activeParticipationParticipant ? (
       <article className="card editor-sheet stack">
@@ -827,25 +817,6 @@ export function JumpsPage() {
         </div>
       </article>
     ) : null;
-    const budgetAttachment =
-      !simpleMode && activeParticipationParticipant && activeParticipation ? (
-        <aside className="jump-budget-rail">
-          <ParticipationBudgetShellAttachment
-            jump={draftJump}
-            participant={activeParticipationParticipant}
-            participation={activeParticipationDraft ?? activeParticipation}
-            workspace={workspace}
-          />
-        </aside>
-      ) : null;
-    const purchaseWorkspace = budgetAttachment ? (
-      <section className="jump-workspace jump-workspace--with-rail">
-        <div className="stack stack--compact">{purchaseEditor}</div>
-        {budgetAttachment}
-      </section>
-    ) : (
-      purchaseEditor
-    );
 
     const showParticipantRail = !simpleMode && (jumpParticipants.length > 1 || pendingFocusedParticipant);
     const participantSelector = jumpParticipants.length > 1 ? (
@@ -897,7 +868,7 @@ export function JumpsPage() {
               ) : null}
             </aside>
 
-            <div className="stack stack--compact">{purchaseWorkspace}</div>
+            <div className="stack stack--compact">{purchaseEditor}</div>
           </section>
         ) : (
           <>
@@ -917,7 +888,7 @@ export function JumpsPage() {
               </section>
             ) : null}
 
-            {purchaseWorkspace}
+            {purchaseEditor}
           </>
         )}
 
