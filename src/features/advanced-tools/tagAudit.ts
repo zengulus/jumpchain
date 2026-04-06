@@ -2,7 +2,7 @@ import type { BranchWorkspace } from '../../domain/chain/selectors';
 import type { WorkspaceParticipation } from '../../domain/jump/types';
 import type { Note } from '../../domain/notes/types';
 import { normalizeTagList, readTagList, tagListIncludesAny } from '../../utils/tags';
-import { buildSearchSnippet, withSearchParams } from '../search/searchUtils';
+import { withSearchParams } from '../search/searchUtils';
 
 interface TagAuditEntryBase {
   id: string;
@@ -259,15 +259,15 @@ function setTagsOnSelectionValue(value: unknown, nextTags: string[]) {
   };
 }
 
-function getSelectionSnippet(value: unknown) {
+function getSelectionBodyText(value: unknown) {
   const record = asRecord(value);
+  const description = typeof record.description === 'string' ? record.description.trim() : '';
+  const summary = typeof record.summary === 'string' ? record.summary.trim() : '';
+  const notes = typeof record.notes === 'string' ? record.notes.trim() : '';
 
-  return buildSearchSnippet(
-    '',
-    typeof record.description === 'string' ? record.description : '',
-    typeof record.summary === 'string' ? record.summary : '',
-    typeof record.notes === 'string' ? record.notes : '',
-  );
+  return [description, summary !== description ? summary : '', notes]
+    .filter((entry) => entry.length > 0)
+    .join('\n\n');
 }
 
 export function buildTagAuditEntries(input: {
@@ -286,7 +286,7 @@ export function buildTagAuditEntries(input: {
     kindLabel: 'Note',
     title: cleanLabel(note.title, 'Untitled Note'),
     subtitle: `Note | ${note.noteType}`,
-    snippet: buildSearchSnippet('', note.content),
+    snippet: note.content,
     tags: readTagList(note.tags),
     to: withSearchParams(`/chains/${input.chainId}/notes`, {
       note: note.id,
@@ -321,7 +321,7 @@ export function buildTagAuditEntries(input: {
         kindLabel: getSelectionKindTitle(record),
         title: cleanLabel(getSelectionTitle(entry), 'Untitled Selection'),
         subtitle: `${getSelectionTabLabel(tab)} | ${participantName} @ ${cleanLabel(jump?.title, 'Jump')}`,
-        snippet: getSelectionSnippet(entry),
+        snippet: getSelectionBodyText(entry),
         tags: readTagList(record.tags),
         to: withSearchParams(`/chains/${input.chainId}/jumps/${participation.jumpId}`, {
           participant: participation.participantId,

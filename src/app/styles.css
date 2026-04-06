@@ -603,6 +603,11 @@ button {
   gap: 0.45rem;
 }
 
+.advanced-tools__entry-text {
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
 .field-grid {
   display: grid;
   gap: 1rem;

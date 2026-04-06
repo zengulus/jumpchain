@@ -79,7 +79,7 @@ function createWorkspace() {
         ownerEntityId: 'chain-1',
         noteType: 'chain',
         title: 'Loose Ends',
-        content: 'Follow up on the library warding plan before next jump.',
+        content: 'Follow up on the library warding plan before next jump.\n\nKeep the full checklist here.',
         tags: [],
       },
     ],
@@ -96,8 +96,12 @@ describe('tag audit', () => {
     expect(entries.some((entry) => entry.kind === 'selection' && entry.to.includes('participationTab=items'))).toBe(true);
     expect(entries.some((entry) => entry.kind === 'selection' && entry.to.includes('participationTab=drawbacks'))).toBe(true);
     expect(entries.some((entry) => entry.kind === 'note' && entry.to.includes('/notes?note=note-1'))).toBe(true);
-    expect(entries.find((entry) => entry.kind === 'note' && entry.title === 'Loose Ends')?.snippet).toContain('library warding plan');
-    expect(entries.find((entry) => entry.kind === 'selection' && entry.title === 'Untitled Cloak')?.snippet).toContain('quiet travel cloak');
+    expect(entries.find((entry) => entry.kind === 'note' && entry.title === 'Loose Ends')?.snippet).toBe(
+      'Follow up on the library warding plan before next jump.\n\nKeep the full checklist here.',
+    );
+    expect(entries.find((entry) => entry.kind === 'selection' && entry.title === 'Untitled Cloak')?.snippet).toBe(
+      'A quiet travel cloak for sneaking around the castle.',
+    );
   });
 
   it('finds only fully untagged records when no target tags are given', () => {
