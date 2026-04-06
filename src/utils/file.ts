@@ -8,3 +8,7 @@ export async function readJsonFile<T = unknown>(file: File): Promise<T> {
     throw new Error(`Unable to parse JSON from "${file.name}": ${message}`);
   }
 }
+
+export async function readTextFile(file: File): Promise<string> {
+  return file.text();
+}

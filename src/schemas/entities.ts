@@ -17,6 +17,7 @@ import {
   ParticipationStatusSchema,
   ScopeTypeSchema,
   ScopedOwnershipSchema,
+  SourceTypeSchema,
 } from './common';
 
 export const ChainSettingsSchema = z.object({
@@ -41,7 +42,7 @@ export const ChainSchema = BaseRecordSchema.extend({
   activeJumpId: IdentifierSchema.nullish(),
   sourceMetadata: z
     .object({
-      sourceType: z.enum(['chainmaker-v2', 'native', 'unknown']),
+      sourceType: SourceTypeSchema,
       sourceVersion: z.string().min(1),
       importedAt: z.string().datetime(),
       rawFragment: z.unknown().optional(),
@@ -220,7 +221,7 @@ export const BranchSchema = BaseRecordSchema.extend({
   notes: z.string(),
   sourceMetadata: z
     .object({
-      sourceType: z.enum(['chainmaker-v2', 'native', 'unknown']),
+      sourceType: SourceTypeSchema,
       sourceVersion: z.string().min(1),
       importedAt: z.string().datetime(),
       rawFragment: z.unknown().optional(),

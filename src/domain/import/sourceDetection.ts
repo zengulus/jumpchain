@@ -4,12 +4,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function matchesJumpSummaryTextSignature(rawText: string) {
+  const normalizedText = rawText.replace(/\r\n?/g, '\n');
+  const firstMeaningfulLine =
+    normalizedText
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? '';
+
+  if (!firstMeaningfulLine.endsWith(':')) {
+    return false;
+  }
+
+  return ['Budgets:', 'Origin & Background:', 'Purchases:'].every((heading) => normalizedText.includes(heading));
+}
+
 export function detectImportSource(raw: unknown): SourceDetectionResult {
+  if (typeof raw === 'string') {
+    if (matchesJumpSummaryTextSignature(raw)) {
+      return {
+        sourceType: 'jump-summary-text',
+        sourceVersion: '1.0',
+        isSupported: true,
+        reasons: ['Detected jump summary text headings: Budgets, Origin & Background, Purchases.'],
+      };
+    }
+
+    return {
+      sourceType: 'unknown',
+      isSupported: false,
+      reasons: ['Text payload does not match a supported jump summary import shape.'],
+    };
+  }
+
   if (!isRecord(raw)) {
     return {
       sourceType: 'unknown',
       isSupported: false,
-      reasons: ['Payload is not a JSON object.'],
+      reasons: ['Payload is neither a JSON object nor a supported jump summary text file.'],
     };
   }
 

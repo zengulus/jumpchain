@@ -223,6 +223,18 @@ function makeSummary(chainName: string, jumpers: number, jumps: number, chainDra
   };
 }
 
+function describeImportSource(sourceType: NormalizedImportModel['sourceType']) {
+  if (sourceType === 'jump-summary-text') {
+    return 'a jump summary text file';
+  }
+
+  if (sourceType === 'chainmaker-v2') {
+    return 'ChainMaker v2';
+  }
+
+  return sourceType;
+}
+
 function buildTopLevelUnresolvedMappings(preservedTopLevel: Record<string, unknown>) {
   const keys = Object.keys(preservedTopLevel);
 
@@ -739,7 +751,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     activeBranchId: branchId,
     activeJumpId: null,
     sourceMetadata: {
-      sourceType: 'chainmaker-v2',
+      sourceType: normalized.sourceType,
       sourceVersion: normalized.sourceVersion,
       importedAt: now,
       preservedFields: normalized.chain.importSourceMetadata,
@@ -758,9 +770,9 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     sourceBranchId: null,
     forkedFromJumpId: null,
     isActive: true,
-    notes: 'Imported from ChainMaker v2.',
+    notes: `Imported from ${describeImportSource(normalized.sourceType)}.`,
     sourceMetadata: {
-      sourceType: 'chainmaker-v2',
+      sourceType: normalized.sourceType,
       sourceVersion: normalized.sourceVersion,
       importedAt: now,
     },
@@ -920,7 +932,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     createdAt: now,
     updatedAt: now,
     chainId,
-    sourceType: 'chainmaker-v2',
+    sourceType: normalized.sourceType,
     sourceVersion: normalized.sourceVersion,
     importMode: 'new-chain',
     status: 'draft',

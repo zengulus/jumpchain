@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../app/store';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { prepareChainMakerV2ImportSession } from '../../domain/import/chainmakerV2';
+import { prepareJumpSummaryTextImportSession } from '../../domain/import/jumpSummaryText';
 import { detectImportSource } from '../../domain/import/sourceDetection';
 import { listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
 import sampleChainMaker from '../../fixtures/chainmaker/chainmaker-v2.sample.json';
-import { readJsonFile } from '../../utils/file';
+import { readTextFile } from '../../utils/file';
 import { ConfirmActionDialog } from '../workspace/shared';
 import { createSafetySnapshot } from '../workspace/safety';
 
@@ -112,20 +113,35 @@ export function ImportDebugPage() {
     setBranchTitle((currentTitle) => currentTitle || suggestedBranchTitle);
   }, [importMode, importSession]);
 
-  function loadRawSource(raw: unknown, label: string) {
+  function loadRawSource(raw: unknown, label: string, fileName?: string) {
     const detection = detectImportSource(raw);
 
-    if (detection.sourceType !== 'chainmaker-v2') {
+    if (detection.sourceType === 'native') {
       throw new Error(
-        `Detected "${detection.sourceType}" instead of ChainMaker v2. ${summarizeReasons(detection.reasons)}`,
+        `Detected "${detection.sourceType}" instead of a supported external import source. ${summarizeReasons(detection.reasons)}`,
       );
     }
 
-    if (!detection.isSupported) {
-      throw new Error(`ChainMaker source version ${detection.sourceVersion ?? 'unknown'} is not supported yet.`);
+    let nextSession;
+
+    if (detection.sourceType === 'chainmaker-v2') {
+      if (!detection.isSupported) {
+        throw new Error(`ChainMaker source version ${detection.sourceVersion ?? 'unknown'} is not supported yet.`);
+      }
+
+      nextSession = prepareChainMakerV2ImportSession(raw);
+    } else if (detection.sourceType === 'jump-summary-text') {
+      if (typeof raw !== 'string') {
+        throw new Error('Jump summary text imports must be loaded from plain text.');
+      }
+
+      nextSession = prepareJumpSummaryTextImportSession(raw, {
+        fileName,
+      });
+    } else {
+      throw new Error(`Detected "${detection.sourceType}". ${summarizeReasons(detection.reasons)}`);
     }
 
-    const nextSession = prepareChainMakerV2ImportSession(raw);
     setImportSession(nextSession);
     setBranchTitle('');
     setStatusMessage(`Loaded ${label} and built a typed import session.`);
@@ -140,10 +156,18 @@ export function ImportDebugPage() {
     }
 
     try {
-      const raw = await readJsonFile(file);
-      loadRawSource(raw, `"${file.name}"`);
+      const text = await readTextFile(file);
+      let raw: unknown = text;
+
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        raw = text;
+      }
+
+      loadRawSource(raw, `"${file.name}"`, file.name);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load ChainMaker file.');
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to load the import file.');
       setStatusMessage(null);
     } finally {
       event.target.value = '';
@@ -239,23 +263,23 @@ export function ImportDebugPage() {
   return (
     <div className="stack import-review">
       <section className="hero">
-        <span className="pill">ChainMaker v2 adapter</span>
+        <span className="pill">Import Review</span>
         <h2>Detect, normalize, review, then commit</h2>
         <p>
           {simpleMode
-            ? 'Load a ChainMaker export, review the important checks, then import it safely.'
-            : 'This screen is the importer foundation layer. It runs a real JSON payload through source detection, DTO validation, normalized mapping, unresolved-field preservation, and native bundle generation before anything touches IndexedDB.'}
+            ? 'Load a supported import file, review the important checks, then import it safely.'
+            : 'This screen is the importer foundation layer. It detects supported external formats, normalizes them into the native bundle shape, preserves unmapped details, and only then writes anything into IndexedDB.'}
         </p>
         <div className="actions">
           <button className="button" type="button" onClick={() => fileInputRef.current?.click()}>
-            Choose ChainMaker JSON
+            Choose Import File
           </button>
           <button
             className="button button--secondary"
             type="button"
             onClick={() => {
               try {
-                loadRawSource(sampleChainMaker, 'the bundled sample fixture');
+                loadRawSource(sampleChainMaker, 'the bundled ChainMaker sample');
               } catch (error) {
                 setErrorMessage(error instanceof Error ? error.message : 'Unable to load bundled sample.');
               }
@@ -275,7 +299,7 @@ export function ImportDebugPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,text/plain,.txt"
           hidden
           onChange={handleFileSelection}
         />

@@ -244,7 +244,7 @@ export interface NormalizedEffectImport {
 }
 
 export interface NormalizedImportModel {
-  sourceType: 'chainmaker-v2';
+  sourceType: SourceType;
   sourceVersion: string;
   chain: NormalizedChainImport;
   jumpers: NormalizedJumperImport[];
@@ -262,7 +262,7 @@ export interface NormalizedImportModel {
 export interface PreparedImportSession {
   sourceDetection: SourceDetectionResult;
   cleaning: ChainMakerV2CleanerResult;
-  source: ChainMakerV2Source;
+  source: unknown;
   normalized: NormalizedImportModel;
   bundle: NativeChainBundle;
   importReport: ImportReport;
