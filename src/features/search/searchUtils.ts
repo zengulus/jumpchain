@@ -1,6 +1,7 @@
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
 import type { NativeChainBundle } from '../../domain/save';
 import type { ChainOverview } from '../../db/persistence';
+import { normalizeTagList, readTagList } from '../../utils/tags';
 import { cosmicBackpackOptionCatalog } from '../cosmic-backpack/catalog';
 import { readCosmicBackpackState } from '../cosmic-backpack/model';
 import { readAltFormNoteFields } from '../participation/altFormNotes';
@@ -147,13 +148,7 @@ function getOptionalNumber(value: unknown) {
 }
 
 function cleanTagList(tags: string[]) {
-  return Array.from(
-    new Set(
-      tags
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0),
-    ),
-  );
+  return normalizeTagList(tags);
 }
 
 export function normalizeSearchQuery(value: string | null | undefined) {
@@ -168,7 +163,7 @@ export function readUniversalSearchCategory(value: string | null | undefined): U
 
 export function extractSearchTerms(query: string) {
   return normalizeSearchQuery(query)
-    .split(' ')
+    .split(/[\s,;]+/)
     .map((term) => term.trim())
     .filter(Boolean);
 }
@@ -472,7 +467,7 @@ function getSelectionKindTitle(record: Record<string, unknown>) {
 }
 
 function getSelectionTags(value: unknown) {
-  return cleanTagList(getStringList(asRecord(value).tags));
+  return readTagList(asRecord(value).tags);
 }
 
 function getSelectionSubtypeKey(value: unknown) {

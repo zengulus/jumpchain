@@ -1,5 +1,6 @@
-import { cloneElement, useCallback, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, useCallback, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
+import { getTagSuggestions, normalizeTagKey, normalizeTagList, parseTagInput } from '../../utils/tags';
 import { createJsonText } from './records';
 import type { AutosaveStatus } from './useAutosaveRecord';
 
@@ -425,6 +426,125 @@ export function PlainLanguageHint(props: {
         ?
       </button>
     </TooltipFrame>
+  );
+}
+
+export function TagEditorField(props: {
+  label: string;
+  tags: string[];
+  onChange: (nextTags: string[]) => void;
+  suggestions?: string[];
+  placeholder?: string;
+  hint?: string;
+  emptyMessage?: string;
+  addLabel?: string;
+  maxSuggestions?: number;
+}) {
+  const [draftValue, setDraftValue] = useState('');
+  const selectedTags = useMemo(() => normalizeTagList(props.tags), [props.tags]);
+  const parsedDraftTags = useMemo(() => parseTagInput(draftValue), [draftValue]);
+  const visibleSuggestions = useMemo(
+    () =>
+      getTagSuggestions({
+        suggestions: [...(props.suggestions ?? []), ...selectedTags],
+        selectedTags,
+        query: draftValue,
+      }).slice(0, props.maxSuggestions ?? 12),
+    [draftValue, props.maxSuggestions, props.suggestions, selectedTags],
+  );
+
+  function updateTags(nextTags: string[]) {
+    props.onChange(normalizeTagList(nextTags));
+  }
+
+  function commitDraft(rawValue = draftValue) {
+    const nextDraftTags = parseTagInput(rawValue);
+
+    if (nextDraftTags.length === 0) {
+      setDraftValue('');
+      return;
+    }
+
+    updateTags([...selectedTags, ...nextDraftTags]);
+    setDraftValue('');
+  }
+
+  function removeTag(tagToRemove: string) {
+    const targetKey = normalizeTagKey(tagToRemove);
+    updateTags(selectedTags.filter((tag) => normalizeTagKey(tag) !== targetKey));
+  }
+
+  return (
+    <div className="field tag-editor">
+      <span className="field-label-row">
+        <span>{props.label}</span>
+        {props.hint ? <span className="field-hint">{props.hint}</span> : null}
+      </span>
+
+      {selectedTags.length > 0 ? (
+        <div className="tag-editor__selected token-list">
+          {selectedTags.map((tag) => (
+            <button
+              key={tag}
+              className="token tag-editor__tag"
+              type="button"
+              onClick={() => removeTag(tag)}
+              aria-label={`Remove ${tag} tag`}
+            >
+              <span>{tag}</span>
+              <span aria-hidden="true">x</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <small className="field-hint">{props.emptyMessage ?? 'No tags yet.'}</small>
+      )}
+
+      <div className="tag-editor__controls">
+        <input
+          value={draftValue}
+          placeholder={props.placeholder ?? 'Type a tag, then press Enter'}
+          onChange={(event) => setDraftValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ',') {
+              event.preventDefault();
+              commitDraft();
+              return;
+            }
+
+            if (event.key === 'Backspace' && draftValue.trim().length === 0 && selectedTags.length > 0) {
+              removeTag(selectedTags[selectedTags.length - 1]);
+            }
+          }}
+        />
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={() => commitDraft()}
+          disabled={parsedDraftTags.length === 0}
+        >
+          {props.addLabel ?? 'Add Tag'}
+        </button>
+      </div>
+
+      {visibleSuggestions.length > 0 ? (
+        <div className="tag-editor__suggestion-block stack stack--compact">
+          <small className="field-hint">Suggestions</small>
+          <div className="tag-editor__suggestions token-list">
+            {visibleSuggestions.map((tag) => (
+              <button
+                key={`suggestion-${tag}`}
+                className="token token--muted tag-editor__suggestion"
+                type="button"
+                onClick={() => updateTags([...selectedTags, tag])}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -4,6 +4,7 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { noteTypes, scopeTypes, type OwnerEntityType, type ScopeType } from '../../domain/common';
 import type { Note } from '../../domain/notes/types';
 import { db } from '../../db/database';
+import { collectWorkspaceTags } from '../../utils/tags';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery } from '../search/searchUtils';
 import { createBlankNote, deleteChainRecord, saveChainRecord } from '../workspace/records';
@@ -13,6 +14,7 @@ import {
   PlainLanguageHint,
   ReadinessPill,
   StatusNoticeBanner,
+  TagEditorField,
   type StatusNotice,
   WorkspaceModuleHeader,
 } from '../workspace/shared';
@@ -137,6 +139,12 @@ export function NotesPage() {
     draftNote && draftNote.ownerEntityType in ownerOptions
       ? ownerOptions[draftNote.ownerEntityType as keyof typeof ownerOptions]
       : [];
+  const tagSuggestions = collectWorkspaceTags({
+    notes: draftNote
+      ? [...workspace.notes.filter((note) => note.id !== draftNote.id), draftNote]
+      : workspace.notes,
+    participations: workspace.participations,
+  });
   const hasNoteSearch = searchQuery.trim().length > 0;
   const showNoteSearch = focusedNotes.length > 1 || hasNoteSearch;
   const showNoteTypeFilter = focusedNotes.length > 1 || noteFilter !== 'all';
@@ -480,22 +488,18 @@ export function NotesPage() {
                         )}
                       </label>
 
-                      <label className="field">
-                        <span>Tags</span>
-                        <input
-                          value={draftNote?.tags.join(', ') ?? ''}
-                          onChange={(event) =>
-                            noteAutosave.updateDraft({
-                              ...(draftNote ?? selectedNote),
-                              tags: event.target.value
-                                .split(',')
-                                .map((entry) => entry.trim())
-                                .filter(Boolean),
-                            } as Note)
-                          }
-                          placeholder="journal, rules, branching"
-                        />
-                      </label>
+                      <TagEditorField
+                        label="Tags"
+                        tags={draftNote?.tags ?? []}
+                        suggestions={tagSuggestions}
+                        placeholder="journal, rules, branching"
+                        onChange={(nextTags) =>
+                          noteAutosave.updateDraft({
+                            ...(draftNote ?? selectedNote),
+                            tags: nextTags,
+                          } as Note)
+                        }
+                      />
                     </div>
                   </details>
                 ) : (
@@ -578,22 +582,18 @@ export function NotesPage() {
                       )}
                     </label>
 
-                    <label className="field">
-                      <span>Tags</span>
-                      <input
-                        value={draftNote?.tags.join(', ') ?? ''}
-                        onChange={(event) =>
-                          noteAutosave.updateDraft({
-                            ...(draftNote ?? selectedNote),
-                            tags: event.target.value
-                              .split(',')
-                              .map((entry) => entry.trim())
-                              .filter(Boolean),
-                          } as Note)
-                        }
-                        placeholder="journal, rules, branching"
-                      />
-                    </label>
+                    <TagEditorField
+                      label="Tags"
+                      tags={draftNote?.tags ?? []}
+                      suggestions={tagSuggestions}
+                      placeholder="journal, rules, branching"
+                      onChange={(nextTags) =>
+                        noteAutosave.updateDraft({
+                          ...(draftNote ?? selectedNote),
+                          tags: nextTags,
+                        } as Note)
+                      }
+                    />
                   </>
                 )}
               </>

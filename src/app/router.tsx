@@ -103,6 +103,10 @@ export const appRouter = createHashRouter([
             lazy: lazyRoute(() => import('../features/notes/NotesPage'), 'NotesPage'),
           },
           {
+            path: 'advanced-tools',
+            lazy: lazyRoute(() => import('../features/advanced-tools/AdvancedToolsPage'), 'AdvancedToolsPage'),
+          },
+          {
             path: 'backups',
             lazy: lazyRoute(() => import('../features/backups/BackupsPage'), 'BackupsPage'),
           },

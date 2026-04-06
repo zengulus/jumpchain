@@ -3,12 +3,14 @@ import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
+import { collectWorkspaceTags, readTagList } from '../../utils/tags';
 import { saveParticipationRecord } from '../workspace/records';
 import {
   AssistiveHint,
   AutosaveStatusIndicator,
   JsonEditorField,
   SimpleModeGuideFrame,
+  TagEditorField,
 } from '../workspace/shared';
 import {
   createBranchGuideScopeKey,
@@ -88,6 +90,7 @@ interface SelectionEditorSectionProps {
   showSubtypeSelector?: boolean;
   stipendSectionKey?: PurchaseSectionKey;
   sectionStipends?: SectionStipendMap;
+  tagSuggestions: string[];
 }
 
 interface CurrencyDefinition {
@@ -365,7 +368,7 @@ function getSelectionToken(value: unknown): SummaryToken {
             ? String(value)
             : 'Unresolved selection';
   const detailParts: string[] = [];
-  const tags = getStringList(record.tags).slice(0, 3);
+  const tags = readTagList(record.tags).slice(0, 3);
   const valueAmount = getOptionalNumber(record.value);
   const computedCost = getComputedSelectionCost(record);
 
@@ -539,7 +542,7 @@ function getSelectionDescriptionValue(record: Record<string, unknown>) {
 }
 
 function getSelectionTagList(record: Record<string, unknown>) {
-  return getStringList(record.tags);
+  return readTagList(record.tags);
 }
 
 function setOptionalNumericField(record: Record<string, unknown>, key: string, nextValue: string) {
@@ -1446,6 +1449,7 @@ interface SelectionEditorRowProps {
   subtypeKeys: string[];
   appliedStipend: number;
   effectiveSpend: number;
+  tagSuggestions: string[];
   onRemove: (index: number) => void;
   onUpdate: (index: number, updater: (record: Record<string, unknown>) => Record<string, unknown>) => void;
 }
@@ -1493,21 +1497,18 @@ const SelectionEditorRow = memo(function SelectionEditorRow(props: SelectionEdit
           />
         </label>
 
-        <label className="field">
-          <span>Tags</span>
-          <input
-            value={getSelectionTagList(record).join(', ')}
-            onChange={(event) =>
-              props.onUpdate(props.index, (current) => ({
-                ...current,
-                tags: event.target.value
-                  .split(',')
-                  .map((entry) => entry.trim())
-                  .filter((entry) => entry.length > 0),
-              }))
-            }
-          />
-        </label>
+        <TagEditorField
+          label="Tags"
+          tags={getSelectionTagList(record)}
+          suggestions={props.tagSuggestions}
+          placeholder="knowledge, combat, scouting"
+          onChange={(nextTags) =>
+            props.onUpdate(props.index, (current) => ({
+              ...current,
+              tags: nextTags,
+            }))
+          }
+        />
       </div>
 
       <div className={`field-grid ${props.cpOnlyPricing ? 'field-grid--two' : 'field-grid--three'}`}>
@@ -1668,7 +1669,8 @@ const SelectionEditorRow = memo(function SelectionEditorRow(props: SelectionEdit
   previousProps.showSubtypeSelector === nextProps.showSubtypeSelector &&
   previousProps.subtypeKeys === nextProps.subtypeKeys &&
   previousProps.appliedStipend === nextProps.appliedStipend &&
-  previousProps.effectiveSpend === nextProps.effectiveSpend,
+  previousProps.effectiveSpend === nextProps.effectiveSpend &&
+  previousProps.tagSuggestions === nextProps.tagSuggestions,
 );
 
 function SelectionEditorSection(props: SelectionEditorSectionProps) {
@@ -1755,6 +1757,7 @@ function SelectionEditorSection(props: SelectionEditorSectionProps) {
               subtypeKeys={subtypeKeys}
               appliedStipend={stipendBreakdown[index]?.stipendApplied ?? 0}
               effectiveSpend={stipendBreakdown[index]?.netAmount ?? getSelectionSpendAmount(item)}
+              tagSuggestions={props.tagSuggestions}
               onRemove={onRemove}
               onUpdate={onUpdate}
             />
@@ -2689,6 +2692,17 @@ export function ParticipationEditorCard(props: {
     () => getInheritedBaseBudgets(rawCurrencyDefinitions, draftParticipation.budgets),
     [draftParticipation.budgets, rawCurrencyDefinitions],
   );
+  const tagSuggestions = useMemo(
+    () =>
+      collectWorkspaceTags({
+        notes: props.workspace.notes,
+        participations: [
+          ...props.workspace.participations.filter((participation) => participation.id !== draftParticipation.id),
+          draftParticipation,
+        ],
+      }),
+    [draftParticipation, props.workspace.notes, props.workspace.participations],
+  );
   const showBudgetSummary = props.showBudgetSummary ?? true;
   const showBudgetHeader = props.showBudgetHeader ?? true;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -3364,6 +3378,7 @@ export function ParticipationEditorCard(props: {
           showSubtypeSelector
           stipendSectionKey="perk"
           sectionStipends={sectionStipends}
+          tagSuggestions={tagSuggestions}
         />
       ) : null}
 
@@ -3383,6 +3398,7 @@ export function ParticipationEditorCard(props: {
             showSubtypeSelector
             stipendSectionKey="subsystem"
             sectionStipends={sectionStipends}
+            tagSuggestions={tagSuggestions}
           />
 
           <details className="details-panel">
@@ -3420,6 +3436,7 @@ export function ParticipationEditorCard(props: {
             showSubtypeSelector
             stipendSectionKey="item"
             sectionStipends={sectionStipends}
+            tagSuggestions={tagSuggestions}
           />
 
           <details className="details-panel">
@@ -3457,6 +3474,7 @@ export function ParticipationEditorCard(props: {
             showSubtypeSelector
             stipendSectionKey="other"
             sectionStipends={sectionStipends}
+            tagSuggestions={tagSuggestions}
           />
         </div>
       ) : null}
@@ -3492,6 +3510,7 @@ export function ParticipationEditorCard(props: {
               }))
             }
             currencyDefinitions={currencyDefinitions}
+            tagSuggestions={tagSuggestions}
           />
 
           <SelectionEditorSection
@@ -3507,6 +3526,7 @@ export function ParticipationEditorCard(props: {
               }))
             }
             currencyDefinitions={currencyDefinitions}
+            tagSuggestions={tagSuggestions}
           />
         </div>
       ) : null}

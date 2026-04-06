@@ -555,6 +555,54 @@ button {
   width: auto;
 }
 
+.tag-editor {
+  gap: 0.7rem;
+}
+
+.tag-editor__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.tag-editor__controls > .button {
+  min-height: 3rem;
+}
+
+.tag-editor__selected,
+.tag-editor__suggestions {
+  gap: 0.55rem;
+}
+
+.tag-editor__tag,
+.tag-editor__suggestion {
+  cursor: pointer;
+  text-align: left;
+}
+
+.tag-editor__tag {
+  gap: 0.5rem;
+}
+
+.tag-editor__tag:hover,
+.tag-editor__tag:focus-visible,
+.tag-editor__suggestion:hover,
+.tag-editor__suggestion:focus-visible {
+  border-color: rgba(105, 210, 180, 0.28);
+  background: rgba(105, 210, 180, 0.14);
+  outline: none;
+}
+
+.tag-editor__tag span:last-child {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.tag-editor__suggestion-block {
+  gap: 0.45rem;
+}
+
 .field-grid {
   display: grid;
   gap: 1rem;
@@ -1940,6 +1988,10 @@ button {
 .page-shell[data-ui-mode='simple'] .field-grid--two,
 .page-shell[data-ui-mode='simple'] .field-grid--three,
 .page-shell[data-ui-mode='simple'] .workspace-two-column {
+  grid-template-columns: 1fr;
+}
+
+.page-shell[data-ui-mode='simple'] .tag-editor__controls {
   grid-template-columns: 1fr;
 }
 
@@ -4647,5 +4699,9 @@ span {
 
   .alt-chain-builder__toolbar-actions {
     justify-content: flex-start;
+  }
+
+  .tag-editor__controls {
+    grid-template-columns: 1fr;
   }
 }

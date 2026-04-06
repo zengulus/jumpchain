@@ -38,6 +38,7 @@ type ModuleKey =
   | 'cosmic-backpack'
   | 'timeline'
   | 'notes'
+  | 'advanced-tools'
   | 'backups';
 
 interface WorkspaceModuleMenuItem {
@@ -81,6 +82,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   'cosmic-backpack': 'Cosmic Backpack',
   timeline: 'Timeline',
   notes: 'Notes',
+  'advanced-tools': 'Advanced Tools',
   backups: 'Backups',
 };
 
@@ -193,6 +195,10 @@ function getActiveModuleKey(pathname: string): ModuleKey {
 
   if (pathname.includes('/notes')) {
     return 'notes';
+  }
+
+  if (pathname.includes('/advanced-tools')) {
+    return 'advanced-tools';
   }
 
   if (pathname.includes('/backups')) {
@@ -441,6 +447,8 @@ export function ChainWorkspaceLayout() {
         return `/chains/${resolvedChainId}/timeline`;
       case 'notes':
         return `/chains/${resolvedChainId}/notes`;
+      case 'advanced-tools':
+        return `/chains/${resolvedChainId}/advanced-tools`;
       case 'backups':
         return `/chains/${resolvedChainId}/backups`;
       default:
@@ -676,6 +684,19 @@ export function ChainWorkspaceLayout() {
           label: 'Current Jump Rules',
           to: getModulePath('current-jump-rules'),
           description: 'Jump-specific overrides and effective rule-state inspection.',
+          readiness: 'advanced',
+        },
+      ],
+    },
+    {
+      id: 'tools',
+      title: 'Advanced tools',
+      items: [
+        {
+          key: 'advanced-tools',
+          label: 'Advanced Tools',
+          to: getModulePath('advanced-tools'),
+          description: 'Tag audits and other maintenance utilities that do not need to sit in the main workflow.',
           readiness: 'advanced',
         },
       ],

@@ -261,6 +261,11 @@ describe('search utilities', () => {
     expect(matchesSearchQuery('archive vault', 'Echo Shield', 'Protects the garage')).toBe(false);
   });
 
+  it('treats comma-separated terms like multi-tag input', () => {
+    expect(matchesSearchQuery('archive, garage', 'Vault Ledger', ['archive', 'garage'])).toBe(true);
+    expect(matchesSearchQuery('archive, garage', 'Vault Ledger', ['archive', 'library'])).toBe(false);
+  });
+
   it('builds routed results for active-branch records', () => {
     const bundle = createBundle('chain-alpha', 'Alpha Chain');
     const results = buildUniversalSearchResults({
