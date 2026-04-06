@@ -489,10 +489,12 @@ export function NotesPage() {
                       </label>
 
                       <TagEditorField
+                        compact
                         label="Tags"
                         tags={draftNote?.tags ?? []}
                         suggestions={tagSuggestions}
-                        placeholder="journal, rules, branching"
+                        placeholder="Add tag..."
+                        addLabel="Add"
                         onChange={(nextTags) =>
                           noteAutosave.updateDraft({
                             ...(draftNote ?? selectedNote),
@@ -583,10 +585,12 @@ export function NotesPage() {
                     </label>
 
                     <TagEditorField
+                      compact
                       label="Tags"
                       tags={draftNote?.tags ?? []}
                       suggestions={tagSuggestions}
-                      placeholder="journal, rules, branching"
+                      placeholder="Add tag..."
+                      addLabel="Add"
                       onChange={(nextTags) =>
                         noteAutosave.updateDraft({
                           ...(draftNote ?? selectedNote),

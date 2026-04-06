@@ -1488,28 +1488,28 @@ const SelectionEditorRow = memo(function SelectionEditorRow(props: SelectionEdit
         </button>
       </div>
 
-      <div className="field-grid field-grid--two">
-        <label className="field">
-          <span>Title</span>
-          <input
-            value={getSelectionTitleValue(record, fallbackTitle)}
-            onChange={(event) => props.onUpdate(props.index, (current) => setSelectionTitleValue(current, event.target.value))}
-          />
-        </label>
-
-        <TagEditorField
-          label="Tags"
-          tags={getSelectionTagList(record)}
-          suggestions={props.tagSuggestions}
-          placeholder="knowledge, combat, scouting"
-          onChange={(nextTags) =>
-            props.onUpdate(props.index, (current) => ({
-              ...current,
-              tags: nextTags,
-            }))
-          }
+      <label className="field">
+        <span>Title</span>
+        <input
+          value={getSelectionTitleValue(record, fallbackTitle)}
+          onChange={(event) => props.onUpdate(props.index, (current) => setSelectionTitleValue(current, event.target.value))}
         />
-      </div>
+      </label>
+
+      <TagEditorField
+        compact
+        label="Tags"
+        tags={getSelectionTagList(record)}
+        suggestions={props.tagSuggestions}
+        placeholder="Add tag..."
+        addLabel="Add"
+        onChange={(nextTags) =>
+          props.onUpdate(props.index, (current) => ({
+            ...current,
+            tags: nextTags,
+          }))
+        }
+      />
 
       <div className={`field-grid ${props.cpOnlyPricing ? 'field-grid--two' : 'field-grid--three'}`}>
         <label className="field">

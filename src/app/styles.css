@@ -559,6 +559,10 @@ button {
   gap: 0.7rem;
 }
 
+.tag-editor--compact {
+  gap: 0.5rem;
+}
+
 .tag-editor__controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -568,6 +572,16 @@ button {
 
 .tag-editor__controls > .button {
   min-height: 3rem;
+}
+
+.tag-editor--compact .tag-editor__controls {
+  gap: 0.55rem;
+}
+
+.tag-editor--compact .tag-editor__controls > .button {
+  min-height: 2.8rem;
+  min-width: 4.5rem;
+  padding-inline: 0.85rem;
 }
 
 .tag-editor__selected,
@@ -597,6 +611,16 @@ button {
 .tag-editor__tag span:last-child {
   color: var(--color-text-muted);
   font-size: 0.82rem;
+}
+
+.tag-editor--compact .tag-editor__selected {
+  gap: 0.45rem;
+}
+
+.tag-editor--compact .tag-editor__tag {
+  min-height: 1.95rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.9rem;
 }
 
 .tag-editor__suggestion-block {

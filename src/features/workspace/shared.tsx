@@ -439,8 +439,10 @@ export function TagEditorField(props: {
   emptyMessage?: string;
   addLabel?: string;
   maxSuggestions?: number;
+  compact?: boolean;
 }) {
   const [draftValue, setDraftValue] = useState('');
+  const suggestionListId = useId();
   const selectedTags = useMemo(() => normalizeTagList(props.tags), [props.tags]);
   const parsedDraftTags = useMemo(() => parseTagInput(draftValue), [draftValue]);
   const visibleSuggestions = useMemo(
@@ -475,7 +477,7 @@ export function TagEditorField(props: {
   }
 
   return (
-    <div className="field tag-editor">
+    <div className={`field tag-editor${props.compact ? ' tag-editor--compact' : ''}`}>
       <span className="field-label-row">
         <span>{props.label}</span>
         {props.hint ? <span className="field-hint">{props.hint}</span> : null}
@@ -502,6 +504,7 @@ export function TagEditorField(props: {
 
       <div className="tag-editor__controls">
         <input
+          list={visibleSuggestions.length > 0 ? suggestionListId : undefined}
           value={draftValue}
           placeholder={props.placeholder ?? 'Type a tag, then press Enter'}
           onChange={(event) => setDraftValue(event.target.value)}
@@ -528,6 +531,14 @@ export function TagEditorField(props: {
       </div>
 
       {visibleSuggestions.length > 0 ? (
+        <datalist id={suggestionListId}>
+          {visibleSuggestions.map((tag) => (
+            <option key={`datalist-${tag}`} value={tag} />
+          ))}
+        </datalist>
+      ) : null}
+
+      {!props.compact && visibleSuggestions.length > 0 ? (
         <div className="tag-editor__suggestion-block stack stack--compact">
           <small className="field-hint">Suggestions</small>
           <div className="tag-editor__suggestions token-list">
