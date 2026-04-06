@@ -1,8 +1,10 @@
 import type { BranchWorkspace } from '../../domain/chain/selectors';
-import { readTagList, tagListIncludesAny } from '../../utils/tags';
+import type { WorkspaceParticipation } from '../../domain/jump/types';
+import type { Note } from '../../domain/notes/types';
+import { normalizeTagList, readTagList, tagListIncludesAny } from '../../utils/tags';
 import { withSearchParams } from '../search/searchUtils';
 
-export interface TagAuditEntry {
+interface TagAuditEntryBase {
   id: string;
   kind: 'selection' | 'note';
   kindLabel: string;
@@ -11,6 +13,20 @@ export interface TagAuditEntry {
   tags: string[];
   to: string;
 }
+
+export interface NoteTagAuditEntry extends TagAuditEntryBase {
+  kind: 'note';
+  noteId: string;
+}
+
+export interface SelectionTagAuditEntry extends TagAuditEntryBase {
+  kind: 'selection';
+  participationId: string;
+  selectionGroup: 'purchases' | 'drawbacks' | 'retainedDrawbacks';
+  selectionIndex: number;
+}
+
+export type TagAuditEntry = NoteTagAuditEntry | SelectionTagAuditEntry;
 
 interface PurchaseSubtypeDefinition {
   name: string;
@@ -222,6 +238,26 @@ function getSelectionTabLabel(tab: ReturnType<typeof getSelectionTab>) {
   }
 }
 
+function setTagsOnSelectionValue(value: unknown, nextTags: string[]) {
+  const normalizedTags = normalizeTagList(nextTags);
+  const record = asRecord(value);
+
+  if (Object.keys(record).length > 0) {
+    return {
+      ...record,
+      tags: normalizedTags,
+    };
+  }
+
+  const title = cleanLabel(getSelectionTitle(value), 'Untitled Selection');
+
+  return {
+    name: title,
+    summary: title,
+    tags: normalizedTags,
+  };
+}
+
 export function buildTagAuditEntries(input: {
   chainId: string;
   workspace: BranchWorkspace;
@@ -231,9 +267,10 @@ export function buildTagAuditEntries(input: {
     ...input.workspace.jumpers.map((jumper) => [jumper.id, jumper.name] as const),
     ...input.workspace.companions.map((companion) => [companion.id, companion.name] as const),
   ]);
-  const noteEntries: TagAuditEntry[] = input.workspace.notes.map((note) => ({
+  const noteEntries: NoteTagAuditEntry[] = input.workspace.notes.map((note) => ({
     id: note.id,
     kind: 'note',
+    noteId: note.id,
     kindLabel: 'Note',
     title: cleanLabel(note.title, 'Untitled Note'),
     subtitle: `Note | ${note.noteType}`,
@@ -242,7 +279,7 @@ export function buildTagAuditEntries(input: {
       note: note.id,
     }),
   }));
-  const selectionEntries: TagAuditEntry[] = input.workspace.participations.flatMap((participation) => {
+  const selectionEntries: SelectionTagAuditEntry[] = input.workspace.participations.flatMap((participation) => {
     const jump = jumpById.get(participation.jumpId);
     const participantName = participantById.get(participation.participantId) ?? 'Participant';
     const rawSubtypeDefinitions = getPurchaseSubtypeDefinitions(asRecord(participation.importSourceMetadata).purchaseSubtypes);
@@ -254,13 +291,20 @@ export function buildTagAuditEntries(input: {
     );
     const purchaseClassification = getPurchaseClassification(purchaseSubtypeDefinitions);
 
-    return [...participation.purchases, ...participation.drawbacks, ...participation.retainedDrawbacks].map((entry, index) => {
+    return ([
+      ['purchases', participation.purchases],
+      ['drawbacks', participation.drawbacks],
+      ['retainedDrawbacks', participation.retainedDrawbacks],
+    ] as const).flatMap(([selectionGroup, entries]) => entries.map((entry, index) => {
       const record = asRecord(entry);
       const tab = getSelectionTab(entry, purchaseClassification);
 
       return {
-        id: `${participation.id}-${tab}-${index}`,
+        id: `${participation.id}-${selectionGroup}-${index}`,
         kind: 'selection' as const,
+        participationId: participation.id,
+        selectionGroup,
+        selectionIndex: index,
         kindLabel: getSelectionKindTitle(record),
         title: cleanLabel(getSelectionTitle(entry), 'Untitled Selection'),
         subtitle: `${getSelectionTabLabel(tab)} | ${participantName} @ ${cleanLabel(jump?.title, 'Jump')}`,
@@ -271,7 +315,7 @@ export function buildTagAuditEntries(input: {
           participationTab: tab,
         }),
       };
-    });
+    }));
   });
 
   return [...selectionEntries, ...noteEntries].sort(
@@ -288,4 +332,24 @@ export function filterUntaggedEntries(entries: TagAuditEntry[], targetTags: stri
   }
 
   return entries.filter((entry) => !tagListIncludesAny(entry.tags, targetTags));
+}
+
+export function applyTagsToNoteAuditEntry(note: Note, nextTags: string[]) {
+  return {
+    ...note,
+    tags: normalizeTagList(nextTags),
+  };
+}
+
+export function applyTagsToSelectionAuditEntry(
+  participation: WorkspaceParticipation,
+  entry: SelectionTagAuditEntry,
+  nextTags: string[],
+) {
+  return {
+    ...participation,
+    [entry.selectionGroup]: participation[entry.selectionGroup].map((selection, selectionIndex) =>
+      selectionIndex === entry.selectionIndex ? setTagsOnSelectionValue(selection, nextTags) : selection,
+    ),
+  };
 }

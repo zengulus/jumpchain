@@ -1,15 +1,26 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
-import { collectWorkspaceTags, formatTagList } from '../../utils/tags';
-import { TagEditorField, WorkspaceModuleHeader } from '../workspace/shared';
+import { db } from '../../db/database';
+import { collectWorkspaceTags, formatTagList, normalizeTagKey, normalizeTagList } from '../../utils/tags';
+import { saveChainRecord, saveParticipationRecord } from '../workspace/records';
+import { StatusNoticeBanner, TagEditorField, WorkspaceModuleHeader, type StatusNotice } from '../workspace/shared';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
-import { buildTagAuditEntries, filterUntaggedEntries } from './tagAudit';
+import {
+  applyTagsToNoteAuditEntry,
+  applyTagsToSelectionAuditEntry,
+  buildTagAuditEntries,
+  filterUntaggedEntries,
+  type TagAuditEntry,
+} from './tagAudit';
 
 export function AdvancedToolsPage() {
   const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [targetTags, setTargetTags] = useState<string[]>([]);
+  const [tagDrafts, setTagDrafts] = useState<Record<string, string[]>>({});
+  const [savingEntryIds, setSavingEntryIds] = useState<string[]>([]);
+  const [notice, setNotice] = useState<StatusNotice | null>(null);
   const tagSuggestions = useMemo(
     () =>
       collectWorkspaceTags({
@@ -33,6 +44,81 @@ export function AdvancedToolsPage() {
   const noteCount = matchingEntries.filter((entry) => entry.kind === 'note').length;
   const selectionCount = matchingEntries.filter((entry) => entry.kind === 'selection').length;
 
+  function getDraftTags(entry: TagAuditEntry) {
+    return tagDrafts[entry.id] ?? entry.tags;
+  }
+
+  function tagsMatch(left: string[], right: string[]) {
+    const normalizedLeft = normalizeTagList(left);
+    const normalizedRight = normalizeTagList(right);
+
+    return (
+      normalizedLeft.length === normalizedRight.length &&
+      normalizedLeft.every((tag, index) => normalizeTagKey(tag) === normalizeTagKey(normalizedRight[index]))
+    );
+  }
+
+  function updateDraft(entryId: string, nextTags: string[]) {
+    setTagDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [entryId]: normalizeTagList(nextTags),
+    }));
+  }
+
+  function clearDraft(entryId: string) {
+    setTagDrafts((currentDrafts) => {
+      if (!(entryId in currentDrafts)) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[entryId];
+      return nextDrafts;
+    });
+  }
+
+  async function saveEntryTags(entry: TagAuditEntry, nextTags = getDraftTags(entry)) {
+    setSavingEntryIds((currentIds) => [...currentIds, entry.id]);
+
+    try {
+      if (entry.kind === 'note') {
+        const note = workspace.notes.find((candidate) => candidate.id === entry.noteId);
+
+        if (!note) {
+          throw new Error('Unable to find that note in the active branch anymore.');
+        }
+
+        await saveChainRecord(db.notes, applyTagsToNoteAuditEntry(note, nextTags));
+      } else {
+        const participation = workspace.participations.find((candidate) => candidate.id === entry.participationId);
+
+        if (!participation) {
+          throw new Error('Unable to find that participation in the active branch anymore.');
+        }
+
+        await saveParticipationRecord(applyTagsToSelectionAuditEntry(participation, entry, nextTags));
+      }
+
+      clearDraft(entry.id);
+      setNotice({
+        tone: 'success',
+        message: `Updated tags for "${entry.title}".`,
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : `Unable to save tags for "${entry.title}".`,
+      });
+    } finally {
+      setSavingEntryIds((currentIds) => currentIds.filter((candidateId) => candidateId !== entry.id));
+    }
+  }
+
+  async function applyTargetTags(entry: TagAuditEntry) {
+    const nextTags = normalizeTagList([...getDraftTags(entry), ...targetTags]);
+    await saveEntryTags(entry, nextTags);
+  }
+
   return (
     <div className="stack">
       <WorkspaceModuleHeader
@@ -44,6 +130,8 @@ export function AdvancedToolsPage() {
         }
         badge={`${auditEntries.length} records audited`}
       />
+
+      <StatusNoticeBanner notice={notice} />
 
       <section className="card stack">
         <div className="section-heading">
@@ -103,6 +191,47 @@ export function AdvancedToolsPage() {
                   {entry.tags.length > 0 ? `Current tags: ${entry.tags.join(', ')}` : 'No tags yet.'}
                 </p>
               </Link>
+
+              <TagEditorField
+                label="Edit tags here"
+                tags={getDraftTags(entry)}
+                suggestions={normalizeTagList([...tagSuggestions, ...targetTags, ...entry.tags])}
+                placeholder="knowledge, social, archive"
+                emptyMessage="This record is still untagged."
+                addLabel="Add Tag"
+                onChange={(nextTags) => updateDraft(entry.id, nextTags)}
+              />
+
+              <div className="actions">
+                {targetTags.length > 0 ? (
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => void applyTargetTags(entry)}
+                    disabled={savingEntryIds.includes(entry.id)}
+                  >
+                    {savingEntryIds.includes(entry.id) ? 'Saving...' : 'Apply Target Tags'}
+                  </button>
+                ) : null}
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void saveEntryTags(entry)}
+                  disabled={savingEntryIds.includes(entry.id) || tagsMatch(getDraftTags(entry), entry.tags)}
+                >
+                  {savingEntryIds.includes(entry.id) ? 'Saving...' : 'Save Tags'}
+                </button>
+                {!tagsMatch(getDraftTags(entry), entry.tags) ? (
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => clearDraft(entry.id)}
+                    disabled={savingEntryIds.includes(entry.id)}
+                  >
+                    Reset
+                  </button>
+                ) : null}
+              </div>
             </article>
           ))}
         </section>
