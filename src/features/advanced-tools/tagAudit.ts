@@ -2,7 +2,7 @@ import type { BranchWorkspace } from '../../domain/chain/selectors';
 import type { WorkspaceParticipation } from '../../domain/jump/types';
 import type { Note } from '../../domain/notes/types';
 import { normalizeTagList, readTagList, tagListIncludesAny } from '../../utils/tags';
-import { withSearchParams } from '../search/searchUtils';
+import { buildSearchSnippet, withSearchParams } from '../search/searchUtils';
 
 interface TagAuditEntryBase {
   id: string;
@@ -10,6 +10,7 @@ interface TagAuditEntryBase {
   kindLabel: string;
   title: string;
   subtitle: string;
+  snippet: string;
   tags: string[];
   to: string;
 }
@@ -258,6 +259,17 @@ function setTagsOnSelectionValue(value: unknown, nextTags: string[]) {
   };
 }
 
+function getSelectionSnippet(value: unknown) {
+  const record = asRecord(value);
+
+  return buildSearchSnippet(
+    '',
+    typeof record.description === 'string' ? record.description : '',
+    typeof record.summary === 'string' ? record.summary : '',
+    typeof record.notes === 'string' ? record.notes : '',
+  );
+}
+
 export function buildTagAuditEntries(input: {
   chainId: string;
   workspace: BranchWorkspace;
@@ -274,6 +286,7 @@ export function buildTagAuditEntries(input: {
     kindLabel: 'Note',
     title: cleanLabel(note.title, 'Untitled Note'),
     subtitle: `Note | ${note.noteType}`,
+    snippet: buildSearchSnippet('', note.content),
     tags: readTagList(note.tags),
     to: withSearchParams(`/chains/${input.chainId}/notes`, {
       note: note.id,
@@ -308,6 +321,7 @@ export function buildTagAuditEntries(input: {
         kindLabel: getSelectionKindTitle(record),
         title: cleanLabel(getSelectionTitle(entry), 'Untitled Selection'),
         subtitle: `${getSelectionTabLabel(tab)} | ${participantName} @ ${cleanLabel(jump?.title, 'Jump')}`,
+        snippet: getSelectionSnippet(entry),
         tags: readTagList(record.tags),
         to: withSearchParams(`/chains/${input.chainId}/jumps/${participation.jumpId}`, {
           participant: participation.participantId,

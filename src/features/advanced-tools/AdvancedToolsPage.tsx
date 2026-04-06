@@ -187,6 +187,7 @@ export function AdvancedToolsPage() {
                   </div>
                   <span className="pill pill--soft">{entry.kindLabel}</span>
                 </div>
+                {entry.snippet ? <p>{entry.snippet}</p> : null}
                 <p className="search-page__result-subtitle">
                   {entry.tags.length > 0 ? `Current tags: ${entry.tags.join(', ')}` : 'No tags yet.'}
                 </p>

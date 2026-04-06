@@ -36,6 +36,7 @@ function createWorkspace() {
         purchases: [
           {
             name: 'Archive Charm',
+            description: 'A compact spell set for indexing and recall.',
             tags: ['Archive'],
             purchaseType: 0,
             subtype: 0,
@@ -43,6 +44,7 @@ function createWorkspace() {
           },
           {
             name: 'Untitled Cloak',
+            description: 'A quiet travel cloak for sneaking around the castle.',
             tags: [],
             purchaseType: 1,
             subtype: 1,
@@ -77,7 +79,7 @@ function createWorkspace() {
         ownerEntityId: 'chain-1',
         noteType: 'chain',
         title: 'Loose Ends',
-        content: '',
+        content: 'Follow up on the library warding plan before next jump.',
         tags: [],
       },
     ],
@@ -94,6 +96,8 @@ describe('tag audit', () => {
     expect(entries.some((entry) => entry.kind === 'selection' && entry.to.includes('participationTab=items'))).toBe(true);
     expect(entries.some((entry) => entry.kind === 'selection' && entry.to.includes('participationTab=drawbacks'))).toBe(true);
     expect(entries.some((entry) => entry.kind === 'note' && entry.to.includes('/notes?note=note-1'))).toBe(true);
+    expect(entries.find((entry) => entry.kind === 'note' && entry.title === 'Loose Ends')?.snippet).toContain('library warding plan');
+    expect(entries.find((entry) => entry.kind === 'selection' && entry.title === 'Untitled Cloak')?.snippet).toContain('quiet travel cloak');
   });
 
   it('finds only fully untagged records when no target tags are given', () => {
