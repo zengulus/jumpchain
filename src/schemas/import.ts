@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { JsonMapSchema, SourceTypeSchema, WarningSeveritySchema } from './common';
+import { ImportModeSchema, JsonMapSchema, SourceTypeSchema, WarningSeveritySchema } from './common';
 
 const NumericKeyRecord = <T extends z.ZodTypeAny>(valueSchema: T) =>
   z.record(z.string().regex(/^\d+$/), valueSchema);
@@ -43,7 +43,7 @@ export const ImportReportSchema = z.object({
   chainId: z.string().min(1).nullable().optional(),
   sourceType: SourceTypeSchema,
   sourceVersion: z.string().min(1),
-  importMode: z.enum(['new-chain', 'new-branch', 'new-jumpers']),
+  importMode: ImportModeSchema,
   status: z.enum(['draft', 'imported', 'failed']),
   summary: ImportSummarySchema,
   warnings: z.array(ImportWarningSchema),

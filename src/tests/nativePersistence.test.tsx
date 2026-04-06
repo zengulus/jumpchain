@@ -5,6 +5,7 @@ import { UI_PREFERENCES_STORAGE_KEY, UiPreferencesProvider } from '../app/UiPref
 import { HomePage } from '../features/home/HomePage';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
+import { prepareJumpSummaryTextImportSession } from '../domain/import/jumpSummaryText';
 import { db } from '../db/database';
 import {
   createNativeSaveEnvelope,
@@ -33,6 +34,42 @@ import {
 } from '../features/workspace/records';
 import { validateNativeChainBundle } from '../schemas';
 import { createDefaultCosmicBackpackState } from '../features/cosmic-backpack/model';
+
+const sampleJumpSummaryText = `
+Harry Potter (All Mini Jumps):
+
+-------
+
+Budgets:
+Starting Budget: 8000 CP
+
+Drawbacks [300 CP]:
+   - Pesky Pixie (200 CP): It seems a colony of Cornish Pixies have been released onto the grounds.
+   - Ministry Hearing (100 CP): The ministry has set a legal hearing against you.
+
+Final Budget: 8300 CP
+-------
+Origin & Background:
+   - Age: 25
+   - Gender: Unknown
+   - Location: Hogwarts
+   - Origin: Drop-In
+
+Total Cost: 0 CP
+
+-------
+
+Purchases:
+Perk [100 CP]:
+   - Don't say his name! (100 CP [reduced]): Whenever someone says your name or an alias that you have, you will instantly know.
+
+Item [8200 CP]:
+   - Hogwarts Castle (8200 CP): You have gained a pocket dimension copy of Hogwarts Castle.
+
+Total Points Spent: 8300 CP
+-------
+Remaining Points: 0 CP
+`.trim();
 
 async function resetDatabase() {
   db.close();
@@ -457,6 +494,56 @@ describe('native persistence and round-trip safety', () => {
     expect(activeBranch?.title).toBe('Imported Jumpers');
     expect(activeBranch?.notes.includes('jumper staging branch')).toBe(true);
     expect(persistedBundle.importReports.some((report) => report.importMode === 'new-jumpers')).toBe(true);
+  });
+
+  it('imports a single reviewed jump onto an existing jumper in the active branch', async () => {
+    await resetDatabase();
+    const hostBundle = await createBlankChain('Host Chain');
+    const branchId = hostBundle.chain.activeBranchId;
+    const jumper = {
+      ...createBlankJumper(hostBundle.chain.id, branchId),
+      name: 'Erica',
+      isPrimary: true,
+    };
+    const existingJump = {
+      ...createBlankJump(hostBundle.chain.id, branchId, 0),
+      title: 'Pokemon',
+      status: 'current' as const,
+      participantJumperIds: [jumper.id],
+    };
+
+    await saveChainRecord(db.jumpers, jumper);
+    await saveChainRecord(db.jumps, existingJump);
+    await saveChainEntity({
+      ...hostBundle.chain,
+      activeJumpId: existingJump.id,
+    });
+
+    const session = prepareJumpSummaryTextImportSession(sampleJumpSummaryText, {
+      fileName: 'Harry Potter (All Mini Jumps) [Erica].txt',
+    });
+    const persistedBundle = await saveImportedChainBundle(session.bundle, {
+      importMode: 'single-jump',
+      targetChainId: hostBundle.chain.id,
+      targetJumperId: jumper.id,
+    });
+    const importedJump = persistedBundle.jumps.find((jump) => jump.title === 'Harry Potter (All Mini Jumps)');
+    const importedParticipation = importedJump
+      ? persistedBundle.participations.find((participation) => participation.jumpId === importedJump.id)
+      : null;
+
+    expect(persistedBundle.chain.id).toBe(hostBundle.chain.id);
+    expect(persistedBundle.branches).toHaveLength(1);
+    expect(persistedBundle.jumpers).toHaveLength(1);
+    expect(persistedBundle.jumps).toHaveLength(2);
+    expect(persistedBundle.chain.activeJumpId).toBe(existingJump.id);
+    expect(importedJump?.branchId).toBe(branchId);
+    expect(importedJump?.participantJumperIds).toEqual([jumper.id]);
+    expect(importedJump?.status).toBe('completed');
+    expect(importedParticipation?.jumperId).toBe(jumper.id);
+    expect(importedParticipation?.status).toBe('completed');
+    expect((importedParticipation?.importSourceMetadata as Record<string, unknown>).importMode).toBe('single-jump');
+    expect(persistedBundle.importReports.some((report) => report.importMode === 'single-jump')).toBe(true);
   });
 
   it('exports a filtered single-branch native save', async () => {

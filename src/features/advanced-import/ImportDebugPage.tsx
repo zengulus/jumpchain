@@ -5,7 +5,8 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { prepareChainMakerV2ImportSession } from '../../domain/import/chainmakerV2';
 import { prepareJumpSummaryTextImportSession } from '../../domain/import/jumpSummaryText';
 import { detectImportSource } from '../../domain/import/sourceDetection';
-import { listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
+import type { PreparedImportSession } from '../../domain/import/types';
+import { getChainBundle, listChainOverviews, saveImportedChainBundle, type ChainOverview } from '../../db/persistence';
 import sampleChainMaker from '../../fixtures/chainmaker/chainmaker-v2.sample.json';
 import { readTextFile } from '../../utils/file';
 import { ConfirmActionDialog } from '../workspace/shared';
@@ -21,6 +22,23 @@ function getStringList(value: unknown): string[] {
 
 function getNumericValue(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+interface TargetJumperOption {
+  id: string;
+  name: string;
+}
+
+function canImportAsSingleJump(session: PreparedImportSession) {
+  return (
+    session.bundle.jumps.length === 1 &&
+    session.bundle.participations.length === 1 &&
+    session.bundle.jumpers.length === 1 &&
+    session.bundle.companionParticipations.length === 0 &&
+    session.bundle.companions.length === 0 &&
+    session.bundle.effects.length === 0 &&
+    session.bundle.bodymodProfiles.length === 0
+  );
 }
 
 function PreviewPanel(props: { title: string; items: string[]; emptyMessage: string; previewLimit?: number }) {
@@ -59,9 +77,11 @@ export function ImportDebugPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [availableChains, setAvailableChains] = useState<ChainOverview[]>([]);
-  const [importMode, setImportMode] = useState<'new-chain' | 'new-branch' | 'new-jumpers'>('new-chain');
+  const [importMode, setImportMode] = useState<'new-chain' | 'new-branch' | 'new-jumpers' | 'single-jump'>('new-chain');
   const [targetChainId, setTargetChainId] = useState('');
   const [branchTitle, setBranchTitle] = useState('');
+  const [targetJumperOptions, setTargetJumperOptions] = useState<TargetJumperOption[]>([]);
+  const [targetJumperId, setTargetJumperId] = useState('');
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
 
   useEffect(() => {
@@ -105,12 +125,73 @@ export function ImportDebugPage() {
       return;
     }
 
+    if (importMode === 'single-jump') {
+      return;
+    }
+
     const suggestedBranchTitle =
       importMode === 'new-jumpers'
         ? `Imported Jumpers: ${importSession.normalized.summary.chainName}`
         : `Imported Branch: ${importSession.normalized.summary.chainName}`;
 
     setBranchTitle((currentTitle) => currentTitle || suggestedBranchTitle);
+  }, [importMode, importSession]);
+
+  useEffect(() => {
+    if (!importSession || importMode !== 'single-jump') {
+      setTargetJumperOptions([]);
+      setTargetJumperId('');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTargetJumpers() {
+      if (!targetChainId) {
+        setTargetJumperOptions([]);
+        setTargetJumperId('');
+        return;
+      }
+
+      const bundle = await getChainBundle(targetChainId);
+
+      if (!bundle || cancelled) {
+        return;
+      }
+
+      const options = bundle.jumpers
+        .filter((jumper) => jumper.branchId === bundle.chain.activeBranchId)
+        .map((jumper) => ({
+          id: jumper.id,
+          name: jumper.name,
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+
+      if (cancelled) {
+        return;
+      }
+
+      setTargetJumperOptions(options);
+      setTargetJumperId((currentValue) =>
+        options.some((option) => option.id === currentValue) ? currentValue : (options[0]?.id ?? ''),
+      );
+    }
+
+    void loadTargetJumpers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [importMode, importSession, targetChainId]);
+
+  useEffect(() => {
+    if (!importSession || importMode !== 'single-jump') {
+      return;
+    }
+
+    if (!canImportAsSingleJump(importSession)) {
+      setImportMode('new-chain');
+    }
   }, [importMode, importSession]);
 
   function loadRawSource(raw: unknown, label: string, fileName?: string) {
@@ -184,6 +265,11 @@ export function ImportDebugPage() {
       return;
     }
 
+    if (importMode === 'single-jump' && !targetJumperId) {
+      setErrorMessage('Choose a target jumper for the imported jump.');
+      return;
+    }
+
     setIsSaving(true);
     setStatusMessage(null);
     setErrorMessage(null);
@@ -201,8 +287,16 @@ export function ImportDebugPage() {
         const snapshot = await createSafetySnapshot({
           chainId: targetChain.chainId,
           branchId: targetChain.activeBranchId,
-          actionLabel: importMode === 'new-jumpers' ? 'Stage Imported Jumpers' : 'Import ChainMaker Branch',
-          details: 'Created before staging reviewed ChainMaker data into an existing chain.',
+          actionLabel:
+            importMode === 'new-jumpers'
+              ? 'Stage Imported Jumpers'
+              : importMode === 'single-jump'
+                ? 'Import Single Jump'
+                : 'Import ChainMaker Branch',
+          details:
+            importMode === 'single-jump'
+              ? 'Created before appending the reviewed imported jump onto an existing jumper.'
+              : 'Created before staging reviewed import data into an existing chain.',
         });
         snapshotTitle = snapshot.title;
       }
@@ -210,12 +304,15 @@ export function ImportDebugPage() {
       const persisted = await saveImportedChainBundle(importSession.bundle, {
         importMode,
         targetChainId: importMode === 'new-chain' ? undefined : targetChainId,
-        branchTitle: importMode === 'new-chain' ? undefined : branchTitle,
+        branchTitle: importMode === 'new-chain' || importMode === 'single-jump' ? undefined : branchTitle,
+        targetJumperId: importMode === 'single-jump' ? targetJumperId : undefined,
       });
       setImportSession(null);
       setStatusMessage(
         importMode === 'new-chain'
           ? `Imported "${persisted.chain.title}" into IndexedDB as a new chain.`
+          : importMode === 'single-jump'
+            ? `Imported one jump into "${persisted.chain.title}" on the selected existing jumper.${snapshotTitle ? ` "${snapshotTitle}" was created first.` : ''}`
           : `Imported into "${persisted.chain.title}" as a non-destructive staged branch.${snapshotTitle ? ` "${snapshotTitle}" was created first.` : ''}`,
       );
       setConfirmImportOpen(false);
@@ -253,9 +350,12 @@ export function ImportDebugPage() {
   const hiddenSourceNoteCount = Math.max(0, preservedSourceNotes.length - visibleSourceNotes.length);
   const visibleCleanerChanges = importSession?.cleaning.changes.slice(0, 12) ?? [];
   const hiddenCleanerChangeCount = Math.max(0, cleanerChangeCount - visibleCleanerChanges.length);
+  const singleJumpEligible = importSession ? canImportAsSingleJump(importSession) : false;
   const commitButtonLabel =
     importMode === 'new-chain'
       ? 'Import as new chain'
+      : importMode === 'single-jump'
+        ? 'Import jump onto existing jumper'
       : importMode === 'new-jumpers'
         ? 'Stage as jumper branch'
         : 'Import as branch';
@@ -430,6 +530,9 @@ export function ImportDebugPage() {
                     <option value="new-jumpers" disabled={availableChains.length === 0}>
                       Existing chain as jumper staging branch
                     </option>
+                    <option value="single-jump" disabled={availableChains.length === 0 || !singleJumpEligible}>
+                      Existing jumper on active branch
+                    </option>
                   </select>
                 </label>
 
@@ -445,15 +548,40 @@ export function ImportDebugPage() {
                         ))}
                       </select>
                     </label>
-                    <label className="field">
-                      <span>Imported branch title</span>
-                      <input value={branchTitle} onChange={(event) => setBranchTitle(event.target.value)} />
-                    </label>
-                    <p className="editor-section__copy">
-                      {importMode === 'new-jumpers'
-                        ? 'This mode stages the import as its own branch inside the existing chain so imported jumpers stay non-destructive until you decide how to merge them.'
-                        : 'This mode imports the ChainMaker payload as a new branch inside an existing chain without overwriting any current data.'}
-                    </p>
+                    {importMode === 'single-jump' ? (
+                      <>
+                        <label className="field">
+                          <span>Target jumper on active branch</span>
+                          <select value={targetJumperId} onChange={(event) => setTargetJumperId(event.target.value)}>
+                            {targetJumperOptions.map((jumper) => (
+                              <option key={jumper.id} value={jumper.id}>
+                                {jumper.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {targetJumperOptions.length === 0 ? (
+                          <p className="editor-section__copy">
+                            The target chain&apos;s active branch does not have any jumpers yet, so there is nowhere to attach this imported jump.
+                          </p>
+                        ) : null}
+                        <p className="editor-section__copy">
+                          This mode appends the imported jump onto the selected jumper in the target chain&apos;s active branch. To avoid disrupting the chain&apos;s current workspace, the imported jump is added as completed unless the branch has no jumps yet.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <label className="field">
+                          <span>Imported branch title</span>
+                          <input value={branchTitle} onChange={(event) => setBranchTitle(event.target.value)} />
+                        </label>
+                        <p className="editor-section__copy">
+                          {importMode === 'new-jumpers'
+                            ? 'This mode stages the import as its own branch inside the existing chain so imported jumpers stay non-destructive until you decide how to merge them.'
+                            : 'This mode imports the reviewed payload as a new branch inside an existing chain without overwriting any current data.'}
+                        </p>
+                      </>
+                    )}
                   </>
                 ) : (
                   <p className="editor-section__copy">
@@ -531,7 +659,12 @@ export function ImportDebugPage() {
               )}
             </div>
             <div className="actions">
-              <button className="button" type="button" onClick={handleImportAsNewChain} disabled={isSaving}>
+              <button
+                className="button"
+                type="button"
+                onClick={handleImportAsNewChain}
+                disabled={isSaving || (importMode === 'single-jump' && targetJumperOptions.length === 0)}
+              >
                 {commitButtonLabel}
               </button>
             </div>
@@ -713,13 +846,17 @@ export function ImportDebugPage() {
 
       <ConfirmActionDialog
         open={confirmImportOpen}
-        title="Stage this import into an existing chain?"
-        description="This will add the reviewed import as a new staged branch inside the selected chain."
+        title={importMode === 'single-jump' ? 'Import this jump onto an existing jumper?' : 'Stage this import into an existing chain?'}
+        description={
+          importMode === 'single-jump'
+            ? 'This will append the reviewed imported jump onto the selected jumper in the target chain.'
+            : 'This will add the reviewed import as a new staged branch inside the selected chain.'
+        }
         confirmLabel={commitButtonLabel}
         isBusy={isSaving}
         details={
           <p>
-            A safety snapshot of the target chain&apos;s active branch will be created before the staged import is written.
+            A safety snapshot of the target chain&apos;s active branch will be created before the import is written.
           </p>
         }
         onCancel={() => setConfirmImportOpen(false)}

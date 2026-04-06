@@ -68,6 +68,7 @@ export interface SaveImportedChainBundleOptions {
   importMode?: ImportMode;
   targetChainId?: string;
   branchTitle?: string;
+  targetJumperId?: string;
 }
 
 function remapId(id: string, map: Map<string, string>): string {
@@ -534,6 +535,128 @@ function cloneBranchBundleToExistingChain(
   };
 }
 
+function mergeSingleJumpBundleToExistingChain(
+  importBundle: NativeChainBundle,
+  targetBundle: NativeChainBundle,
+  options: {
+    targetJumperId: string;
+  },
+) {
+  if (
+    importBundle.jumps.length !== 1 ||
+    importBundle.participations.length !== 1 ||
+    importBundle.companionParticipations.length > 0 ||
+    importBundle.companions.length > 0 ||
+    importBundle.effects.length > 0 ||
+    importBundle.bodymodProfiles.length > 0 ||
+    importBundle.houseRuleProfiles.length > 0 ||
+    importBundle.presetProfiles.length > 0 ||
+    importBundle.notes.length > 0 ||
+    importBundle.attachments.length > 0 ||
+    importBundle.snapshots.length > 0
+  ) {
+    throw new Error('Single-jump import mode only supports one imported jump with one jumper participation.');
+  }
+
+  const now = new Date().toISOString();
+  const targetBranchId = targetBundle.chain.activeBranchId;
+  const targetJumper = targetBundle.jumpers.find(
+    (jumper) => jumper.id === options.targetJumperId && jumper.branchId === targetBranchId,
+  );
+
+  if (!targetJumper) {
+    throw new Error('Choose a valid target jumper from the active branch.');
+  }
+
+  const sourceJump = importBundle.jumps[0]!;
+  const sourceParticipation = importBundle.participations[0]!;
+  const sourceRulesContext =
+    importBundle.jumpRulesContexts.find((context) => context.jumpId === sourceJump.id) ??
+    importBundle.jumpRulesContexts[0] ??
+    null;
+  const sourceJumper = importBundle.jumpers[0] ?? null;
+  const branchJumps = targetBundle.jumps.filter((jump) => jump.branchId === targetBranchId);
+  const nextOrderIndex =
+    branchJumps.length > 0 ? Math.max(...branchJumps.map((jump) => jump.orderIndex)) + 1 : 0;
+  const hasExistingJumps = branchJumps.length > 0;
+  const importedJumpStatus = hasExistingJumps ? ('completed' as const) : sourceJump.status;
+  const importedParticipationStatus =
+    importedJumpStatus === 'current' ? ('active' as const) : ('completed' as const);
+  const newJumpId = createId('jump');
+  const newParticipationId = createId('part');
+  const nextActiveJumpId =
+    targetBundle.chain.activeJumpId ?? (importedJumpStatus === 'current' ? newJumpId : null);
+
+  const jump: Jump = {
+    ...sourceJump,
+    id: newJumpId,
+    chainId: targetBundle.chain.id,
+    branchId: targetBranchId,
+    participantJumperIds: [targetJumper.id],
+    orderIndex: nextOrderIndex,
+    status: importedJumpStatus,
+    createdAt: now,
+    updatedAt: now,
+    importSourceMetadata: {
+      ...sourceJump.importSourceMetadata,
+      importMode: 'single-jump',
+      importedToExistingJumperId: targetJumper.id,
+      importedToExistingJumperName: targetJumper.name,
+      sourceImportedJumperName: sourceJumper?.name ?? null,
+    },
+  };
+
+  const participation: JumperParticipation = {
+    ...sourceParticipation,
+    id: newParticipationId,
+    chainId: targetBundle.chain.id,
+    branchId: targetBranchId,
+    jumpId: newJumpId,
+    jumperId: targetJumper.id,
+    status: importedParticipationStatus,
+    createdAt: now,
+    updatedAt: now,
+    importSourceMetadata: {
+      ...sourceParticipation.importSourceMetadata,
+      importMode: 'single-jump',
+      importedToExistingJumperId: targetJumper.id,
+      importedToExistingJumperName: targetJumper.name,
+      sourceImportedJumperName: sourceJumper?.name ?? null,
+    },
+  };
+
+  const jumpRulesContext: JumpRulesContext | null = sourceRulesContext
+    ? {
+        ...sourceRulesContext,
+        id: createId('rules'),
+        chainId: targetBundle.chain.id,
+        branchId: targetBranchId,
+        jumpId: newJumpId,
+        createdAt: now,
+        updatedAt: now,
+      }
+    : null;
+
+  const importReports: ImportReport[] = importBundle.importReports.map((report) => ({
+    ...report,
+    id: createId('report'),
+    chainId: targetBundle.chain.id,
+    importMode: 'single-jump',
+    status: 'imported',
+    createdAt: now,
+    updatedAt: now,
+  }));
+
+  return {
+    jump,
+    participation,
+    jumpRulesContext,
+    importReports,
+    nextActiveJumpId,
+    updatedAt: now,
+  };
+}
+
 async function writeBundle(bundle: NativeChainBundle) {
   await ensureDatabaseOpen();
   await writeBundles([validateNativeChainBundle(bundle)]);
@@ -661,6 +784,59 @@ export async function saveImportedChainBundle(
   await ensureDatabaseOpen();
   const importMode = options.importMode ?? 'new-chain';
   const now = new Date().toISOString();
+
+  if (importMode === 'single-jump') {
+    if (!options.targetChainId) {
+      throw new Error('A target chain is required for single-jump imports.');
+    }
+
+    if (!options.targetJumperId) {
+      throw new Error('A target jumper is required for single-jump imports.');
+    }
+
+    const targetBundle = await getChainBundle(options.targetChainId);
+
+    if (!targetBundle) {
+      throw new Error('Target chain not found.');
+    }
+
+    const mergedJumpImport = mergeSingleJumpBundleToExistingChain(bundle, targetBundle, {
+      targetJumperId: options.targetJumperId,
+    });
+
+    await db.transaction(
+      'rw',
+      [db.chains, db.branches, db.jumps, db.participations, db.jumpRulesContexts, db.importReports],
+      async () => {
+        await db.jumps.put(mergedJumpImport.jump);
+        await db.participations.put(mergedJumpImport.participation);
+
+        if (mergedJumpImport.jumpRulesContext) {
+          await db.jumpRulesContexts.put(mergedJumpImport.jumpRulesContext);
+        }
+
+        if (mergedJumpImport.importReports.length > 0) {
+          await db.importReports.bulkPut(mergedJumpImport.importReports);
+        }
+
+        await db.branches.update(targetBundle.chain.activeBranchId, {
+          updatedAt: mergedJumpImport.updatedAt,
+        });
+        await db.chains.update(targetBundle.chain.id, {
+          activeJumpId: mergedJumpImport.nextActiveJumpId,
+          updatedAt: mergedJumpImport.updatedAt,
+        });
+      },
+    );
+
+    const persistedTargetBundle = await getChainBundle(targetBundle.chain.id);
+
+    if (!persistedTargetBundle) {
+      throw new Error('Unable to reload the single-jump import target chain.');
+    }
+
+    return persistedTargetBundle;
+  }
 
   if (importMode !== 'new-chain') {
     if (!options.targetChainId) {

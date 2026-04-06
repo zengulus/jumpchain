@@ -68,7 +68,7 @@ export type BodymodMode = (typeof bodymodModes)[number];
 export const sourceTypes = ['chainmaker-v2', 'jump-summary-text', 'native', 'unknown'] as const;
 export type SourceType = (typeof sourceTypes)[number];
 
-export const importModes = ['new-chain', 'new-branch', 'new-jumpers'] as const;
+export const importModes = ['new-chain', 'new-branch', 'new-jumpers', 'single-jump'] as const;
 export type ImportMode = (typeof importModes)[number];
 
 export const importStatuses = ['draft', 'imported', 'failed'] as const;
