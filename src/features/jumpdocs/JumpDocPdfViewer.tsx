@@ -87,6 +87,23 @@ function normalizePdfText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function getTextItemBounds(item: PdfTextItem, viewport: pdfjs.PageViewport) {
+  const transform = pdfjs.Util.transform(viewport.transform, item.transform);
+  const width = Math.max(item.width / viewport.width, 0.001);
+  const height = Math.max(item.height / viewport.height, 0.012);
+  const x = clampUnit(transform[4] / viewport.width);
+  const y = clampUnit((transform[5] - item.height) / viewport.height);
+
+  return {
+    x,
+    y,
+    width,
+    height,
+    centerX: clampUnit(x + width / 2),
+    centerY: clampUnit(y + height / 2),
+  };
+}
+
 async function extractTextForBounds(
   documentProxy: pdfjs.PDFDocumentProxy,
   pageNumber: number,
@@ -104,13 +121,9 @@ async function extractTextForBounds(
   return normalizePdfText(
     textItems
       .filter((item) => {
-        const transform = pdfjs.Util.transform(viewport.transform, item.transform);
-        const itemWidth = item.width || 0;
-        const itemHeight = item.height || 0;
-        const centerX = clampUnit((transform[4] + itemWidth / 2) / viewport.width);
-        const centerY = clampUnit((viewport.height - transform[5] - itemHeight / 2) / viewport.height);
+        const itemBounds = getTextItemBounds(item, viewport);
 
-        return centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
+        return itemBounds.centerX >= left && itemBounds.centerX <= right && itemBounds.centerY >= top && itemBounds.centerY <= bottom;
       })
       .map((item) => item.str)
       .join(' '),
@@ -124,14 +137,10 @@ async function getTextBlocks(documentProxy: pdfjs.PDFDocumentProxy, pageNumber: 
   const textItems = textContent.items.filter(isTextItem) as PdfTextItem[];
   const blocks = textItems
     .map((item) => {
-      const transform = pdfjs.Util.transform(viewport.transform, item.transform);
-      const width = item.width / viewport.width;
-      const height = Math.max(item.height / viewport.height, 0.012);
-      const x = clampUnit(transform[4] / viewport.width);
-      const y = clampUnit((viewport.height - transform[5] - item.height) / viewport.height);
+      const bounds = getTextItemBounds(item, viewport);
       const extractedText = normalizePdfText(item.str);
 
-      return { x, y, width, height, extractedText };
+      return { ...bounds, extractedText };
     })
     .filter((block) => block.extractedText.length > 0 && block.width > 0);
 

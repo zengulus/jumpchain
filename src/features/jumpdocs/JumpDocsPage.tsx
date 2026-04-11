@@ -3,12 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { AttachmentRef } from '../../domain/attachments/types';
 import type { JumpDoc, JumpDocPdfAnnotation } from '../../domain/jumpdoc/types';
+import type { ParticipationSelection } from '../../domain/jump/selection';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
 import { createId } from '../../utils/id';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
-import { createBlankJump, createBlankJumpDoc, deleteChainRecord, saveChainRecord } from '../workspace/records';
+import { createBlankJump, createBlankJumpDoc, createBlankParticipation, deleteChainRecord, saveChainRecord, saveParticipationRecord } from '../workspace/records';
 import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, WorkspaceModuleHeader, type StatusNotice } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -64,6 +65,61 @@ function upsertById<T extends { id: string }>(records: T[], record: T) {
     : [...records, record];
 }
 
+function upsertSelection(records: ParticipationSelection[], record: ParticipationSelection) {
+  if (!record.id) {
+    return [...records, record];
+  }
+
+  return records.some((entry) => entry.id === record.id)
+    ? records.map((entry) => entry.id === record.id ? record : entry)
+    : [...records, record];
+}
+
+function getSelectionFromAnnotation(jumpDoc: JumpDoc, annotation: JumpDocPdfAnnotation): ParticipationSelection {
+  const value = annotation.costAmount ?? 0;
+  const selectionKind =
+    annotation.exportKind === 'drawback'
+      ? 'drawback'
+      : annotation.exportKind === 'scenario'
+        ? 'scenario'
+        : annotation.exportKind === 'companion'
+          ? 'companion-import'
+          : 'purchase';
+
+  return {
+    id: annotation.exportedTemplateId ?? createId('jumpdoc_selection'),
+    selectionKind,
+    title: annotation.label || annotation.extractedText.slice(0, 54) || `Page ${annotation.page} selection`,
+    summary: annotation.label || annotation.extractedText.slice(0, 54) || `Page ${annotation.page} selection`,
+    description: annotation.extractedText,
+    value,
+    currencyKey: annotation.currencyKey || '0',
+    purchaseValue: selectionKind === 'drawback' ? 0 : value,
+    costModifier: value === 0 ? 'free' : 'full',
+    purchaseSection: annotation.exportKind === 'purchase' ? annotation.purchaseSection ?? 'perk' : undefined,
+    subtypeKey: null,
+    purchaseType:
+      annotation.purchaseSection === 'item'
+        ? 1
+        : annotation.purchaseSection === 'subsystem'
+          ? 2
+          : annotation.exportKind === 'purchase'
+            ? 0
+            : null,
+    tags: [],
+    free: value === 0,
+    sourceJumpDocId: jumpDoc.id,
+    sourceTemplateId: annotation.exportedTemplateId ?? null,
+    importSourceMetadata: {
+      sourceAnnotationId: annotation.id,
+      sourceJumpDocTitle: jumpDoc.title,
+      sourcePage: annotation.page,
+      notes: annotation.notes,
+      rawFragment: annotation,
+    },
+  };
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -86,6 +142,8 @@ export function JumpDocsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
   const [jumpToLinkId, setJumpToLinkId] = useState('');
+  const [exportJumpId, setExportJumpId] = useState('');
+  const [exportParticipantId, setExportParticipantId] = useState('');
   const searchQuery = searchParams.get('search') ?? '';
   const selectedJumpDocId = searchParams.get('jumpdoc');
   const filteredJumpDocs = workspace.jumpDocs.filter((jumpDoc) =>
@@ -113,6 +171,18 @@ export function JumpDocsPage() {
   const unlinkedJumps = draftJumpDoc
     ? workspace.jumps.filter((jump) => !(jump.jumpDocIds ?? []).includes(draftJumpDoc.id))
     : [];
+  const targetJump = linkedJumps.find((jump) => jump.id === exportJumpId) ?? linkedJumps[0] ?? null;
+  const jumpParticipants = targetJump
+    ? workspace.participations.filter((participation) => participation.jumpId === targetJump.id)
+    : [];
+  const targetParticipation =
+    jumpParticipants.find((participation) => participation.participantId === exportParticipantId) ??
+    jumpParticipants[0] ??
+    null;
+  const participantNameById = new Map([
+    ...workspace.jumpers.map((jumper) => [jumper.id, jumper.name] as const),
+    ...workspace.companions.map((companion) => [companion.id, companion.name] as const),
+  ]);
 
   async function handleCreateJumpDoc() {
     if (!workspace.activeBranch) {
@@ -276,9 +346,17 @@ export function JumpDocsPage() {
     }));
   }
 
-  function exportAnnotation(annotation: JumpDocPdfAnnotation) {
+  async function exportAnnotation(annotation: JumpDocPdfAnnotation) {
+    if (!draftJumpDoc || !targetJump || !targetParticipation) {
+      setNotice({ tone: 'error', message: 'Link a jump and choose a participant before exporting to the chain.' });
+      return;
+    }
+
+    let exportedTemplateId: string | null = null;
+
     updateDraft((current) => {
       const { templateId, baseTemplate } = createTemplateFromAnnotation(current, annotation);
+      exportedTemplateId = templateId;
       const nextAnnotation = { ...annotation, exportedTemplateId: templateId };
       const nextAnnotations = current.pdfAnnotationBounds.map((entry) => entry.id === annotation.id ? nextAnnotation : entry);
 
@@ -349,7 +427,85 @@ export function JumpDocsPage() {
         }),
       };
     });
-    setNotice({ tone: 'success', message: `Exported annotation as ${getAnnotationExportLabel(annotation)}.` });
+
+    if (!exportedTemplateId) {
+      setNotice({ tone: 'error', message: 'Unable to prepare the annotation export.' });
+      return;
+    }
+
+    const exportedAnnotation = { ...annotation, exportedTemplateId };
+    const selection = getSelectionFromAnnotation(draftJumpDoc, exportedAnnotation);
+    const participation = targetParticipation;
+
+    try {
+      if (exportedAnnotation.exportKind === 'drawback') {
+        await saveParticipationRecord({
+          ...participation,
+          drawbacks: upsertSelection(participation.drawbacks, selection),
+        });
+      } else if (exportedAnnotation.exportKind === 'origin') {
+        await saveParticipationRecord({
+          ...participation,
+          origins: {
+            ...participation.origins,
+            [selection.id ?? exportedAnnotation.id]: {
+              summary: selection.title,
+              description: selection.description,
+              sourceJumpDocId: draftJumpDoc.id,
+              sourceAnnotationId: exportedAnnotation.id,
+            },
+          },
+        });
+      } else if (exportedAnnotation.exportKind === 'note') {
+        await saveParticipationRecord({
+          ...participation,
+          notes: [participation.notes, `${selection.title}: ${selection.description}`].filter(Boolean).join('\n\n'),
+        });
+      } else {
+        await saveParticipationRecord({
+          ...participation,
+          purchases: upsertSelection(participation.purchases, selection),
+        });
+      }
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to export annotation to the jump.' });
+      return;
+    }
+
+    setNotice({ tone: 'success', message: `Exported annotation to ${targetJump.title} as ${getAnnotationExportLabel(annotation)}.` });
+  }
+
+  async function handleCreateParticipationTarget() {
+    if (!targetJump) {
+      return;
+    }
+
+    const primaryJumper = workspace.jumpers.find((jumper) => jumper.isPrimary) ?? workspace.jumpers[0] ?? null;
+
+    if (!primaryJumper) {
+      setNotice({ tone: 'error', message: 'Add a jumper before exporting JumpDoc selections.' });
+      return;
+    }
+
+    try {
+      const participation = createBlankParticipation(chainId, targetJump.branchId, targetJump.id, {
+        participantId: primaryJumper.id,
+        participantKind: 'jumper',
+      });
+      await saveParticipationRecord(participation);
+
+      if (!targetJump.participantJumperIds.includes(primaryJumper.id)) {
+        await saveChainRecord(db.jumps, {
+          ...targetJump,
+          participantJumperIds: [...targetJump.participantJumperIds, primaryJumper.id],
+        });
+      }
+
+      setExportParticipantId(primaryJumper.id);
+      setNotice({ tone: 'success', message: `Created a participation for ${primaryJumper.name}.` });
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to create a participation target.' });
+    }
   }
 
   if (!workspace.activeBranch) {
@@ -530,6 +686,41 @@ export function JumpDocsPage() {
                     <h3>Annotation exports</h3>
                     <span className="pill">{draftJumpDoc.pdfAnnotationBounds.length}</span>
                   </div>
+                  <div className="field-grid field-grid--two">
+                    <label className="field">
+                      <span>Target jump</span>
+                      <select
+                        value={targetJump?.id ?? ''}
+                        onChange={(event) => {
+                          setExportJumpId(event.target.value);
+                          setExportParticipantId('');
+                        }}
+                      >
+                        {linkedJumps.length === 0 ? <option value="">Link or start a jump first</option> : null}
+                        {linkedJumps.map((jump) => (
+                          <option key={jump.id} value={jump.id}>{jump.title}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Target participant</span>
+                      <select value={targetParticipation?.participantId ?? ''} onChange={(event) => setExportParticipantId(event.target.value)}>
+                        {jumpParticipants.length === 0 ? <option value="">No participation yet</option> : null}
+                        {jumpParticipants.map((participation) => (
+                          <option key={participation.id} value={participation.participantId}>
+                            {participantNameById.get(participation.participantId) ?? participation.participantId}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  {targetJump && jumpParticipants.length === 0 ? (
+                    <div className="actions">
+                      <button className="button button--secondary" type="button" onClick={() => void handleCreateParticipationTarget()}>
+                        Create primary jumper participation
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="stack stack--compact">
                     {draftJumpDoc.pdfAnnotationBounds.map((annotation) => (
                       <article key={annotation.id} className="jumpdoc-annotation-editor stack stack--compact">
@@ -594,8 +785,8 @@ export function JumpDocsPage() {
                           </label>
                           <div className="field field--inline-actions">
                             <span>{annotation.exportedTemplateId ? 'Update template' : 'Create template'}</span>
-                            <button className="button button--secondary" type="button" onClick={() => exportAnnotation(annotation)}>
-                              Export
+                            <button className="button button--secondary" type="button" disabled={!targetJump || !targetParticipation} onClick={() => void exportAnnotation(annotation)}>
+                              Export to jump
                             </button>
                           </div>
                         </div>

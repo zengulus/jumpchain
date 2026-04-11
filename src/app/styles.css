@@ -2051,6 +2051,7 @@ button {
   background: rgba(1, 5, 9, 0.78);
   color: var(--color-text);
   font-size: 0.75rem;
+  pointer-events: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
