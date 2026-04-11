@@ -20,6 +20,11 @@ export interface JumpDocPdfAnnotation extends JumpDocPageRect {
   label: string;
   notes: string;
   extractedText: string;
+  exportKind: 'purchase' | 'drawback' | 'origin' | 'scenario' | 'companion' | 'note';
+  purchaseSection?: 'perk' | 'subsystem' | 'item' | 'other';
+  costAmount: number | null;
+  currencyKey: string;
+  exportedTemplateId?: string | null;
 }
 
 export interface JumpDocCurrency {

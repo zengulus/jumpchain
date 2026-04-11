@@ -260,6 +260,11 @@ const JumpDocPdfAnnotationSchema = JumpDocPageRectSchema.extend({
   label: z.string(),
   notes: z.string(),
   extractedText: z.string().default(''),
+  exportKind: z.enum(['purchase', 'drawback', 'origin', 'scenario', 'companion', 'note']).default('purchase'),
+  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']).optional(),
+  costAmount: z.number().nullable().default(null),
+  currencyKey: z.string().default('0'),
+  exportedTemplateId: IdentifierSchema.nullish(),
 });
 
 const JumpDocCurrencySchema = z.object({

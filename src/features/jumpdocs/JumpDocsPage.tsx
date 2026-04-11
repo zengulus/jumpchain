@@ -2,7 +2,7 @@ import { useMemo, useState, type ChangeEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { AttachmentRef } from '../../domain/attachments/types';
-import type { JumpDoc } from '../../domain/jumpdoc/types';
+import type { JumpDoc, JumpDocPdfAnnotation } from '../../domain/jumpdoc/types';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
 import { createId } from '../../utils/id';
@@ -16,6 +16,52 @@ import { JumpDocPdfViewer } from './JumpDocPdfViewer';
 
 function countTemplates(jumpDoc: JumpDoc) {
   return jumpDoc.origins.length + jumpDoc.purchases.length + jumpDoc.drawbacks.length + jumpDoc.scenarios.length + jumpDoc.companions.length;
+}
+
+function getAnnotationExportLabel(annotation: JumpDocPdfAnnotation) {
+  if (annotation.exportKind === 'purchase') {
+    return annotation.purchaseSection === 'item' ? 'Item' : annotation.purchaseSection === 'subsystem' ? 'Subsystem' : 'Perk';
+  }
+
+  return annotation.exportKind[0]?.toUpperCase() + annotation.exportKind.slice(1);
+}
+
+function createTemplateFromAnnotation(jumpDoc: JumpDoc, annotation: JumpDocPdfAnnotation) {
+  const templateId = annotation.exportedTemplateId ?? createId(`jumpdoc_${annotation.exportKind}`);
+  const bounds = [{
+    page: annotation.page,
+    x: annotation.x,
+    y: annotation.y,
+    width: annotation.width,
+    height: annotation.height,
+  }];
+  const costs = annotation.costAmount === null
+    ? []
+    : [{ amount: annotation.costAmount, currencyKey: annotation.currencyKey || '0' }];
+  const baseTemplate = {
+    id: templateId,
+    title: annotation.label || annotation.extractedText.slice(0, 54) || `Page ${annotation.page} selection`,
+    description: annotation.extractedText,
+    costs,
+    bounds,
+    alternativeCosts: [],
+    prerequisites: [],
+    tags: [],
+    importSourceMetadata: {
+      sourceAnnotationId: annotation.id,
+      sourceJumpDocId: jumpDoc.id,
+      sourcePage: annotation.page,
+      notes: annotation.notes,
+    },
+  };
+
+  return { templateId, baseTemplate };
+}
+
+function upsertById<T extends { id: string }>(records: T[], record: T) {
+  return records.some((entry) => entry.id === record.id)
+    ? records.map((entry) => entry.id === record.id ? record : entry)
+    : [...records, record];
 }
 
 function readFileAsDataUrl(file: File) {
@@ -221,6 +267,91 @@ export function JumpDocsPage() {
     jumpDocAutosave.updateDraft(updater(draftJumpDoc));
   }
 
+  function updateAnnotation(annotationId: string, updater: (annotation: JumpDocPdfAnnotation) => JumpDocPdfAnnotation) {
+    updateDraft((current) => ({
+      ...current,
+      pdfAnnotationBounds: current.pdfAnnotationBounds.map((annotation) =>
+        annotation.id === annotationId ? updater(annotation) : annotation,
+      ),
+    }));
+  }
+
+  function exportAnnotation(annotation: JumpDocPdfAnnotation) {
+    updateDraft((current) => {
+      const { templateId, baseTemplate } = createTemplateFromAnnotation(current, annotation);
+      const nextAnnotation = { ...annotation, exportedTemplateId: templateId };
+      const nextAnnotations = current.pdfAnnotationBounds.map((entry) => entry.id === annotation.id ? nextAnnotation : entry);
+
+      if (annotation.exportKind === 'drawback') {
+        return {
+          ...current,
+          pdfAnnotationBounds: nextAnnotations,
+          drawbacks: upsertById(current.drawbacks, {
+            ...baseTemplate,
+            templateKind: 'drawback',
+            durationYears: null,
+          }),
+        };
+      }
+
+      if (annotation.exportKind === 'origin') {
+        return {
+          ...current,
+          pdfAnnotationBounds: nextAnnotations,
+          origins: upsertById(current.origins, {
+            id: templateId,
+            categoryKey: 'origin',
+            title: baseTemplate.title,
+            description: baseTemplate.description,
+            cost: baseTemplate.costs[0] ?? { amount: 0, currencyKey: annotation.currencyKey || '0' },
+            bounds: baseTemplate.bounds,
+            importSourceMetadata: baseTemplate.importSourceMetadata,
+          }),
+        };
+      }
+
+      if (annotation.exportKind === 'scenario') {
+        return {
+          ...current,
+          pdfAnnotationBounds: nextAnnotations,
+          scenarios: upsertById(current.scenarios, {
+            ...baseTemplate,
+            templateKind: 'scenario',
+            rewards: [],
+          }),
+        };
+      }
+
+      if (annotation.exportKind === 'companion') {
+        return {
+          ...current,
+          pdfAnnotationBounds: nextAnnotations,
+          companions: upsertById(current.companions, {
+            ...baseTemplate,
+            templateKind: 'companion',
+            count: 1,
+            allowances: {},
+            stipends: {},
+          }),
+        };
+      }
+
+      return {
+        ...current,
+        pdfAnnotationBounds: nextAnnotations,
+        purchases: upsertById(current.purchases, {
+          ...baseTemplate,
+          templateKind: 'purchase',
+          purchaseSection: annotation.purchaseSection ?? 'perk',
+          subtypeKey: null,
+          temporary: false,
+          comboBoosts: [],
+        }),
+      };
+    });
+    setNotice({ tone: 'success', message: `Exported annotation as ${getAnnotationExportLabel(annotation)}.` });
+  }
+
   if (!workspace.activeBranch) {
     return <EmptyWorkspaceCard title="No active branch" body="Create or recover a branch before editing JumpDocs." />;
   }
@@ -270,7 +401,7 @@ export function JumpDocsPage() {
       {workspace.jumpDocs.length === 0 ? (
         <EmptyWorkspaceCard title="No JumpDocs yet" body="Create the first local JumpDoc shell, then fill in the structured sections." />
       ) : (
-        <section className="grid grid--two">
+        <section className="workspace-two-column">
           <aside className="card stack">
             <div className="section-heading">
               <h3>JumpDocs</h3>
@@ -392,6 +523,95 @@ export function JumpDocsPage() {
                 annotations={draftJumpDoc.pdfAnnotationBounds ?? []}
                 onAnnotationsChange={(pdfAnnotationBounds) => updateDraft((current) => ({ ...current, pdfAnnotationBounds }))}
               />
+
+              {draftJumpDoc.pdfAnnotationBounds.length > 0 ? (
+                <section className="jumpdoc-annotation-panel stack stack--compact">
+                  <div className="section-heading">
+                    <h3>Annotation exports</h3>
+                    <span className="pill">{draftJumpDoc.pdfAnnotationBounds.length}</span>
+                  </div>
+                  <div className="stack stack--compact">
+                    {draftJumpDoc.pdfAnnotationBounds.map((annotation) => (
+                      <article key={annotation.id} className="jumpdoc-annotation-editor stack stack--compact">
+                        <div className="field-grid field-grid--three">
+                          <label className="field">
+                            <span>Name</span>
+                            <input
+                              value={annotation.label}
+                              onChange={(event) => updateAnnotation(annotation.id, (current) => ({ ...current, label: event.target.value }))}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Export as</span>
+                            <select
+                              value={annotation.exportKind === 'purchase' ? annotation.purchaseSection ?? 'perk' : annotation.exportKind}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                updateAnnotation(annotation.id, (current) =>
+                                  value === 'perk' || value === 'item' || value === 'subsystem' || value === 'other'
+                                    ? { ...current, exportKind: 'purchase', purchaseSection: value }
+                                    : { ...current, exportKind: value as JumpDocPdfAnnotation['exportKind'], purchaseSection: current.purchaseSection },
+                                );
+                              }}
+                            >
+                              <option value="perk">Perk</option>
+                              <option value="item">Item</option>
+                              <option value="subsystem">Subsystem</option>
+                              <option value="other">Other purchase</option>
+                              <option value="drawback">Drawback</option>
+                              <option value="origin">Origin</option>
+                              <option value="scenario">Scenario</option>
+                              <option value="companion">Companion</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Cost</span>
+                            <input
+                              inputMode="decimal"
+                              value={annotation.costAmount ?? ''}
+                              placeholder="optional"
+                              onChange={(event) => {
+                                const parsed = Number(event.target.value);
+                                updateAnnotation(annotation.id, (current) => ({
+                                  ...current,
+                                  costAmount: event.target.value.trim() === '' || !Number.isFinite(parsed) ? null : parsed,
+                                }));
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <div className="field-grid field-grid--two">
+                          <label className="field">
+                            <span>Currency</span>
+                            <select
+                              value={annotation.currencyKey || '0'}
+                              onChange={(event) => updateAnnotation(annotation.id, (current) => ({ ...current, currencyKey: event.target.value }))}
+                            >
+                              {Object.entries(draftJumpDoc.currencies).map(([currencyKey, currency]) => (
+                                <option key={currencyKey} value={currencyKey}>{currency.name || currency.abbrev || currencyKey}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="field field--inline-actions">
+                            <span>{annotation.exportedTemplateId ? 'Update template' : 'Create template'}</span>
+                            <button className="button button--secondary" type="button" onClick={() => exportAnnotation(annotation)}>
+                              Export
+                            </button>
+                          </div>
+                        </div>
+                        <label className="field">
+                          <span>Text</span>
+                          <textarea
+                            rows={3}
+                            value={annotation.extractedText}
+                            onChange={(event) => updateAnnotation(annotation.id, (current) => ({ ...current, extractedText: event.target.value }))}
+                          />
+                        </label>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               <label className="field">
                 <span>Notes</span>

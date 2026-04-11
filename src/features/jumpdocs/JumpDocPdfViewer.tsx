@@ -13,6 +13,8 @@ type PdfTextItem = {
   height: number;
 };
 
+type TextBlock = Pick<JumpDocPdfAnnotation, 'x' | 'y' | 'width' | 'height' | 'extractedText'>;
+
 interface JumpDocPdfViewerProps {
   source: string | null;
   fileName?: string;
@@ -51,6 +53,23 @@ function getRectStyle(rect: JumpDocPdfAnnotation | DraftRect) {
     top: `${top * 100}%`,
     width: `${width * 100}%`,
     height: `${height * 100}%`,
+  };
+}
+
+function getAnnotationDefaults(pageNumber: number, index: number, extractedText: string) {
+  const fallbackLabel = `Page ${pageNumber} marker ${index + 1}`;
+
+  return {
+    id: createId('pdf_annotation'),
+    label: extractedText.length > 0 ? extractedText.slice(0, 54) : fallbackLabel,
+    notes: '',
+    extractedText,
+    exportKind: 'purchase' as const,
+    purchaseSection: 'perk' as const,
+    costAmount: null,
+    currencyKey: '0',
+    exportedTemplateId: null,
+    page: pageNumber,
   };
 }
 
@@ -98,6 +117,48 @@ async function extractTextForBounds(
   );
 }
 
+async function getTextBlocks(documentProxy: pdfjs.PDFDocumentProxy, pageNumber: number): Promise<TextBlock[]> {
+  const page = await documentProxy.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const textContent = await page.getTextContent();
+  const textItems = textContent.items.filter(isTextItem) as PdfTextItem[];
+  const blocks = textItems
+    .map((item) => {
+      const transform = pdfjs.Util.transform(viewport.transform, item.transform);
+      const width = item.width / viewport.width;
+      const height = Math.max(item.height / viewport.height, 0.012);
+      const x = clampUnit(transform[4] / viewport.width);
+      const y = clampUnit((viewport.height - transform[5] - item.height) / viewport.height);
+      const extractedText = normalizePdfText(item.str);
+
+      return { x, y, width, height, extractedText };
+    })
+    .filter((block) => block.extractedText.length > 0 && block.width > 0);
+
+  const lines = new Map<number, TextBlock[]>();
+
+  for (const block of blocks) {
+    const lineKey = Math.round(block.y * 100);
+    lines.set(lineKey, [...(lines.get(lineKey) ?? []), block]);
+  }
+
+  return Array.from(lines.values()).map((lineBlocks) => {
+    const sortedBlocks = lineBlocks.sort((left, right) => left.x - right.x);
+    const x = Math.min(...sortedBlocks.map((block) => block.x));
+    const y = Math.min(...sortedBlocks.map((block) => block.y));
+    const right = Math.max(...sortedBlocks.map((block) => block.x + block.width));
+    const bottom = Math.max(...sortedBlocks.map((block) => block.y + block.height));
+
+    return {
+      x,
+      y,
+      width: Math.max(0.01, right - x),
+      height: Math.max(0.012, bottom - y),
+      extractedText: normalizePdfText(sortedBlocks.map((block) => block.extractedText).join(' ')),
+    };
+  });
+}
+
 export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsChange }: JumpDocPdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
@@ -107,6 +168,7 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [status, setStatus] = useState('No PDF loaded.');
   const [draftRect, setDraftRect] = useState<DraftRect | null>(null);
+  const [textBlocks, setTextBlocks] = useState<TextBlock[]>([]);
 
   const pageAnnotations = useMemo(
     () => annotations.filter((annotation) => annotation.page === pageNumber),
@@ -118,6 +180,7 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
     setDocumentProxy(null);
     setPageNumber(1);
     setCanvasSize({ width: 0, height: 0 });
+    setTextBlocks([]);
 
     if (!source) {
       setStatus('Upload a PDF or enter a browser-readable PDF URL.');
@@ -200,6 +263,31 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
     };
   }, [documentProxy, pageNumber, scale]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!documentProxy) {
+      setTextBlocks([]);
+      return;
+    }
+
+    void getTextBlocks(documentProxy, pageNumber)
+      .then((blocks) => {
+        if (!cancelled) {
+          setTextBlocks(blocks);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTextBlocks([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [documentProxy, pageNumber]);
+
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (!documentProxy) {
       return;
@@ -245,20 +333,57 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
     }
 
     const extractedText = await extractTextForBounds(documentProxy, pageNumber, { x, y, width, height }).catch(() => '');
-    const labelText = extractedText.length > 0 ? extractedText.slice(0, 54) : `Page ${pageNumber} marker ${pageAnnotations.length + 1}`;
-
     onAnnotationsChange([
       ...annotations,
       {
-        id: createId('pdf_annotation'),
-        label: labelText,
-        notes: '',
-        extractedText,
-        page: pageNumber,
+        ...getAnnotationDefaults(pageNumber, pageAnnotations.length, extractedText),
         x,
         y,
         width,
         height,
+      },
+    ]);
+  }
+
+  function handleDoubleClick(event: PointerEvent<HTMLDivElement>) {
+    if (!documentProxy || textBlocks.length === 0) {
+      return;
+    }
+
+    const position = getNormalizedPointerPosition(event);
+    const containingBlock = textBlocks.find(
+      (block) =>
+        position.x >= block.x &&
+        position.x <= block.x + block.width &&
+        position.y >= block.y &&
+        position.y <= block.y + block.height,
+    );
+    const nearestBlock =
+      containingBlock ??
+      textBlocks
+        .map((block) => {
+          const centerX = block.x + block.width / 2;
+          const centerY = block.y + block.height / 2;
+
+          return {
+            block,
+            distance: Math.hypot(centerX - position.x, centerY - position.y),
+          };
+        })
+        .sort((left, right) => left.distance - right.distance)[0]?.block;
+
+    if (!nearestBlock) {
+      return;
+    }
+
+    onAnnotationsChange([
+      ...annotations,
+      {
+        ...getAnnotationDefaults(pageNumber, pageAnnotations.length, nearestBlock.extractedText),
+        x: nearestBlock.x,
+        y: nearestBlock.y,
+        width: nearestBlock.width,
+        height: nearestBlock.height,
       },
     ]);
   }
@@ -313,6 +438,7 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
               onPointerMove={handlePointerMove}
               onPointerUp={() => void commitDraftRect()}
               onPointerCancel={() => setDraftRect(null)}
+              onDoubleClick={handleDoubleClick}
             >
               {pageAnnotations.map((annotation) => (
                 <div key={annotation.id} className="jumpdoc-pdf-annotation" style={getRectStyle(annotation)}>
