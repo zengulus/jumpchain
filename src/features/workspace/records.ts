@@ -6,6 +6,8 @@ import type { Chain } from '../../domain/chain/types';
 import type { Effect } from '../../domain/effects/types';
 import type { Companion, Jumper } from '../../domain/jumper/types';
 import type { CompanionParticipation, Jump, JumperParticipation, WorkspaceParticipation } from '../../domain/jump/types';
+import { normalizeCurrencyExchange, normalizeParticipationSelections } from '../../domain/jump/selection';
+import type { JumpDoc } from '../../domain/jumpdoc/types';
 import type { Note } from '../../domain/notes/types';
 import { createDefaultRulesModuleSettings, type RulesDefaults } from '../../domain/rules/customization';
 import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/types';
@@ -132,6 +134,62 @@ export function createBlankJump(chainId: string, branchId: string, orderIndex: n
   };
 }
 
+export function createBlankJumpDoc(chainId: string, branchId: string): JumpDoc {
+  const now = createTimestamp();
+
+  return {
+    id: createId('jumpdoc'),
+    chainId,
+    branchId,
+    createdAt: now,
+    updatedAt: now,
+    title: 'New JumpDoc',
+    author: '',
+    source: '',
+    pdfAttachmentId: null,
+    pdfUrl: null,
+    notes: '',
+    pdfAnnotationBounds: [],
+    currencies: {
+      '0': {
+        name: 'Choice Points',
+        abbrev: 'CP',
+        budget: 1000,
+        essential: true,
+      },
+    },
+    originCategories: {
+      origin: {
+        name: 'Origin',
+        singleLine: true,
+        defaultValue: 'Drop-In',
+      },
+    },
+    purchaseSubtypes: {
+      '0': {
+        name: 'Perk',
+        type: 0,
+        currencyKey: '0',
+        stipend: null,
+        essential: true,
+      },
+      '1': {
+        name: 'Item',
+        type: 1,
+        currencyKey: '0',
+        stipend: null,
+        essential: true,
+      },
+    },
+    origins: [],
+    purchases: [],
+    drawbacks: [],
+    scenarios: [],
+    companions: [],
+    importSourceMetadata: {},
+  };
+}
+
 function createBlankParticipationFields(
   chainId: string,
   branchId: string,
@@ -208,9 +266,17 @@ export function createBlankParticipation(
 export async function saveParticipationRecord(
   participation: JumperParticipation | CompanionParticipation | WorkspaceParticipation,
 ) {
-  if ('participantKind' in participation) {
-    if (participation.participantKind === 'companion') {
-      const { participantId, participantKind, ...rest } = participation;
+  const normalizedParticipation = {
+    ...participation,
+    purchases: normalizeParticipationSelections(participation.purchases, 'purchase'),
+    drawbacks: normalizeParticipationSelections(participation.drawbacks, 'drawback'),
+    retainedDrawbacks: normalizeParticipationSelections(participation.retainedDrawbacks, 'retained-drawback'),
+    currencyExchanges: participation.currencyExchanges.map((exchange) => normalizeCurrencyExchange(exchange)),
+  };
+
+  if ('participantKind' in normalizedParticipation) {
+    if (normalizedParticipation.participantKind === 'companion') {
+      const { participantId, participantKind, ...rest } = normalizedParticipation;
       await saveChainRecord(db.companionParticipations, {
         ...rest,
         companionId: participantId,
@@ -218,7 +284,7 @@ export async function saveParticipationRecord(
       return;
     }
 
-    const { participantId, participantKind, ...rest } = participation;
+    const { participantId, participantKind, ...rest } = normalizedParticipation;
     await saveChainRecord(db.participations, {
       ...rest,
       jumperId: participantId,
@@ -226,12 +292,12 @@ export async function saveParticipationRecord(
     return;
   }
 
-  if ('companionId' in participation) {
-    await saveChainRecord(db.companionParticipations, participation);
+  if ('companionId' in normalizedParticipation) {
+    await saveChainRecord(db.companionParticipations, normalizedParticipation);
     return;
   }
 
-  await saveChainRecord(db.participations, participation);
+  await saveChainRecord(db.participations, normalizedParticipation);
 }
 
 export async function syncJumpParticipantMembership(

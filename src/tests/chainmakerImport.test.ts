@@ -189,13 +189,7 @@ describe('ChainMaker v2 import foundation', () => {
     const mackenzie = session.bundle.jumpers.find((jumper) => jumper.name === 'Mackenzie');
     const kaspar = session.bundle.jumpers.find((jumper) => jumper.name === 'Kaspar');
     const importedSelectionNames = session.bundle.participations.flatMap((participation) =>
-      participation.purchases.map((purchase) => {
-        if (typeof purchase === 'object' && purchase !== null && 'name' in purchase && typeof purchase.name === 'string') {
-          return purchase.name;
-        }
-
-        return '';
-      }),
+      participation.purchases.map((purchase) => purchase.title),
     );
 
     expect(detection.sourceType).toBe('chainmaker-v2');

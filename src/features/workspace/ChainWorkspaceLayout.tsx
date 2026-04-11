@@ -38,6 +38,8 @@ type ModuleKey =
   | 'cosmic-backpack'
   | 'timeline'
   | 'notes'
+  | 'jumpdocs'
+  | 'export'
   | 'advanced-tools'
   | 'backups';
 
@@ -82,6 +84,8 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   'cosmic-backpack': 'Cosmic Backpack',
   timeline: 'Timeline',
   notes: 'Notes',
+  jumpdocs: 'JumpDocs',
+  export: 'Export',
   'advanced-tools': 'Advanced Tools',
   backups: 'Backups',
 };
@@ -195,6 +199,14 @@ function getActiveModuleKey(pathname: string): ModuleKey {
 
   if (pathname.includes('/notes')) {
     return 'notes';
+  }
+
+  if (pathname.includes('/jumpdocs')) {
+    return 'jumpdocs';
+  }
+
+  if (pathname.includes('/export')) {
+    return 'export';
   }
 
   if (pathname.includes('/advanced-tools')) {
@@ -447,6 +459,10 @@ export function ChainWorkspaceLayout() {
         return `/chains/${resolvedChainId}/timeline`;
       case 'notes':
         return `/chains/${resolvedChainId}/notes`;
+      case 'jumpdocs':
+        return `/chains/${resolvedChainId}/jumpdocs`;
+      case 'export':
+        return `/chains/${resolvedChainId}/export`;
       case 'advanced-tools':
         return `/chains/${resolvedChainId}/advanced-tools`;
       case 'backups':
@@ -692,6 +708,20 @@ export function ChainWorkspaceLayout() {
       id: 'tools',
       title: 'Advanced tools',
       items: [
+        {
+          key: 'jumpdocs',
+          label: 'JumpDocs',
+          to: getModulePath('jumpdocs'),
+          description: 'Create local structured jump documents for later PDF annotation and purchase picking.',
+          readiness: 'optional',
+        },
+        {
+          key: 'export',
+          label: 'Export',
+          to: getModulePath('export'),
+          description: 'Generate Markdown or BBCode for sharing the active branch.',
+          readiness: 'optional',
+        },
         {
           key: 'advanced-tools',
           label: 'Advanced Tools',

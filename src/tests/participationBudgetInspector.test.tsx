@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { buildBranchWorkspace } from '../domain/chain/selectors';
 import { prepareChainMakerV2ImportSession } from '../domain/import/chainmakerV2';
+import { normalizeParticipationSelection } from '../domain/jump/selection';
 import { ParticipationBudgetInspector, ParticipationBudgetShellAttachment } from '../features/participation/ParticipationPage';
 import sampleChainMaker from '../fixtures/chainmaker/chainmaker-v2.sample.json';
 
@@ -14,15 +15,18 @@ describe('participation budget inspector', () => {
           ? {
               ...participation,
               purchases: [
-                {
-                  name: 'Legacy Item',
-                  value: 200,
-                  currency: 0,
-                  costModifier: 0,
-                  purchaseValue: 0,
-                  purchaseType: 1,
-                  subtype: 1,
-                },
+                normalizeParticipationSelection(
+                  {
+                    name: 'Legacy Item',
+                    value: 200,
+                    currency: 0,
+                    costModifier: 0,
+                    purchaseValue: 0,
+                    purchaseType: 1,
+                    subtype: 1,
+                  },
+                  'purchase',
+                ),
               ],
               drawbacks: [],
               retainedDrawbacks: [],

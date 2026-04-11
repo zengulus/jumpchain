@@ -6,5 +6,6 @@ export interface AttachmentRef extends ChainScopedRecord, ScopedOwnership {
   mimeType?: string;
   fileName?: string;
   url?: string;
+  dataUrl?: string;
   storage: 'embedded' | 'external' | 'local';
 }

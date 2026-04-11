@@ -5,6 +5,7 @@ import type {
   NormalizedImportModel,
   PreparedImportSession,
 } from './types';
+import { normalizeParticipationSelection } from '../jump/selection';
 import { mapNormalizedImportToNativeBundle } from './chainmakerV2';
 import { detectImportSource } from './sourceDetection';
 
@@ -637,7 +638,7 @@ function createSelectionRecord(
   entry: ParsedSelectionEntry,
   sectionDefinition: ReturnType<typeof getPurchaseTypeDefinition>,
 ) {
-  return {
+  return normalizeParticipationSelection({
     name: entry.name,
     summary: entry.name,
     description: entry.description,
@@ -654,11 +655,11 @@ function createSelectionRecord(
     importedSectionTitle: entry.sourceSectionTitle,
     priceAnnotation: entry.annotation ?? undefined,
     sourceType: 'jump-summary-text',
-  };
+  }, 'purchase');
 }
 
 function createDrawbackRecord(entry: ParsedSelectionEntry) {
-  return {
+  return normalizeParticipationSelection({
     name: entry.name,
     summary: entry.name,
     description: entry.description,
@@ -673,7 +674,7 @@ function createDrawbackRecord(entry: ParsedSelectionEntry) {
     importedSectionTitle: entry.sourceSectionTitle,
     priceAnnotation: entry.annotation ?? undefined,
     sourceType: 'jump-summary-text',
-  };
+  }, 'drawback');
 }
 
 function createOriginMetadata(origins: ParsedOriginEntry[]) {

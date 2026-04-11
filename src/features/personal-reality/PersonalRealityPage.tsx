@@ -218,7 +218,7 @@ function getJumpTrackedPersonalRealityBudget(workspace: ReturnType<typeof useCha
       for (const exchange of participation.currencyExchanges) {
         const record =
           typeof exchange === 'object' && exchange !== null && !Array.isArray(exchange)
-            ? (exchange as Record<string, unknown>)
+            ? (exchange as unknown as Record<string, unknown>)
             : {};
         const fromCurrency =
           getRecordStringValue(record, ['fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??

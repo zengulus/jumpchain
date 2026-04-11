@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { NativeChainBundle, NativeSaveEnvelope } from '../domain/save';
-import { AttachmentRefSchema, BodymodProfileSchema, BranchSchema, ChainSchema, CompanionParticipationSchema, CompanionSchema, EffectSchema, HouseRuleProfileSchema, JumpRulesContextSchema, JumperParticipationSchema, JumperSchema, JumpSchema, NoteSchema, PresetProfileSchema, SnapshotSchema } from './entities';
+import { AttachmentRefSchema, BodymodProfileSchema, BranchSchema, ChainSchema, CompanionParticipationSchema, CompanionSchema, EffectSchema, HouseRuleProfileSchema, JumpDocSchema, JumpRulesContextSchema, JumperParticipationSchema, JumperSchema, JumpSchema, NoteSchema, PresetProfileSchema, SnapshotSchema } from './entities';
 import { ImportReportSchema } from './import';
 
 export const NativeChainBundleSchema = z.object({
@@ -9,6 +9,7 @@ export const NativeChainBundleSchema = z.object({
   jumpers: z.array(JumperSchema),
   companions: z.array(CompanionSchema),
   jumps: z.array(JumpSchema),
+  jumpDocs: z.array(JumpDocSchema).default([]),
   participations: z.array(JumperParticipationSchema),
   companionParticipations: z.array(CompanionParticipationSchema).default([]),
   effects: z.array(EffectSchema),

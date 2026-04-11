@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Chain } from '../domain/chain/types';
 import type { Branch } from '../domain/branch/types';
 import type { NativeChainBundle } from '../domain/save';
+import { normalizeParticipationSelection } from '../domain/jump/selection';
 import { buildUniversalSearchResults, filterUniversalSearchResults, matchesSearchQuery } from '../features/search/searchUtils';
 
 const now = '2026-03-26T00:00:00.000Z';
@@ -143,24 +144,30 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
         status: 'active',
         notes: 'Keeps a live expedition log.',
         purchases: [
-          {
-            name: 'Garage Drone',
-            summary: 'Garage Drone',
-            description: 'Mobile repair assistant for workshop and convoy maintenance.',
-            tags: ['garage', 'drone', 'support'],
-            purchaseType: 1,
-            subtype: 1,
-            selectionKind: 'purchase',
-          },
-          {
-            name: 'Archive Hack',
-            summary: 'Archive Hack',
-            description: 'Modular archive interface and utility rig.',
-            tags: ['archive', 'utility'],
-            purchaseType: 0,
-            subtype: 10,
-            selectionKind: 'purchase',
-          },
+          normalizeParticipationSelection(
+            {
+              name: 'Garage Drone',
+              summary: 'Garage Drone',
+              description: 'Mobile repair assistant for workshop and convoy maintenance.',
+              tags: ['garage', 'drone', 'support'],
+              purchaseType: 1,
+              subtype: 1,
+              selectionKind: 'purchase',
+            },
+            'purchase',
+          ),
+          normalizeParticipationSelection(
+            {
+              name: 'Archive Hack',
+              summary: 'Archive Hack',
+              description: 'Modular archive interface and utility rig.',
+              tags: ['archive', 'utility'],
+              purchaseType: 0,
+              subtype: 10,
+              selectionKind: 'purchase',
+            },
+            'purchase',
+          ),
         ],
         drawbacks: [],
         retainedDrawbacks: [],
@@ -251,6 +258,7 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
       },
     ],
     attachments: [],
+    jumpDocs: [],
     importReports: [],
   };
 }

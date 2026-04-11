@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { iconicSelectionKinds } from '../domain/bodymod/types';
 import type { CompanionParticipation, JumperParticipation } from '../domain/jump/types';
+import { normalizeCurrencyExchange, normalizeParticipationSelection } from '../domain/jump/selection';
+import type { CurrencyExchangeRecord, ParticipationSelection } from '../domain/jump/selection';
+import type { JumpDoc } from '../domain/jumpdoc/types';
 import {
   AccessModeSchema,
   BaseRecordSchema,
@@ -101,14 +104,106 @@ export const JumpSchema = ChainScopedRecordSchema.extend({
   importSourceMetadata: JsonMapSchema,
 });
 
+export const SelectionCostSchema = z.object({
+  amount: z.number(),
+  currencyKey: z.string(),
+});
+
+export const SelectionPrerequisiteSchema = z.object({
+  type: z.enum(['origin', 'purchase', 'drawback', 'scenario']),
+  id: z.union([z.string(), z.number()]).nullable().optional(),
+  title: z.string().optional(),
+  positive: z.boolean().optional(),
+  importSourceMetadata: JsonMapSchema.optional(),
+});
+
+export const AlternativeCostSchema = z.object({
+  costs: z.array(SelectionCostSchema),
+  prerequisites: z.array(SelectionPrerequisiteSchema),
+  mandatory: z.boolean(),
+  label: z.string().optional(),
+});
+
+export const ScenarioRewardSchema = z.object({
+  type: z.enum(['currency', 'perk', 'item', 'stipend', 'note']),
+  title: z.string().optional(),
+  amount: z.number().optional(),
+  currencyKey: z.string().optional(),
+  subtypeKey: z.string().optional(),
+  note: z.string().optional(),
+  sourceSelectionId: z.union([z.string(), z.number()]).nullable().optional(),
+});
+
+export const ComboBoostSchema = z.object({
+  boosterTitle: z.string(),
+  description: z.string(),
+  sourceSelectionId: z.union([z.string(), z.number()]).nullable().optional(),
+});
+
+export const ParticipationSelectionSchema = z.object({
+  id: IdentifierSchema.optional(),
+  selectionKind: z.enum(['purchase', 'drawback', 'retained-drawback', 'scenario', 'companion-import']),
+  title: z.string().min(1),
+  summary: z.string().optional(),
+  description: z.string(),
+  value: z.number(),
+  currencyKey: z.string(),
+  purchaseValue: z.number(),
+  costModifier: z.enum(['full', 'discounted', 'double-discounted', 'free', 'custom']),
+  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']).optional(),
+  subtypeKey: z.string().nullable().optional(),
+  purchaseType: z.number().nullable().optional(),
+  tags: z.array(z.string()),
+  free: z.boolean(),
+  discountSource: z.string().optional(),
+  choiceContext: z.string().optional(),
+  alternativeCosts: z.array(AlternativeCostSchema).optional(),
+  prerequisites: z.array(SelectionPrerequisiteSchema).optional(),
+  scenarioRewards: z.array(ScenarioRewardSchema).optional(),
+  comboBoosts: z.array(ComboBoostSchema).optional(),
+  sourcePurchaseId: z.union([z.string(), z.number()]).nullable().optional(),
+  sourceJumpDocId: IdentifierSchema.nullable().optional(),
+  sourceTemplateId: z.union([z.string(), z.number()]).nullable().optional(),
+  importSourceMetadata: JsonMapSchema,
+});
+
+export const CurrencyExchangeRecordSchema = z.object({
+  fromCurrencyKey: z.string(),
+  toCurrencyKey: z.string(),
+  fromAmount: z.number(),
+  toAmount: z.number(),
+  notes: z.string(),
+  importSourceMetadata: JsonMapSchema,
+});
+
+const PurchaseSelectionSchema = z.preprocess(
+  (value) => normalizeParticipationSelection(value, 'purchase'),
+  ParticipationSelectionSchema,
+) as z.ZodType<ParticipationSelection>;
+
+const DrawbackSelectionSchema = z.preprocess(
+  (value) => normalizeParticipationSelection(value, 'drawback'),
+  ParticipationSelectionSchema,
+) as z.ZodType<ParticipationSelection>;
+
+const RetainedDrawbackSelectionSchema = z.preprocess(
+  (value) => normalizeParticipationSelection(value, 'retained-drawback'),
+  ParticipationSelectionSchema,
+) as z.ZodType<ParticipationSelection>;
+
+const NormalizedCurrencyExchangeRecordSchema = z.preprocess(
+  (value) => normalizeCurrencyExchange(value),
+  CurrencyExchangeRecordSchema,
+) as z.ZodType<CurrencyExchangeRecord>;
+
 export const JumperParticipationSchema = ChainScopedRecordSchema.extend({
   jumpId: IdentifierSchema,
   jumperId: IdentifierSchema,
   status: ParticipationStatusSchema,
   notes: z.string(),
-  purchases: z.array(z.unknown()),
-  drawbacks: z.array(z.unknown()),
-  retainedDrawbacks: z.array(z.unknown()),
+  purchases: z.array(PurchaseSelectionSchema),
+  drawbacks: z.array(DrawbackSelectionSchema),
+  retainedDrawbacks: z.array(RetainedDrawbackSelectionSchema),
   origins: z.record(z.string(), z.unknown()),
   budgets: z.record(z.string(), z.number()),
   stipends: z.record(z.string(), z.record(z.string(), z.number())),
@@ -119,7 +214,7 @@ export const JumperParticipationSchema = ChainScopedRecordSchema.extend({
   }),
   altForms: z.array(z.unknown()),
   bankDeposit: z.number(),
-  currencyExchanges: z.array(z.unknown()),
+  currencyExchanges: z.array(NormalizedCurrencyExchangeRecordSchema),
   supplementPurchases: z.record(z.string(), z.unknown()),
   supplementInvestments: z.record(z.string(), z.unknown()),
   drawbackOverrides: z.record(z.string(), z.unknown()),
@@ -131,9 +226,9 @@ export const CompanionParticipationSchema = ChainScopedRecordSchema.extend({
   companionId: IdentifierSchema,
   status: ParticipationStatusSchema,
   notes: z.string(),
-  purchases: z.array(z.unknown()),
-  drawbacks: z.array(z.unknown()),
-  retainedDrawbacks: z.array(z.unknown()),
+  purchases: z.array(PurchaseSelectionSchema),
+  drawbacks: z.array(DrawbackSelectionSchema),
+  retainedDrawbacks: z.array(RetainedDrawbackSelectionSchema),
   origins: z.record(z.string(), z.unknown()),
   budgets: z.record(z.string(), z.number()),
   stipends: z.record(z.string(), z.record(z.string(), z.number())),
@@ -144,12 +239,110 @@ export const CompanionParticipationSchema = ChainScopedRecordSchema.extend({
   }),
   altForms: z.array(z.unknown()),
   bankDeposit: z.number(),
-  currencyExchanges: z.array(z.unknown()),
+  currencyExchanges: z.array(NormalizedCurrencyExchangeRecordSchema),
   supplementPurchases: z.record(z.string(), z.unknown()),
   supplementInvestments: z.record(z.string(), z.unknown()),
   drawbackOverrides: z.record(z.string(), z.unknown()),
   importSourceMetadata: JsonMapSchema,
 }) satisfies z.ZodType<CompanionParticipation>;
+
+const JumpDocPageRectSchema = z.object({
+  page: z.number().int().nonnegative(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+const JumpDocPdfAnnotationSchema = JumpDocPageRectSchema.extend({
+  id: IdentifierSchema,
+  label: z.string(),
+  notes: z.string(),
+});
+
+const JumpDocCurrencySchema = z.object({
+  name: z.string(),
+  abbrev: z.string(),
+  budget: z.number().nullable(),
+  essential: z.boolean(),
+});
+
+const JumpDocOriginCategorySchema = z.object({
+  name: z.string(),
+  singleLine: z.boolean(),
+  defaultValue: z.string(),
+  randomizer: z.object({
+    cost: SelectionCostSchema,
+    template: z.string(),
+    bounds: z.array(JumpDocPageRectSchema),
+  }).optional(),
+});
+
+const JumpDocPurchaseSubtypeSchema = z.object({
+  name: z.string(),
+  type: z.number().nullable(),
+  currencyKey: z.string(),
+  stipend: z.number().nullable(),
+  essential: z.boolean(),
+});
+
+const JumpDocTemplateBaseSchema = z.object({
+  id: IdentifierSchema,
+  title: z.string(),
+  description: z.string(),
+  choiceContext: z.string().optional(),
+  costs: z.array(SelectionCostSchema),
+  bounds: z.array(JumpDocPageRectSchema),
+  alternativeCosts: z.array(AlternativeCostSchema),
+  prerequisites: z.array(SelectionPrerequisiteSchema),
+  tags: z.array(z.string()),
+  importSourceMetadata: JsonMapSchema,
+});
+
+export const JumpDocSchema = ChainScopedRecordSchema.extend({
+  title: z.string().min(1),
+  author: z.string(),
+  source: z.string(),
+  pdfAttachmentId: IdentifierSchema.nullish(),
+  pdfUrl: z.string().nullish(),
+  notes: z.string(),
+  pdfAnnotationBounds: z.array(JumpDocPdfAnnotationSchema).default([]),
+  currencies: z.record(z.string(), JumpDocCurrencySchema),
+  originCategories: z.record(z.string(), JumpDocOriginCategorySchema),
+  purchaseSubtypes: z.record(z.string(), JumpDocPurchaseSubtypeSchema),
+  origins: z.array(z.object({
+    id: IdentifierSchema,
+    categoryKey: z.string(),
+    title: z.string(),
+    description: z.string(),
+    choiceContext: z.string().optional(),
+    cost: SelectionCostSchema,
+    bounds: z.array(JumpDocPageRectSchema),
+    importSourceMetadata: JsonMapSchema,
+  })),
+  purchases: z.array(JumpDocTemplateBaseSchema.extend({
+    templateKind: z.literal('purchase'),
+    purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']),
+    subtypeKey: z.string().nullable(),
+    temporary: z.boolean(),
+    comboBoosts: z.array(ComboBoostSchema),
+  })),
+  drawbacks: z.array(JumpDocTemplateBaseSchema.extend({
+    templateKind: z.literal('drawback'),
+    durationYears: z.number().nullable(),
+  })),
+  scenarios: z.array(JumpDocTemplateBaseSchema.extend({
+    templateKind: z.literal('scenario'),
+    rewards: z.array(ScenarioRewardSchema),
+  })),
+  companions: z.array(JumpDocTemplateBaseSchema.extend({
+    templateKind: z.literal('companion'),
+    count: z.number().int().nonnegative(),
+    allowances: z.record(z.string(), z.number()),
+    stipends: z.record(z.string(), z.record(z.string(), z.number())),
+  })),
+  importSourceMetadata: JsonMapSchema,
+}) as z.ZodType<JumpDoc>;
 
 export const EffectSchema = ChainScopedRecordSchema.merge(ScopedOwnershipSchema).extend({
   title: z.string().min(1),
@@ -253,6 +446,7 @@ export const AttachmentRefSchema = ChainScopedRecordSchema.merge(ScopedOwnership
   mimeType: z.string().optional(),
   fileName: z.string().optional(),
   url: z.string().optional(),
+  dataUrl: z.string().optional(),
   storage: z.enum(['embedded', 'external', 'local']),
 });
 

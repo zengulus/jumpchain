@@ -11,6 +11,7 @@ import type { BodymodProfile } from '../bodymod/types';
 import type { Chain } from '../chain/types';
 import type { Jumper, Companion } from '../jumper/types';
 import type { Jump, JumperParticipation } from '../jump/types';
+import type { CurrencyExchangeRecord, ParticipationSelection } from '../jump/selection';
 import type { NativeChainBundle } from '../save';
 
 export interface SourceDetectionResult {
@@ -220,16 +221,16 @@ export interface NormalizedParticipationImport {
   sourceCharacterId: number;
   status: JumperParticipation['status'];
   notes: string;
-  purchases: unknown[];
-  drawbacks: unknown[];
-  retainedDrawbacks: unknown[];
+  purchases: ParticipationSelection[];
+  drawbacks: ParticipationSelection[];
+  retainedDrawbacks: ParticipationSelection[];
   origins: Record<string, unknown>;
   budgets: Record<string, number>;
   stipends: Record<string, Record<string, number>>;
   narratives: JumperParticipation['narratives'];
   altForms: unknown[];
   bankDeposit: number;
-  currencyExchanges: unknown[];
+  currencyExchanges: CurrencyExchangeRecord[];
   supplementPurchases: Record<string, unknown>;
   supplementInvestments: Record<string, unknown>;
   drawbackOverrides: Record<string, unknown>;

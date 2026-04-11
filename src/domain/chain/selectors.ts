@@ -6,6 +6,7 @@ import type { Effect } from '../effects/types';
 import type { ImportReport } from '../import/types';
 import type { Companion, Jumper } from '../jumper/types';
 import type { Jump, WorkspaceParticipation } from '../jump/types';
+import type { JumpDoc } from '../jumpdoc/types';
 import type { Note } from '../notes/types';
 import type { PresetProfile } from '../presets/types';
 import {
@@ -28,6 +29,7 @@ export interface BranchWorkspace {
   jumpers: Jumper[];
   companions: Companion[];
   jumps: Jump[];
+  jumpDocs: JumpDoc[];
   participations: WorkspaceParticipation[];
   effects: Effect[];
   bodymodProfiles: BodymodProfile[];
@@ -183,13 +185,13 @@ function getSelectionBudgetGrants(selection: unknown) {
   }
 
   return {
-    [parseOptionalIdentifier(record.currency) ?? '0']: importedValue,
+    [parseOptionalIdentifier(record.currencyKey) ?? parseOptionalIdentifier(record.currency) ?? '0']: importedValue,
   };
 }
 
 function getSelectionTitle(selection: unknown, fallbackLabel: string) {
   const record = asRecord(selection);
-  const title = record.name ?? record.summary;
+  const title = record.title ?? record.name ?? record.summary;
 
   if (typeof title === 'string' && title.trim().length > 0) {
     return title;
@@ -234,6 +236,7 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
   const jumpers: Jumper[] = [];
   const companions: Companion[] = [];
   const branchJumps: Jump[] = [];
+  const jumpDocs: JumpDoc[] = [];
   const participations: WorkspaceParticipation[] = [];
   const effects: Effect[] = [];
   const bodymodProfiles: BodymodProfile[] = [];
@@ -259,6 +262,12 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
   for (const jump of bundle.jumps) {
     if (jump.branchId === branchId) {
       branchJumps.push(jump);
+    }
+  }
+
+  for (const jumpDoc of bundle.jumpDocs) {
+    if (jumpDoc.branchId === branchId) {
+      jumpDocs.push(jumpDoc);
     }
   }
 
@@ -347,6 +356,7 @@ export function buildBranchWorkspace(bundle: NativeChainBundle, activeBranchId: 
     jumpers,
     companions,
     jumps,
+    jumpDocs: jumpDocs.sort((left, right) => left.title.localeCompare(right.title)),
     participations,
     effects,
     bodymodProfiles,

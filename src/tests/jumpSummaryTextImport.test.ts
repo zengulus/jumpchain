@@ -54,8 +54,8 @@ describe('jump summary text import', () => {
       fileName: 'Harry Potter (All Mini Jumps) [Erica].txt',
     });
     const participation = session.bundle.participations[0];
-    const purchaseRecords = participation?.purchases as Array<Record<string, unknown>>;
-    const drawbackRecords = participation?.drawbacks as Array<Record<string, unknown>>;
+    const purchaseRecords = participation?.purchases ?? [];
+    const drawbackRecords = participation?.drawbacks ?? [];
 
     expect(session.bundle.chain.title).toBe('Harry Potter (All Mini Jumps) [Erica]');
     expect(session.bundle.chain.sourceMetadata?.sourceType).toBe('jump-summary-text');

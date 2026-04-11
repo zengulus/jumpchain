@@ -20,6 +20,7 @@ import type {
 } from './types';
 import { ChainMakerV2SourceSchema } from '../../schemas';
 import { createId } from '../../utils/id';
+import { normalizeCurrencyExchange, normalizeParticipationSelection } from '../jump/selection';
 import { detectImportSource } from './sourceDetection';
 import { cleanChainMakerV2Raw } from './cleaner';
 
@@ -190,7 +191,10 @@ function normalizeSelectionList(
       const purchaseEntry = purchaseCatalog.get(sourcePurchaseId);
 
       if (purchaseEntry) {
-        return summarizePurchaseCatalogEntry(selectionKind, sourcePurchaseId, purchaseEntry);
+        return normalizeParticipationSelection(
+          summarizePurchaseCatalogEntry(selectionKind, sourcePurchaseId, purchaseEntry),
+          selectionKind,
+        );
       }
     }
 
@@ -202,13 +206,16 @@ function normalizeSelectionList(
       preservedAt: 'chain.importSourceMetadata.purchaseCatalog',
     });
 
-    return {
-      sourcePurchaseId,
+    return normalizeParticipationSelection(
+      {
+        sourcePurchaseId,
+        selectionKind,
+        name: typeof reference === 'string' || typeof reference === 'number' ? String(reference) : 'Unresolved selection',
+        description: '',
+        unresolved: true,
+      },
       selectionKind,
-      name: typeof reference === 'string' || typeof reference === 'number' ? String(reference) : 'Unresolved selection',
-      description: '',
-      unresolved: true,
-    };
+    );
   });
 }
 
@@ -421,7 +428,7 @@ function normalizeJumps(source: ChainMakerV2Source, purchaseCatalog: Map<number,
         narratives: jump.narratives[characterKey] ?? getNarrativeDefaults(),
         altForms: jump.altForms[characterKey] ?? [],
         bankDeposit: jump.bankDeposits[characterKey] ?? 0,
-        currencyExchanges: jump.currencyExchanges[characterKey] ?? [],
+        currencyExchanges: (jump.currencyExchanges[characterKey] ?? []).map((exchange) => normalizeCurrencyExchange(exchange)),
         supplementPurchases: jump.supplementPurchases[characterKey] ?? {},
         supplementInvestments: jump.supplementInvestments[characterKey] ?? {},
         drawbackOverrides: jump.drawbackOverrides[characterKey] ?? {},
@@ -953,6 +960,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
     jumpers,
     companions: [],
     jumps,
+    jumpDocs: [],
     participations,
     companionParticipations: [],
     effects,

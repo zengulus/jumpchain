@@ -3,6 +3,7 @@ import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getEffectiveParticipationBudgetState } from '../../domain/chain/selectors';
 import { participationStatuses } from '../../domain/common';
+import { normalizeParticipationSelections } from '../../domain/jump/selection';
 import { collectWorkspaceTags, readTagList } from '../../utils/tags';
 import { saveParticipationRecord } from '../workspace/records';
 import {
@@ -278,14 +279,28 @@ function coerceSelectionToCp(record: Record<string, unknown>) {
   const nextRecord: Record<string, unknown> = {
     ...record,
     currency: 0,
+    currencyKey: '0',
   };
 
-  delete nextRecord.currencyKey;
   return nextRecord;
 }
 
 function normalizeDiscountLevel(value: unknown): DiscountLevel {
-  const parsedValue = getOptionalNumber(asRecord(value).costModifier);
+  const rawModifier = asRecord(value).costModifier;
+
+  if (rawModifier === 'discounted') {
+    return 1;
+  }
+
+  if (rawModifier === 'double-discounted') {
+    return 2;
+  }
+
+  if (rawModifier === 'free') {
+    return 0;
+  }
+
+  const parsedValue = getOptionalNumber(rawModifier);
 
   if (parsedValue === 1 || parsedValue === 2) {
     return parsedValue;
@@ -332,7 +347,14 @@ function applySelectionPricing(
   const nextDiscountSource = overrides.discountSource ?? getDiscountSource(record);
 
   nextRecord.free = nextFree;
-  nextRecord.costModifier = nextDiscountLevel;
+  nextRecord.costModifier =
+    nextFree
+      ? 'free'
+      : nextDiscountLevel === 1
+        ? 'discounted'
+        : nextDiscountLevel === 2
+          ? 'double-discounted'
+          : 'full';
 
   if (nextDiscountSource.trim().length > 0) {
     nextRecord.discountSource = nextDiscountSource;
@@ -360,6 +382,8 @@ function getSelectionToken(value: unknown): SummaryToken {
   const label =
     typeof record.name === 'string' && record.name.trim().length > 0
       ? record.name
+      : typeof record.title === 'string' && record.title.trim().length > 0
+        ? record.title
       : typeof record.summary === 'string' && record.summary.trim().length > 0
         ? record.summary
         : typeof record.sourcePurchaseId === 'number'
@@ -490,15 +514,18 @@ function getPurchaseTokenGroups(
 
 function createBlankSelection(title: string, extraFields: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    title,
     name: title,
     summary: title,
     description: '',
     tags: [],
     value: 0,
+    currencyKey: '0',
     currency: 0,
     free: false,
-    costModifier: 0,
+    costModifier: 'full',
     purchaseValue: 0,
+    importSourceMetadata: {},
     ...extraFields,
   };
 }
@@ -522,6 +549,10 @@ function getSelectionTitleValue(record: Record<string, unknown>, fallbackTitle: 
     return record.name;
   }
 
+  if (typeof record.title === 'string' && record.title.trim().length > 0) {
+    return record.title;
+  }
+
   if (typeof record.summary === 'string' && record.summary.trim().length > 0) {
     return record.summary;
   }
@@ -532,6 +563,7 @@ function getSelectionTitleValue(record: Record<string, unknown>, fallbackTitle: 
 function setSelectionTitleValue(record: Record<string, unknown>, nextTitle: string) {
   return {
     ...record,
+    title: nextTitle,
     name: nextTitle,
     summary: nextTitle,
   };
@@ -1103,9 +1135,10 @@ function getCurrencyExchangeTokens(
   return exchanges.map((exchange, index) => {
     const record = asRecord(exchange);
     const fromCurrency =
-      getRecordStringValue(record, ['fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??
+      getRecordStringValue(record, ['fromCurrencyKey', 'fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??
       getRecordStringValue(record, ['currency']);
     const toCurrency = getRecordStringValue(record, [
+      'toCurrencyKey',
       'toCurrency',
       'targetCurrency',
       'currencyTo',
@@ -1150,16 +1183,17 @@ function normalizeCurrencyExchangeForEdit(value: unknown, defaultCurrencyKey: st
 
   return {
     ...record,
-    fromCurrency:
+    fromCurrencyKey:
       getRecordStringValue(record, ['fromCurrency', 'sourceCurrency', 'currencyFrom', 'sourceCurrencyKey', 'from', 'source']) ??
       getRecordStringValue(record, ['currency']) ??
       defaultCurrencyKey,
-    toCurrency:
+    toCurrencyKey:
       getRecordStringValue(record, ['toCurrency', 'targetCurrency', 'currencyTo', 'targetCurrencyKey', 'to', 'target']) ??
       defaultCurrencyKey,
     fromAmount: getRecordNumberValue(record, ['fromAmount', 'sourceAmount', 'spent', 'amount', 'value']) ?? 0,
     toAmount: getRecordNumberValue(record, ['toAmount', 'targetAmount', 'receivedAmount', 'convertedAmount', 'received']) ?? 0,
     notes: getRecordStringValue(record, ['notes', 'summary', 'description']) ?? '',
+    importSourceMetadata: asRecord(record.importSourceMetadata),
   };
 }
 
@@ -1241,8 +1275,8 @@ function getCurrencyExchangeFlows(
   return exchanges.reduce<{ outflows: Record<string, number>; inflows: Record<string, number> }>(
     (flows, exchange) => {
       const record = normalizeCurrencyExchangeForEdit(exchange, defaultCurrencyKey);
-      const fromCurrency = typeof record.fromCurrency === 'string' ? record.fromCurrency : defaultCurrencyKey;
-      const toCurrency = typeof record.toCurrency === 'string' ? record.toCurrency : defaultCurrencyKey;
+      const fromCurrency = typeof record.fromCurrencyKey === 'string' ? record.fromCurrencyKey : defaultCurrencyKey;
+      const toCurrency = typeof record.toCurrencyKey === 'string' ? record.toCurrencyKey : defaultCurrencyKey;
       const fromAmount = getOptionalNumber(record.fromAmount) ?? 0;
       const toAmount = getOptionalNumber(record.toAmount) ?? 0;
 
@@ -1799,15 +1833,15 @@ function CurrencyExchangeEditorSection(props: {
         <div className="selection-editor-list">
           {props.items.map((item, index) => {
             const record = normalizeCurrencyExchangeForEdit(item, props.defaultCurrencyKey);
-            const availableFromCurrencies = Array.from(new Set([String(record.fromCurrency), ...currencyKeys]));
-            const availableToCurrencies = Array.from(new Set([String(record.toCurrency), ...currencyKeys]));
+            const availableFromCurrencies = Array.from(new Set([String(record.fromCurrencyKey), ...currencyKeys]));
+            const availableToCurrencies = Array.from(new Set([String(record.toCurrencyKey), ...currencyKeys]));
 
             return (
               <div className="selection-editor" key={`exchange-${index}`}>
                 <div className="selection-editor__header">
                   <strong>
-                    {formatCurrencyLabel(String(record.fromCurrency), props.currencyDefinitions)} {'->'}{' '}
-                    {formatCurrencyLabel(String(record.toCurrency), props.currencyDefinitions)}
+                    {formatCurrencyLabel(String(record.fromCurrencyKey), props.currencyDefinitions)} {'->'}{' '}
+                    {formatCurrencyLabel(String(record.toCurrencyKey), props.currencyDefinitions)}
                   </strong>
                   <button
                     className="button button--secondary"
@@ -1822,12 +1856,12 @@ function CurrencyExchangeEditorSection(props: {
                   <label className="field">
                     <span>Spend from</span>
                     <select
-                      value={String(record.fromCurrency)}
+                      value={String(record.fromCurrencyKey)}
                       onChange={(event) =>
                         props.onChange(
                           updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
                             ...current,
-                            fromCurrency: event.target.value,
+                            fromCurrencyKey: event.target.value,
                           })),
                         )
                       }
@@ -1843,12 +1877,12 @@ function CurrencyExchangeEditorSection(props: {
                   <label className="field">
                     <span>Gain in</span>
                     <select
-                      value={String(record.toCurrency)}
+                      value={String(record.toCurrencyKey)}
                       onChange={(event) =>
                         props.onChange(
                           updateCurrencyExchangeItems(props.items, index, props.defaultCurrencyKey, (current) => ({
                             ...current,
-                            toCurrency: event.target.value,
+                            toCurrencyKey: event.target.value,
                           })),
                         )
                       }
@@ -1926,8 +1960,8 @@ function CurrencyExchangeEditorSection(props: {
               ...props.items,
               normalizeCurrencyExchangeForEdit(
                 {
-                  fromCurrency: props.defaultCurrencyKey,
-                  toCurrency: COSMIC_BACKPACK_BP_CURRENCY_KEY,
+                  fromCurrencyKey: props.defaultCurrencyKey,
+                  toCurrencyKey: COSMIC_BACKPACK_BP_CURRENCY_KEY,
                   fromAmount: 0,
                   toAmount: 0,
                   notes: '',
@@ -2875,10 +2909,13 @@ export function ParticipationEditorCard(props: {
       const otherItems = current.purchases.filter(
         (purchase) => getPurchaseSectionForSelection(purchase, purchaseClassification) !== section,
       );
-      const normalizedNextItems = nextItems.map((item) =>
-        typeof item === 'object' && item !== null && !Array.isArray(item)
-          ? coerceSelectionToCp(item as Record<string, unknown>)
-          : item,
+      const normalizedNextItems = normalizeParticipationSelections(
+        nextItems.map((item) =>
+          typeof item === 'object' && item !== null && !Array.isArray(item)
+            ? coerceSelectionToCp(item as Record<string, unknown>)
+            : item,
+        ),
+        'purchase',
       );
 
       return {
@@ -3506,7 +3543,7 @@ export function ParticipationEditorCard(props: {
             onChange={(nextItems) =>
               updateParticipation((current) => ({
                 ...current,
-                drawbacks: nextItems,
+                drawbacks: normalizeParticipationSelections(nextItems, 'drawback'),
               }))
             }
             currencyDefinitions={currencyDefinitions}
@@ -3522,7 +3559,7 @@ export function ParticipationEditorCard(props: {
             onChange={(nextItems) =>
               updateParticipation((current) => ({
                 ...current,
-                retainedDrawbacks: nextItems,
+                retainedDrawbacks: normalizeParticipationSelections(nextItems, 'retained-drawback'),
               }))
             }
             currencyDefinitions={currencyDefinitions}
@@ -3640,10 +3677,13 @@ export function ParticipationEditorCard(props: {
                   updateParticipation((current) => ({
                     ...current,
                     purchases: Array.isArray(value)
-                      ? value.map((entry) =>
-                          typeof entry === 'object' && entry !== null && !Array.isArray(entry)
-                            ? coerceSelectionToCp(entry as Record<string, unknown>)
-                            : entry,
+                      ? normalizeParticipationSelections(
+                          value.map((entry) =>
+                            typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+                              ? coerceSelectionToCp(entry as Record<string, unknown>)
+                              : entry,
+                          ),
+                          'purchase',
                         )
                       : [],
                   }))
@@ -3655,7 +3695,7 @@ export function ParticipationEditorCard(props: {
                 onValidChange={(value) =>
                   updateParticipation((current) => ({
                     ...current,
-                    drawbacks: Array.isArray(value) ? value : [],
+                    drawbacks: Array.isArray(value) ? normalizeParticipationSelections(value, 'drawback') : [],
                   }))
                 }
               />
@@ -3665,7 +3705,9 @@ export function ParticipationEditorCard(props: {
                 onValidChange={(value) =>
                   updateParticipation((current) => ({
                     ...current,
-                    retainedDrawbacks: Array.isArray(value) ? value : [],
+                    retainedDrawbacks: Array.isArray(value)
+                      ? normalizeParticipationSelections(value, 'retained-drawback')
+                      : [],
                   }))
                 }
               />
