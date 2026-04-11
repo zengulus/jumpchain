@@ -100,6 +100,7 @@ export const JumpSchema = ChainScopedRecordSchema.extend({
   jumpType: JumpTypeSchema,
   duration: JumpDurationSchema,
   participantJumperIds: z.array(IdentifierSchema),
+  jumpDocIds: z.array(IdentifierSchema).default([]),
   sourceJumpId: z.number().nullable().optional(),
   importSourceMetadata: JsonMapSchema,
 });
@@ -258,6 +259,7 @@ const JumpDocPdfAnnotationSchema = JumpDocPageRectSchema.extend({
   id: IdentifierSchema,
   label: z.string(),
   notes: z.string(),
+  extractedText: z.string().default(''),
 });
 
 const JumpDocCurrencySchema = z.object({

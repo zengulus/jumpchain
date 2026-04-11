@@ -828,6 +828,7 @@ export function mapNormalizedImportToNativeBundle(normalized: NormalizedImportMo
         participantJumperIds: jumpImport.characterSourceIds
           .map((sourceId) => jumperIdBySourceId.get(sourceId))
           .filter((value): value is string => Boolean(value)),
+        jumpDocIds: [],
         sourceJumpId: jumpImport.sourceId,
         importSourceMetadata: jumpImport.importSourceMetadata,
       };

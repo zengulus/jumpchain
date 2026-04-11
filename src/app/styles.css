@@ -537,6 +537,10 @@ button {
   gap: 0.5rem;
 }
 
+.field--inline-actions {
+  align-content: end;
+}
+
 .field-label-row {
   display: flex;
   flex-wrap: wrap;

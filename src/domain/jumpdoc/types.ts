@@ -19,6 +19,7 @@ export interface JumpDocPdfAnnotation extends JumpDocPageRect {
   id: string;
   label: string;
   notes: string;
+  extractedText: string;
 }
 
 export interface JumpDocCurrency {

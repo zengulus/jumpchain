@@ -129,6 +129,7 @@ export function createBlankJump(chainId: string, branchId: string, orderIndex: n
       days: 0,
     },
     participantJumperIds: [],
+    jumpDocIds: [],
     sourceJumpId: null,
     importSourceMetadata: {},
   };

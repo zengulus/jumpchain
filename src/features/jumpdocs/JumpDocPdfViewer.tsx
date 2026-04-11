@@ -6,6 +6,13 @@ import { createId } from '../../utils/id';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+type PdfTextItem = {
+  str: string;
+  transform: number[];
+  width: number;
+  height: number;
+};
+
 interface JumpDocPdfViewerProps {
   source: string | null;
   fileName?: string;
@@ -45,6 +52,50 @@ function getRectStyle(rect: JumpDocPdfAnnotation | DraftRect) {
     width: `${width * 100}%`,
     height: `${height * 100}%`,
   };
+}
+
+function isTextItem(value: unknown): value is PdfTextItem {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return typeof record.str === 'string' && Array.isArray(record.transform);
+}
+
+function normalizePdfText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+async function extractTextForBounds(
+  documentProxy: pdfjs.PDFDocumentProxy,
+  pageNumber: number,
+  bounds: Pick<JumpDocPdfAnnotation, 'x' | 'y' | 'width' | 'height'>,
+) {
+  const page = await documentProxy.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const textContent = await page.getTextContent();
+  const left = bounds.x;
+  const right = bounds.x + bounds.width;
+  const top = bounds.y;
+  const bottom = bounds.y + bounds.height;
+  const textItems = textContent.items.filter(isTextItem) as PdfTextItem[];
+
+  return normalizePdfText(
+    textItems
+      .filter((item) => {
+        const transform = pdfjs.Util.transform(viewport.transform, item.transform);
+        const itemWidth = item.width || 0;
+        const itemHeight = item.height || 0;
+        const centerX = clampUnit((transform[4] + itemWidth / 2) / viewport.width);
+        const centerY = clampUnit((viewport.height - transform[5] - itemHeight / 2) / viewport.height);
+
+        return centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
+      })
+      .map((item) => item.str)
+      .join(' '),
+  );
 }
 
 export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsChange }: JumpDocPdfViewerProps) {
@@ -177,8 +228,8 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
     });
   }
 
-  function commitDraftRect() {
-    if (!draftRect) {
+  async function commitDraftRect() {
+    if (!draftRect || !documentProxy) {
       return;
     }
 
@@ -193,12 +244,16 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
       return;
     }
 
+    const extractedText = await extractTextForBounds(documentProxy, pageNumber, { x, y, width, height }).catch(() => '');
+    const labelText = extractedText.length > 0 ? extractedText.slice(0, 54) : `Page ${pageNumber} marker ${pageAnnotations.length + 1}`;
+
     onAnnotationsChange([
       ...annotations,
       {
         id: createId('pdf_annotation'),
-        label: `Page ${pageNumber} marker ${pageAnnotations.length + 1}`,
+        label: labelText,
         notes: '',
+        extractedText,
         page: pageNumber,
         x,
         y,
@@ -256,7 +311,7 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
               className="jumpdoc-pdf-overlay"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
-              onPointerUp={commitDraftRect}
+              onPointerUp={() => void commitDraftRect()}
               onPointerCancel={() => setDraftRect(null)}
             >
               {pageAnnotations.map((annotation) => (
@@ -278,7 +333,7 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
               {pageAnnotations.map((annotation) => (
                 <div key={annotation.id} className="selection-list__item">
                   <strong>{annotation.label}</strong>
-                  <span>{Math.round(annotation.width * 100)}% x {Math.round(annotation.height * 100)}%</span>
+                  <span>{annotation.extractedText || `${Math.round(annotation.width * 100)}% x ${Math.round(annotation.height * 100)}%`}</span>
                   <button className="button button--secondary" type="button" onClick={() => removeAnnotation(annotation.id)}>
                     Remove
                   </button>

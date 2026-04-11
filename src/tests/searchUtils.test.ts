@@ -128,6 +128,7 @@ function createBundle(chainId: string, title: string): NativeChainBundle {
           days: 0,
         },
         participantJumperIds: [`${chainId}-jumper`],
+        jumpDocIds: [],
         sourceJumpId: null,
         importSourceMetadata: {},
       },

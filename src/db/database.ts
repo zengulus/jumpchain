@@ -131,6 +131,7 @@ export class JumpchainDatabase extends Dexie {
           .map((jump) => ({
             ...jump,
             participantJumperIds: jump.participantJumperIds.filter((participantId) => !companionIds.has(participantId)),
+            jumpDocIds: jump.jumpDocIds ?? [],
           }));
 
         if (legacyJumps.length > 0) {
@@ -159,7 +160,16 @@ export class JumpchainDatabase extends Dexie {
         importReports: '&id, chainId, sourceType, createdAt',
       })
       .upgrade(async (tx) => {
+        const jumpsTable = tx.table('jumps');
         const participationTables = [tx.table('participations'), tx.table('companionParticipations')];
+        const jumps = await jumpsTable.toArray() as Jump[];
+        const jumpsWithJumpDocIds = jumps
+          .filter((jump) => !Array.isArray(jump.jumpDocIds))
+          .map((jump) => ({ ...jump, jumpDocIds: [] }));
+
+        if (jumpsWithJumpDocIds.length > 0) {
+          await jumpsTable.bulkPut(jumpsWithJumpDocIds);
+        }
 
         for (const table of participationTables) {
           const records = await table.toArray() as Array<JumperParticipation | CompanionParticipation>;

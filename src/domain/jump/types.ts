@@ -14,6 +14,7 @@ export interface Jump extends ChainScopedRecord {
   jumpType: JumpType;
   duration: JumpDuration;
   participantJumperIds: string[];
+  jumpDocIds: string[];
   sourceJumpId?: number | null;
   importSourceMetadata: JsonMap;
 }

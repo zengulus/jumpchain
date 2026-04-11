@@ -1,13 +1,14 @@
 import { useMemo, useState, type ChangeEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { AttachmentRef } from '../../domain/attachments/types';
 import type { JumpDoc } from '../../domain/jumpdoc/types';
 import { db } from '../../db/database';
+import { switchActiveJump } from '../../db/persistence';
 import { createId } from '../../utils/id';
 import { SearchHighlight } from '../search/SearchHighlight';
-import { matchesSearchQuery } from '../search/searchUtils';
-import { createBlankJumpDoc, deleteChainRecord, saveChainRecord } from '../workspace/records';
+import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
+import { createBlankJump, createBlankJumpDoc, deleteChainRecord, saveChainRecord } from '../workspace/records';
 import { AutosaveStatusIndicator, EmptyWorkspaceCard, JsonEditorField, StatusNoticeBanner, WorkspaceModuleHeader, type StatusNotice } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
@@ -33,10 +34,12 @@ function readFileAsDataUrl(file: File) {
 }
 
 export function JumpDocsPage() {
+  const navigate = useNavigate();
   const { simpleMode } = useUiPreferences();
   const { chainId, workspace } = useChainWorkspace();
   const [searchParams, setSearchParams] = useSearchParams();
   const [notice, setNotice] = useState<StatusNotice | null>(null);
+  const [jumpToLinkId, setJumpToLinkId] = useState('');
   const searchQuery = searchParams.get('search') ?? '';
   const selectedJumpDocId = searchParams.get('jumpdoc');
   const filteredJumpDocs = workspace.jumpDocs.filter((jumpDoc) =>
@@ -58,6 +61,12 @@ export function JumpDocsPage() {
   const selectedPdfAttachment = draftJumpDoc?.pdfAttachmentId ? attachmentsById.get(draftJumpDoc.pdfAttachmentId) : null;
   const pdfSource = selectedPdfAttachment?.dataUrl ?? draftJumpDoc?.pdfUrl ?? null;
   const pdfFileName = selectedPdfAttachment?.fileName ?? selectedPdfAttachment?.label ?? draftJumpDoc?.pdfUrl ?? undefined;
+  const linkedJumps = draftJumpDoc
+    ? workspace.jumps.filter((jump) => (jump.jumpDocIds ?? []).includes(draftJumpDoc.id))
+    : [];
+  const unlinkedJumps = draftJumpDoc
+    ? workspace.jumps.filter((jump) => !(jump.jumpDocIds ?? []).includes(draftJumpDoc.id))
+    : [];
 
   async function handleCreateJumpDoc() {
     if (!workspace.activeBranch) {
@@ -135,6 +144,72 @@ export function JumpDocsPage() {
       setNotice({ tone: 'success', message: 'Attached the PDF locally.' });
     } catch (error) {
       setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to attach PDF.' });
+    }
+  }
+
+  async function handleStartJumpFromJumpDoc(jumpDoc: JumpDoc) {
+    if (!workspace.activeBranch) {
+      return;
+    }
+
+    const jump = {
+      ...createBlankJump(chainId, workspace.activeBranch.id, workspace.jumps.length),
+      title: jumpDoc.title,
+      jumpDocIds: [jumpDoc.id],
+      importSourceMetadata: {
+        sourceJumpDocId: jumpDoc.id,
+        sourceJumpDocTitle: jumpDoc.title,
+      },
+    };
+
+    try {
+      await saveChainRecord(db.jumps, jump);
+
+      if (!workspace.currentJump) {
+        await switchActiveJump(chainId, jump.id);
+      }
+
+      navigate(withSearchParams(`/chains/${chainId}/jumps/${jump.id}`, { guide: simpleMode ? '1' : null }));
+      setNotice({ tone: 'success', message: 'Started a jump from this JumpDoc.' });
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to start a jump from this JumpDoc.' });
+    }
+  }
+
+  async function handleLinkJump(jumpDoc: JumpDoc) {
+    const jump = workspace.jumps.find((entry) => entry.id === jumpToLinkId);
+
+    if (!jump) {
+      return;
+    }
+
+    try {
+      await saveChainRecord(db.jumps, {
+        ...jump,
+        jumpDocIds: Array.from(new Set([...(jump.jumpDocIds ?? []), jumpDoc.id])),
+      });
+      setJumpToLinkId('');
+      setNotice({ tone: 'success', message: 'Added the jump to this JumpDoc.' });
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to add the jump to this JumpDoc.' });
+    }
+  }
+
+  async function handleUnlinkJump(jumpId: string, jumpDoc: JumpDoc) {
+    const jump = workspace.jumps.find((entry) => entry.id === jumpId);
+
+    if (!jump) {
+      return;
+    }
+
+    try {
+      await saveChainRecord(db.jumps, {
+        ...jump,
+        jumpDocIds: (jump.jumpDocIds ?? []).filter((jumpDocId) => jumpDocId !== jumpDoc.id),
+      });
+      setNotice({ tone: 'success', message: 'Removed the jump from this JumpDoc.' });
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to remove the jump from this JumpDoc.' });
     }
   }
 
@@ -244,6 +319,48 @@ export function JumpDocsPage() {
                 <span>Source</span>
                 <input value={draftJumpDoc.source} onChange={(event) => updateDraft((current) => ({ ...current, source: event.target.value }))} />
               </label>
+
+              <section className="stack stack--compact">
+                <div className="actions">
+                  <button className="button" type="button" onClick={() => void handleStartJumpFromJumpDoc(draftJumpDoc)}>
+                    Start jump from this JumpDoc
+                  </button>
+                </div>
+                {linkedJumps.length > 0 ? (
+                  <div className="selection-list selection-list--compact">
+                    {linkedJumps.map((jump) => (
+                      <div key={jump.id} className="selection-list__item">
+                        <strong>{jump.title}</strong>
+                        <span>{jump.status}</span>
+                        <button className="button button--secondary" type="button" onClick={() => void handleUnlinkJump(jump.id, draftJumpDoc)}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No jumps use this JumpDoc yet.</p>
+                )}
+                {unlinkedJumps.length > 0 ? (
+                  <div className="field-grid field-grid--two">
+                    <label className="field">
+                      <span>Add existing jump</span>
+                      <select value={jumpToLinkId} onChange={(event) => setJumpToLinkId(event.target.value)}>
+                        <option value="">Choose a jump...</option>
+                        {unlinkedJumps.map((jump) => (
+                          <option key={jump.id} value={jump.id}>{jump.title}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="field field--inline-actions">
+                      <span>Connect</span>
+                      <button className="button button--secondary" type="button" disabled={!jumpToLinkId} onClick={() => void handleLinkJump(draftJumpDoc)}>
+                        Add jump
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
 
               <label className="field">
                 <span>PDF URL or local reference</span>

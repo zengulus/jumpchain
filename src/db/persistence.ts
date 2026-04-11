@@ -222,6 +222,7 @@ function cloneBundleWithRemappedIds(bundle: NativeChainBundle): NativeChainBundl
     chainId,
     branchId: remapId(jump.branchId, maps.branch),
     participantJumperIds: jump.participantJumperIds.map((participantId) => remapId(participantId, maps.jumper)),
+    jumpDocIds: jump.jumpDocIds.map((jumpDocId) => remapId(jumpDocId, maps.jumpDoc)),
   }));
 
   const clonedJumpDocs: JumpDoc[] = validatedBundle.jumpDocs.map((jumpDoc) => ({
@@ -395,6 +396,7 @@ function cloneBranchBundleToExistingChain(
     chainId,
     branchId: newBranchId,
     participantJumperIds: jump.participantJumperIds.map((participantId) => remapId(participantId, maps.jumper)),
+    jumpDocIds: jump.jumpDocIds.map((jumpDocId) => remapId(jumpDocId, maps.jumpDoc)),
     createdAt: now,
     updatedAt: now,
   }));
