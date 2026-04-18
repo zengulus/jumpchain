@@ -141,6 +141,17 @@ export const ComboBoostSchema = z.object({
   sourceSelectionId: z.union([z.string(), z.number()]).nullable().optional(),
 });
 
+export const MergedSelectionSourceSchema = z.object({
+  id: IdentifierSchema.optional(),
+  title: z.string(),
+  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'location', 'other']).optional(),
+  participationId: IdentifierSchema.optional(),
+  jumpId: IdentifierSchema.optional(),
+  participantName: z.string().optional(),
+  jumpTitle: z.string().optional(),
+  sourcePurchaseId: z.union([z.string(), z.number()]).nullable().optional(),
+});
+
 export const ParticipationSelectionSchema = z.object({
   id: IdentifierSchema.optional(),
   selectionKind: z.enum(['purchase', 'drawback', 'retained-drawback', 'scenario', 'companion-import']),
@@ -151,7 +162,7 @@ export const ParticipationSelectionSchema = z.object({
   currencyKey: z.string(),
   purchaseValue: z.number(),
   costModifier: z.enum(['full', 'discounted', 'double-discounted', 'free', 'custom']),
-  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']).optional(),
+  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'location', 'other']).optional(),
   subtypeKey: z.string().nullable().optional(),
   purchaseType: z.number().nullable().optional(),
   tags: z.array(z.string()),
@@ -162,6 +173,11 @@ export const ParticipationSelectionSchema = z.object({
   prerequisites: z.array(SelectionPrerequisiteSchema).optional(),
   scenarioRewards: z.array(ScenarioRewardSchema).optional(),
   comboBoosts: z.array(ComboBoostSchema).optional(),
+  hidden: z.boolean().optional(),
+  restrictionLevel: z.number().int().nonnegative().optional(),
+  accessibilityStatus: z.enum(['unlocked', 'not-yet-unlocked', 'suppressed']).optional(),
+  mergedFrom: z.array(MergedSelectionSourceSchema).optional(),
+  mergedIntoId: IdentifierSchema.nullable().optional(),
   sourcePurchaseId: z.union([z.string(), z.number()]).nullable().optional(),
   sourceJumpDocId: IdentifierSchema.nullable().optional(),
   sourceTemplateId: z.union([z.string(), z.number()]).nullable().optional(),
@@ -261,7 +277,7 @@ const JumpDocPdfAnnotationSchema = JumpDocPageRectSchema.extend({
   notes: z.string(),
   extractedText: z.string().default(''),
   exportKind: z.enum(['purchase', 'drawback', 'origin', 'scenario', 'companion', 'note']).default('purchase'),
-  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']).optional(),
+  purchaseSection: z.enum(['perk', 'subsystem', 'item', 'location', 'other']).optional(),
   costAmount: z.number().nullable().default(null),
   currencyKey: z.string().default('0'),
   exportedTemplateId: IdentifierSchema.nullish(),
@@ -329,7 +345,7 @@ export const JumpDocSchema = ChainScopedRecordSchema.extend({
   })),
   purchases: z.array(JumpDocTemplateBaseSchema.extend({
     templateKind: z.literal('purchase'),
-    purchaseSection: z.enum(['perk', 'subsystem', 'item', 'other']),
+    purchaseSection: z.enum(['perk', 'subsystem', 'item', 'location', 'other']),
     subtypeKey: z.string().nullable(),
     temporary: z.boolean(),
     comboBoosts: z.array(ComboBoostSchema),

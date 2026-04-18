@@ -104,9 +104,13 @@ function getNarrativeLines(participation: WorkspaceParticipation) {
 }
 
 function toExportSelection(selection: ParticipationSelection, participation: WorkspaceParticipation): ExportSelection {
+  const mergedFromLine = selection.mergedFrom && selection.mergedFrom.length > 0
+    ? `Merged From: ${selection.mergedFrom.map((source) => source.title).join(', ')}`
+    : '';
+
   return {
     title: selection.title || selection.summary || 'Untitled selection',
-    description: selection.description,
+    description: [selection.description, mergedFromLine].filter(Boolean).join('\n'),
     cost: formatCost(selection, participation),
     tags: selection.tags,
     rewards: (selection.scenarioRewards ?? []).map((reward) => {
@@ -117,6 +121,10 @@ function toExportSelection(selection: ParticipationSelection, participation: Wor
       return reward.note ?? reward.title ?? (amountLabel || reward.type);
     }),
   };
+}
+
+function isHiddenMergedComponent(selection: ParticipationSelection) {
+  return selection.hidden === true;
 }
 
 function includeParticipation(scope: ExportScope, participation: WorkspaceParticipation) {
@@ -137,7 +145,9 @@ export function buildExportIR(workspace: BranchWorkspace, scope: ExportScope): E
           participantName: getParticipantName(workspace, participation),
           participantKind: participation.participantKind,
           origins: getOriginLines(participation),
-          purchases: participation.purchases.map((selection) => toExportSelection(selection, participation)),
+          purchases: participation.purchases
+            .filter((selection) => !isHiddenMergedComponent(selection))
+            .map((selection) => toExportSelection(selection, participation)),
           drawbacks: participation.drawbacks.map((selection) => toExportSelection(selection, participation)),
           retainedDrawbacks: participation.retainedDrawbacks.map((selection) => toExportSelection(selection, participation)),
           notes: participation.notes,

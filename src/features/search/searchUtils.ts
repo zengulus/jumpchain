@@ -426,6 +426,7 @@ interface SearchPurchaseSubtypeDefinition {
 interface SearchPurchaseClassification {
   perkSubtypeKeys: Set<string>;
   itemSubtypeKeys: Set<string>;
+  locationSubtypeKeys: Set<string>;
   subsystemSubtypeKeys: Set<string>;
 }
 
@@ -512,6 +513,7 @@ function ensurePurchaseSubtypeDefinitions(
   const nextDefinitions: Record<string, SearchPurchaseSubtypeDefinition> = {
     '0': { name: 'Perk', type: 0 },
     '1': { name: 'Item', type: 1 },
+    '2': { name: 'Location', type: 4 },
     '10': { name: 'Subsystem', type: 2 },
     ...definitions,
   };
@@ -520,7 +522,7 @@ function ensurePurchaseSubtypeDefinitions(
     if (!(subtypeKey in nextDefinitions)) {
       nextDefinitions[subtypeKey] = {
         name: `Subtype ${subtypeKey}`,
-        type: subtypeKey === '1' ? 1 : subtypeKey === '10' ? 2 : null,
+        type: subtypeKey === '1' ? 1 : subtypeKey === '2' ? 4 : subtypeKey === '10' ? 2 : null,
       };
     }
   }
@@ -531,11 +533,15 @@ function ensurePurchaseSubtypeDefinitions(
 function getPurchaseSubtypeSection(
   subtypeKey: string,
   definition: SearchPurchaseSubtypeDefinition,
-): 'perks' | 'subsystems' | 'items' | 'other' {
+): 'perks' | 'subsystems' | 'items' | 'locations' | 'other' {
   const lowerName = definition.name.toLowerCase();
 
   if (definition.type === 1) {
     return 'items';
+  }
+
+  if (definition.type === 4 || lowerName.includes('location')) {
+    return 'locations';
   }
 
   if (definition.type === 2) {
@@ -546,7 +552,7 @@ function getPurchaseSubtypeSection(
     return 'other';
   }
 
-  if (definition.type === 0 && (subtypeKey === '0' || lowerName.includes('perk'))) {
+  if (definition.type === 0) {
     return 'perks';
   }
 
@@ -558,10 +564,7 @@ function getPurchaseClassification(
 ): SearchPurchaseClassification {
   const perkSubtypeKeys = new Set(
     Object.entries(subtypeDefinitions)
-      .filter(([key, definition]) => {
-        const lowerName = definition.name.toLowerCase();
-        return definition.type === 0 && (key === '0' || lowerName.includes('perk'));
-      })
+      .filter(([, definition]) => definition.type === 0)
       .map(([key]) => key),
   );
   const itemSubtypeKeys = new Set(
@@ -569,15 +572,21 @@ function getPurchaseClassification(
       .filter(([, definition]) => definition.type === 1)
       .map(([key]) => key),
   );
+  const locationSubtypeKeys = new Set(
+    Object.entries(subtypeDefinitions)
+      .filter(([, definition]) => definition.type === 4 || definition.name.toLowerCase().includes('location'))
+      .map(([key]) => key),
+  );
   const subsystemSubtypeKeys = new Set(
     Object.keys(subtypeDefinitions).filter(
-      (key) => !perkSubtypeKeys.has(key) && !itemSubtypeKeys.has(key),
+      (key) => !perkSubtypeKeys.has(key) && !itemSubtypeKeys.has(key) && !locationSubtypeKeys.has(key),
     ),
   );
 
   return {
     perkSubtypeKeys,
     itemSubtypeKeys,
+    locationSubtypeKeys,
     subsystemSubtypeKeys,
   };
 }
@@ -585,12 +594,38 @@ function getPurchaseClassification(
 function getPurchaseTabForSelection(
   value: unknown,
   classification: SearchPurchaseClassification,
-): 'perks' | 'subsystems' | 'items' | 'other' {
+): 'perks' | 'subsystems' | 'items' | 'locations' | 'other' {
+  const record = asRecord(value);
+
+  if (record.purchaseSection === 'perk') {
+    return 'perks';
+  }
+
+  if (record.purchaseSection === 'item') {
+    return 'items';
+  }
+
+  if (record.purchaseSection === 'location') {
+    return 'locations';
+  }
+
+  if (record.purchaseSection === 'subsystem') {
+    return 'subsystems';
+  }
+
+  if (record.purchaseSection === 'other') {
+    return 'other';
+  }
+
   const purchaseType = getSelectionPurchaseType(value);
   const subtypeKey = getSelectionSubtypeKey(value);
 
   if (purchaseType === 1 || (subtypeKey !== null && classification.itemSubtypeKeys.has(subtypeKey))) {
     return 'items';
+  }
+
+  if (purchaseType === 4 || (subtypeKey !== null && classification.locationSubtypeKeys.has(subtypeKey))) {
+    return 'locations';
   }
 
   if (purchaseType === 0 && (subtypeKey === null || classification.perkSubtypeKeys.has(subtypeKey))) {
@@ -608,7 +643,7 @@ function buildSelectionRoute(
   chainId: string,
   jumpId: string,
   participantId: string,
-  tab: 'perks' | 'subsystems' | 'items' | 'other' | 'drawbacks' | 'alt-forms',
+  tab: 'perks' | 'subsystems' | 'items' | 'locations' | 'other' | 'drawbacks' | 'alt-forms',
 ) {
   return withSearchParams(`/chains/${chainId}/jumps/${jumpId}`, {
     participant: participantId,
@@ -762,6 +797,11 @@ export function buildUniversalSearchIndex(input: {
 
       for (const purchase of participation.purchases) {
         const record = asRecord(purchase);
+
+        if (record.hidden === true) {
+          continue;
+        }
+
         const title = cleanLabel(getSelectionTitle(purchase), 'Untitled Purchase');
         const tags = getSelectionTags(purchase);
 
@@ -771,7 +811,7 @@ export function buildUniversalSearchIndex(input: {
           chainTitle,
           title,
           subtitle: `${getSelectionKindTitle(record)} | ${cleanLabel(participant?.name, 'Participant')} @ ${cleanLabel(jump?.title, 'Jump')} | ${chainTitle}`,
-          snippet: buildSearchSnippet('', record.description, record.summary, tags),
+          snippet: buildSearchSnippet('', record.description, record.summary, record.mergedFrom, tags),
           to: buildSelectionRoute(
             bundle.chain.id,
             participation.jumpId,
@@ -779,7 +819,7 @@ export function buildUniversalSearchIndex(input: {
             getPurchaseTabForSelection(purchase, purchaseClassification),
           ),
           tags,
-          extraText: [record.description, record.summary, record.source, tags],
+          extraText: [record.description, record.summary, record.mergedFrom, record.source, tags],
         });
       }
 

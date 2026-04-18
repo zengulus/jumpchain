@@ -2,6 +2,7 @@ import { cloneElement, useCallback, useEffect, useId, useMemo, useState, type Re
 import { useUiPreferences } from '../../app/UiPreferencesContext';
 import { getTagSuggestions, normalizeTagKey, normalizeTagList, parseTagInput } from '../../utils/tags';
 import { createJsonText } from './records';
+import { undoLastWorkspaceAction, useLastWorkspaceUndo } from './undo';
 import type { AutosaveStatus } from './useAutosaveRecord';
 
 export interface StatusNotice {
@@ -24,6 +25,19 @@ export function WorkspaceModuleHeader(props: {
   actions?: ReactNode;
   badge?: string;
 }) {
+  const undo = useLastWorkspaceUndo();
+  const [undoError, setUndoError] = useState<string | null>(null);
+
+  async function handleUndoLastAction() {
+    setUndoError(null);
+
+    try {
+      await undoLastWorkspaceAction();
+    } catch (error) {
+      setUndoError(error instanceof Error ? error.message : 'Unable to undo the last action.');
+    }
+  }
+
   return (
     <div className="workspace-module-header">
       <div className="stack stack--compact workspace-module-header__copy">
@@ -32,8 +46,20 @@ export function WorkspaceModuleHeader(props: {
           {props.badge ? <span className="pill">{props.badge}</span> : null}
         </div>
         <p>{props.description}</p>
+        {undoError ? <p className="field-hint" role="alert">{undoError}</p> : null}
       </div>
-      {props.actions ? <div className="actions workspace-module-header__actions">{props.actions}</div> : null}
+      <div className="actions workspace-module-header__actions">
+        <button
+          className="button button--secondary"
+          type="button"
+          disabled={!undo.action || undo.isUndoing}
+          title={undo.action ? `Undo last ${undo.action.label} change` : 'No action to undo yet'}
+          onClick={() => void handleUndoLastAction()}
+        >
+          {undo.isUndoing ? 'Undoing...' : 'Undo last action'}
+        </button>
+        {props.actions}
+      </div>
     </div>
   );
 }

@@ -43,15 +43,15 @@ export interface ParticipationActor {
   kind: 'jumper' | 'companion';
 }
 
-type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'other' | 'stipends' | 'drawbacks' | 'alt-forms' | 'notes';
-type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'other';
+type ParticipationTab = 'beginnings' | 'perks' | 'subsystems' | 'items' | 'locations' | 'other' | 'stipends' | 'drawbacks' | 'alt-forms' | 'notes';
+type PurchaseSectionKey = 'perk' | 'subsystem' | 'item' | 'location' | 'other';
 type DiscountLevel = 0 | 1 | 2;
 type BeginningSlotId = 'origin' | 'background' | 'race' | 'age';
-type PurchaseSubtypeSectionId = 'perks' | 'subsystems' | 'items' | 'other';
+type PurchaseSubtypeSectionId = 'perks' | 'subsystems' | 'items' | 'locations' | 'other';
 type SectionStipendMap = Record<PurchaseSectionKey, number>;
 
-const participationTabs: ParticipationTab[] = ['beginnings', 'perks', 'subsystems', 'items', 'other', 'stipends', 'drawbacks', 'alt-forms', 'notes'];
-const participationPurchaseTabs: ParticipationTab[] = ['perks', 'subsystems', 'items', 'other', 'stipends', 'drawbacks', 'alt-forms'];
+const participationTabs: ParticipationTab[] = ['beginnings', 'perks', 'subsystems', 'items', 'locations', 'other', 'stipends', 'drawbacks', 'alt-forms', 'notes'];
+const participationPurchaseTabs: ParticipationTab[] = ['perks', 'subsystems', 'items', 'locations', 'other', 'stipends', 'drawbacks', 'alt-forms'];
 
 const PRICE_MODES: Array<{ level: DiscountLevel; label: string; factor: number }> = [
   { level: 0, label: 'Full price', factor: 1 },
@@ -73,6 +73,7 @@ interface PurchaseTokenGroups {
   perks: SummaryToken[];
   subsystems: SummaryToken[];
   items: SummaryToken[];
+  locations: SummaryToken[];
   others: SummaryToken[];
 }
 
@@ -118,6 +119,7 @@ interface OriginCategoryDefinition {
 interface PurchaseClassification {
   perkSubtypeKeys: Set<string>;
   itemSubtypeKeys: Set<string>;
+  locationSubtypeKeys: Set<string>;
   subsystemSubtypeKeys: Set<string>;
 }
 
@@ -147,6 +149,7 @@ const PURCHASE_SECTION_LABELS: Record<PurchaseSectionKey, string> = {
   perk: 'Perks',
   subsystem: 'Subsystems',
   item: 'Items',
+  location: 'Locations',
   other: 'Other purchases',
 };
 const DEFAULT_CURRENCY_DEFINITIONS: Record<string, CurrencyDefinition> = {
@@ -176,6 +179,13 @@ const DEFAULT_PURCHASE_SUBTYPE_DEFINITIONS: Record<string, PurchaseSubtypeDefini
     stipend: null,
     currencyKey: '0',
     type: 1,
+    essential: true,
+  },
+  '2': {
+    name: 'Location',
+    stipend: null,
+    currencyKey: '0',
+    type: 4,
     essential: true,
   },
   '10': {
@@ -425,10 +435,7 @@ function getPurchaseClassification(
 ): PurchaseClassification {
   const perkSubtypeKeys = new Set(
     Object.entries(subtypeDefinitions)
-      .filter(([key, definition]) => {
-        const lowerName = definition.name.toLowerCase();
-        return definition.type === 0 && (key === '0' || lowerName.includes('perk'));
-      })
+      .filter(([, definition]) => definition.type === 0)
       .map(([key]) => key),
   );
   const itemSubtypeKeys = new Set(
@@ -436,15 +443,21 @@ function getPurchaseClassification(
       .filter(([, definition]) => definition.type === 1)
       .map(([key]) => key),
   );
+  const locationSubtypeKeys = new Set(
+    Object.entries(subtypeDefinitions)
+      .filter(([, definition]) => definition.type === 4 || definition.name.toLowerCase().includes('location'))
+      .map(([key]) => key),
+  );
   const subsystemSubtypeKeys = new Set(
     Object.keys(subtypeDefinitions).filter(
-      (key) => !perkSubtypeKeys.has(key) && !itemSubtypeKeys.has(key),
+      (key) => !perkSubtypeKeys.has(key) && !itemSubtypeKeys.has(key) && !locationSubtypeKeys.has(key),
     ),
   );
 
   return {
     perkSubtypeKeys,
     itemSubtypeKeys,
+    locationSubtypeKeys,
     subsystemSubtypeKeys,
   };
 }
@@ -453,11 +466,27 @@ function getPurchaseSectionForSelection(
   value: unknown,
   classification: PurchaseClassification,
 ): PurchaseSectionKey {
+  const record = asRecord(value);
+
+  if (
+    record.purchaseSection === 'perk' ||
+    record.purchaseSection === 'subsystem' ||
+    record.purchaseSection === 'item' ||
+    record.purchaseSection === 'location' ||
+    record.purchaseSection === 'other'
+  ) {
+    return record.purchaseSection;
+  }
+
   const purchaseType = getSelectionPurchaseType(value);
   const subtypeKey = getSelectionSubtypeKey(value);
 
   if (purchaseType === 1 || (subtypeKey !== null && classification.itemSubtypeKeys.has(subtypeKey))) {
     return 'item';
+  }
+
+  if (purchaseType === 4 || (subtypeKey !== null && classification.locationSubtypeKeys.has(subtypeKey))) {
+    return 'location';
   }
 
   if (purchaseType === 0 && (subtypeKey === null || classification.perkSubtypeKeys.has(subtypeKey))) {
@@ -497,6 +526,8 @@ function getPurchaseTokenGroups(
         groups.subsystems.push(token);
       } else if (section === 'item') {
         groups.items.push(token);
+      } else if (section === 'location') {
+        groups.locations.push(token);
       } else {
         groups.others.push(token);
       }
@@ -507,6 +538,7 @@ function getPurchaseTokenGroups(
       perks: [],
       subsystems: [],
       items: [],
+      locations: [],
       others: [],
     },
   );
@@ -625,6 +657,14 @@ function getSelectionEditorKey(value: unknown, title: string, index: number) {
 function getSelectionMetadata(record: Record<string, unknown>) {
   const metadata: string[] = [];
 
+  if (record.hidden === true) {
+    metadata.push('Merged component');
+  }
+
+  if (Array.isArray(record.mergedFrom) && record.mergedFrom.length > 0) {
+    metadata.push(`Merged from ${formatCountLabel(record.mergedFrom.length, 'entry', 'entries')}`);
+  }
+
   if (record.unresolved === true) {
     metadata.push('Needs review');
   }
@@ -713,7 +753,7 @@ function ensurePurchaseSubtypeDefinitions(
         name: subtypeKey.startsWith('stipend-subtype') ? 'New stipend type' : `Subtype ${subtypeKey}`,
         stipend: null,
         currencyKey: '0',
-        type: subtypeKey === '1' ? 1 : subtypeKey === '10' ? 2 : null,
+        type: subtypeKey === '1' ? 1 : subtypeKey === '2' ? 4 : subtypeKey === '10' ? 2 : null,
         essential: false,
       };
     }
@@ -804,6 +844,10 @@ function getPurchaseSubtypeSection(
     return 'items';
   }
 
+  if (definition.type === 4 || lowerName.includes('location')) {
+    return 'locations';
+  }
+
   if (definition.type === 2) {
     return 'subsystems';
   }
@@ -812,16 +856,56 @@ function getPurchaseSubtypeSection(
     return 'other';
   }
 
-  if (definition.type === 0 && (subtypeKey === '0' || lowerName.includes('perk'))) {
+  if (definition.type === 0) {
     return 'perks';
   }
 
   return 'subsystems';
 }
 
+function getPurchaseSectionForSubtypeSection(section: PurchaseSubtypeSectionId): PurchaseSectionKey {
+  return section === 'perks'
+    ? 'perk'
+    : section === 'items'
+      ? 'item'
+      : section === 'locations'
+        ? 'location'
+        : section === 'other'
+          ? 'other'
+          : 'subsystem';
+}
+
+function getPurchaseTypeForSection(section: PurchaseSectionKey) {
+  switch (section) {
+    case 'perk':
+      return 0;
+    case 'item':
+      return 1;
+    case 'subsystem':
+      return 2;
+    case 'location':
+      return 4;
+    case 'other':
+      return 3;
+  }
+}
+
+function getPurchaseSectionForSubtypeKey(
+  subtypeKey: string,
+  subtypeDefinitions: Record<string, PurchaseSubtypeDefinition>,
+) {
+  const definition = subtypeDefinitions[subtypeKey];
+
+  if (!definition) {
+    return null;
+  }
+
+  return getPurchaseSectionForSubtypeSection(getPurchaseSubtypeSection(subtypeKey, definition));
+}
+
 function countPurchaseSubtypeDefinitionsInSection(
   definitions: Record<string, PurchaseSubtypeDefinition>,
-  section: Extract<PurchaseSubtypeSectionId, 'subsystems' | 'items'>,
+  section: PurchaseSubtypeSectionId,
 ) {
   return Object.entries(definitions).filter(
     ([subtypeKey, definition]) => getPurchaseSubtypeSection(subtypeKey, definition) === section,
@@ -837,6 +921,7 @@ function createEmptySectionStipends(): SectionStipendMap {
     perk: 0,
     subsystem: 0,
     item: 0,
+    location: 0,
     other: 0,
   };
 }
@@ -858,6 +943,10 @@ function getSectionKeyForStoredStipend(
     return 'item';
   }
 
+  if (rawKey === 'location') {
+    return 'location';
+  }
+
   if (rawKey === 'other') {
     return 'other';
   }
@@ -866,7 +955,15 @@ function getSectionKeyForStoredStipend(
 
   if (definition) {
     const section = getPurchaseSubtypeSection(rawKey, definition);
-    return section === 'perks' ? 'perk' : section === 'items' ? 'item' : section === 'other' ? 'other' : 'subsystem';
+    return section === 'perks'
+      ? 'perk'
+      : section === 'items'
+        ? 'item'
+        : section === 'locations'
+          ? 'location'
+          : section === 'other'
+            ? 'other'
+            : 'subsystem';
   }
 
   if (classification.perkSubtypeKeys.has(rawKey) || rawKey === '0') {
@@ -875,6 +972,10 @@ function getSectionKeyForStoredStipend(
 
   if (classification.itemSubtypeKeys.has(rawKey) || rawKey === '1') {
     return 'item';
+  }
+
+  if (classification.locationSubtypeKeys.has(rawKey) || rawKey === '2') {
+    return 'location';
   }
 
   if (rawKey === '10' || classification.subsystemSubtypeKeys.has(rawKey)) {
@@ -1210,6 +1311,10 @@ function updateCurrencyExchangeItems(
 
 function getSelectionSpendAmount(selection: unknown) {
   const record = asRecord(selection);
+
+  if (record.hidden === true) {
+    return 0;
+  }
 
   if (record.free === true) {
     return 0;
@@ -1585,15 +1690,30 @@ const SelectionEditorRow = memo(function SelectionEditorRow(props: SelectionEdit
               value={subtypeKey ?? ''}
               onChange={(event) =>
                 props.onUpdate(props.index, (current) => {
-                  if (event.target.value.trim().length === 0) {
+                  const nextSubtypeKey = event.target.value.trim();
+
+                  if (nextSubtypeKey.length === 0) {
                     const nextRecord = { ...current };
                     delete nextRecord.subtype;
+                    delete nextRecord.subtypeKey;
                     return nextRecord;
                   }
 
+                  const nextSection =
+                    props.subtypeDefinitions
+                      ? getPurchaseSectionForSubtypeKey(nextSubtypeKey, props.subtypeDefinitions)
+                      : null;
+
                   return {
                     ...current,
-                    subtype: toStoredIdentifier(event.target.value),
+                    subtype: toStoredIdentifier(nextSubtypeKey),
+                    subtypeKey: nextSubtypeKey,
+                    ...(nextSection
+                      ? {
+                          purchaseSection: nextSection,
+                          purchaseType: getPurchaseTypeForSection(nextSection),
+                        }
+                      : {}),
                   };
                 })
               }
@@ -2110,7 +2230,7 @@ function CurrencyDefinitionEditorSection(props: {
 
 function PurchaseSubtypeDefinitionEditorSection(props: {
   title: string;
-  section: Extract<PurchaseSubtypeSectionId, 'subsystems' | 'items'>;
+  section: PurchaseSubtypeSectionId;
   definitions: Record<string, PurchaseSubtypeDefinition>;
   onChange: (nextDefinitions: Record<string, PurchaseSubtypeDefinition>) => void;
 }) {
@@ -2180,13 +2300,25 @@ function PurchaseSubtypeDefinitionEditorSection(props: {
           type="button"
           onClick={() => {
             const nextKey = getNextCustomKey(Object.keys(props.definitions), 'stipend-subtype');
+            const sectionLabel =
+              props.section === 'perks'
+                ? 'perk'
+                : props.section === 'items'
+                  ? 'item'
+                  : props.section === 'locations'
+                    ? 'location'
+                    : props.section === 'other'
+                      ? 'other purchase'
+                      : 'subsystem';
+            const sectionType = getPurchaseTypeForSection(getPurchaseSectionForSubtypeSection(props.section));
+
             props.onChange({
               ...props.definitions,
               [nextKey]: {
-                name: props.section === 'items' ? 'New item type' : 'New subsystem type',
+                name: `New ${sectionLabel} type`,
                 stipend: null,
                 currencyKey: CP_CURRENCY_KEY,
-                type: props.section === 'items' ? 1 : 2,
+                type: sectionType,
                 essential: false,
               },
             });
@@ -2759,7 +2891,7 @@ export function ParticipationEditorCard(props: {
     {
       id: 'purchases',
       label: 'Purchases',
-      description: 'Work through perks, items, stipends, drawbacks, and alt-forms for this participant.',
+      description: 'Work through perks, items, locations, stipends, drawbacks, and alt-forms for this participant.',
     },
     {
       id: 'wrap-up',
@@ -2807,6 +2939,10 @@ export function ParticipationEditorCard(props: {
   );
   const itemPurchases = useMemo(
     () => filterPurchasesBySection(draftParticipation.purchases, 'item', purchaseClassification),
+    [draftParticipation.purchases, purchaseClassification],
+  );
+  const locationPurchases = useMemo(
+    () => filterPurchasesBySection(draftParticipation.purchases, 'location', purchaseClassification),
     [draftParticipation.purchases, purchaseClassification],
   );
   const otherPurchases = useMemo(
@@ -2916,7 +3052,14 @@ export function ParticipationEditorCard(props: {
             : item,
         ),
         'purchase',
-      );
+      ).map((item) => {
+        const resolvedSection = getPurchaseSectionForSelection(item, purchaseClassification);
+
+        return {
+          ...item,
+          purchaseSection: resolvedSection ?? section,
+        };
+      });
 
       return {
         ...current,
@@ -3214,6 +3357,7 @@ export function ParticipationEditorCard(props: {
     { id: 'perks', label: 'Perks', count: purchaseGroups.perks.length },
     { id: 'subsystems', label: 'Subsystems', count: purchaseGroups.subsystems.length },
     { id: 'items', label: 'Items', count: purchaseGroups.items.length },
+    { id: 'locations', label: 'Locations', count: purchaseGroups.locations.length },
     { id: 'other', label: 'Other', count: purchaseGroups.others.length },
     { id: 'stipends', label: 'Stipends', count: stipendRows.length },
     { id: 'drawbacks', label: 'Drawbacks', count: draftParticipation.drawbacks.length + draftParticipation.retainedDrawbacks.length },
@@ -3401,22 +3545,41 @@ export function ParticipationEditorCard(props: {
       ) : null}
 
       {activeTab === 'perks' ? (
-        <SelectionEditorSection
-          title="Perks"
-          items={perkPurchases}
-          emptyMessage="No perks yet."
-          addLabel="Add Perk"
-          createItem={() => createBlankSelection('New Perk', { purchaseType: 0, selectionKind: 'purchase', subtype: 0 })}
-          onChange={(nextItems) => replacePurchaseSection('perk', nextItems)}
-          currencyDefinitions={currencyDefinitions}
-          subtypeDefinitions={purchaseSubtypeDefinitions}
-          enablePricing
-          cpOnlyPricing
-          showSubtypeSelector
-          stipendSectionKey="perk"
-          sectionStipends={sectionStipends}
-          tagSuggestions={tagSuggestions}
-        />
+        <div className="stack stack--compact">
+          <SelectionEditorSection
+            title="Perks"
+            items={perkPurchases}
+            emptyMessage="No perks yet."
+            addLabel="Add Perk"
+            createItem={() => createBlankSelection('New Perk', { purchaseType: 0, purchaseSection: 'perk', selectionKind: 'purchase', subtype: 0 })}
+            onChange={(nextItems) => replacePurchaseSection('perk', nextItems)}
+            currencyDefinitions={currencyDefinitions}
+            subtypeDefinitions={purchaseSubtypeDefinitions}
+            enablePricing
+            cpOnlyPricing
+            showSubtypeSelector
+            stipendSectionKey="perk"
+            sectionStipends={sectionStipends}
+            tagSuggestions={tagSuggestions}
+          />
+
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional subtype templates</span>
+              <span className="pill">
+                {countPurchaseSubtypeDefinitionsInSection(purchaseSubtypeDefinitions, 'perks')}
+              </span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <PurchaseSubtypeDefinitionEditorSection
+                title="Perk types"
+                section="perks"
+                definitions={purchaseSubtypeDefinitions}
+                onChange={updatePurchaseSubtypeDefinitions}
+              />
+            </div>
+          </details>
+        </div>
       ) : null}
 
       {activeTab === 'subsystems' ? (
@@ -3426,7 +3589,7 @@ export function ParticipationEditorCard(props: {
             items={subsystemPurchases}
             emptyMessage="No subsystem purchases yet."
             addLabel="Add Subsystem Purchase"
-            createItem={() => createBlankSelection('New Subsystem Purchase', { purchaseType: 0, selectionKind: 'purchase', subtype: 10 })}
+            createItem={() => createBlankSelection('New Subsystem Purchase', { purchaseType: 2, purchaseSection: 'subsystem', selectionKind: 'purchase', subtype: 10 })}
             onChange={(nextItems) => replacePurchaseSection('subsystem', nextItems)}
             currencyDefinitions={currencyDefinitions}
             subtypeDefinitions={purchaseSubtypeDefinitions}
@@ -3464,7 +3627,7 @@ export function ParticipationEditorCard(props: {
             items={itemPurchases}
             emptyMessage="No items yet."
             addLabel="Add Item"
-            createItem={() => createBlankSelection('New Item', { purchaseType: 1, selectionKind: 'purchase', subtype: 1 })}
+            createItem={() => createBlankSelection('New Item', { purchaseType: 1, purchaseSection: 'item', selectionKind: 'purchase', subtype: 1 })}
             onChange={(nextItems) => replacePurchaseSection('item', nextItems)}
             currencyDefinitions={currencyDefinitions}
             subtypeDefinitions={purchaseSubtypeDefinitions}
@@ -3495,6 +3658,44 @@ export function ParticipationEditorCard(props: {
         </div>
       ) : null}
 
+      {activeTab === 'locations' ? (
+        <div className="stack stack--compact">
+          <SelectionEditorSection
+            title="Locations"
+            items={locationPurchases}
+            emptyMessage="No locations yet."
+            addLabel="Add Location"
+            createItem={() => createBlankSelection('New Location', { purchaseType: 4, purchaseSection: 'location', selectionKind: 'purchase', subtype: 2 })}
+            onChange={(nextItems) => replacePurchaseSection('location', nextItems)}
+            currencyDefinitions={currencyDefinitions}
+            subtypeDefinitions={purchaseSubtypeDefinitions}
+            enablePricing
+            cpOnlyPricing
+            showSubtypeSelector
+            stipendSectionKey="location"
+            sectionStipends={sectionStipends}
+            tagSuggestions={tagSuggestions}
+          />
+
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional subtype templates</span>
+              <span className="pill">
+                {countPurchaseSubtypeDefinitionsInSection(purchaseSubtypeDefinitions, 'locations')}
+              </span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <PurchaseSubtypeDefinitionEditorSection
+                title="Location types"
+                section="locations"
+                definitions={purchaseSubtypeDefinitions}
+                onChange={updatePurchaseSubtypeDefinitions}
+              />
+            </div>
+          </details>
+        </div>
+      ) : null}
+
       {activeTab === 'other' ? (
         <div className="stack stack--compact">
           <SelectionEditorSection
@@ -3502,7 +3703,7 @@ export function ParticipationEditorCard(props: {
             items={otherPurchases}
             emptyMessage="No other purchases yet."
             addLabel="Add Other Purchase"
-            createItem={() => createBlankSelection('New Other Purchase', { selectionKind: 'purchase' })}
+            createItem={() => createBlankSelection('New Other Purchase', { purchaseSection: 'other', selectionKind: 'purchase' })}
             onChange={(nextItems) => replacePurchaseSection('other', nextItems)}
             currencyDefinitions={currencyDefinitions}
             subtypeDefinitions={purchaseSubtypeDefinitions}
@@ -3513,6 +3714,23 @@ export function ParticipationEditorCard(props: {
             sectionStipends={sectionStipends}
             tagSuggestions={tagSuggestions}
           />
+
+          <details className="details-panel">
+            <summary className="details-panel__summary">
+              <span>Optional subtype templates</span>
+              <span className="pill">
+                {countPurchaseSubtypeDefinitionsInSection(purchaseSubtypeDefinitions, 'other')}
+              </span>
+            </summary>
+            <div className="details-panel__body stack stack--compact">
+              <PurchaseSubtypeDefinitionEditorSection
+                title="Other purchase types"
+                section="other"
+                definitions={purchaseSubtypeDefinitions}
+                onChange={updatePurchaseSubtypeDefinitions}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 

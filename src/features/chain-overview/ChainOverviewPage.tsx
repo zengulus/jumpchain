@@ -454,6 +454,12 @@ export function ChainOverviewPage() {
             : `/chains/${chainId}/jumps`,
     },
     {
+      title: 'Master Build',
+      description: 'All perks, items, and locations across the active branch.',
+      tone: workspace.participations.length > 0 ? 'core' : 'optional',
+      action: `/chains/${chainId}/master-build`,
+    },
+    {
       title: 'Companions',
       description: workspace.companions.length > 0 ? formatCountLabel(workspace.companions.length, 'companion') : 'Optional, none started.',
       tone: workspace.companions.length > 0 ? 'core' : 'optional',

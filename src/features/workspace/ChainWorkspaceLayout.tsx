@@ -25,6 +25,7 @@ interface WorkspaceState {
 
 type ModuleKey =
   | 'overview'
+  | 'master-build'
   | 'jumpers'
   | 'companions'
   | 'jumps'
@@ -71,6 +72,7 @@ type WorkspacePresentationMode = 'overview' | 'editor' | 'deep-task';
 
 const MODULE_LABELS: Record<ModuleKey, string> = {
   overview: 'Overview',
+  'master-build': 'Master Build',
   jumpers: 'Jumpers',
   companions: 'Companions',
   jumps: 'Jumps',
@@ -151,6 +153,10 @@ export function useWorkspacePresentation(override: WorkspacePresentationOverride
 function getActiveModuleKey(pathname: string): ModuleKey {
   if (pathname.includes('/participation/')) {
     return 'jumps';
+  }
+
+  if (pathname.includes('/master-build')) {
+    return 'master-build';
   }
 
   if (pathname.includes('/jumpers')) {
@@ -433,6 +439,8 @@ export function ChainWorkspaceLayout() {
     switch (moduleKey) {
       case 'overview':
         return `/chains/${resolvedChainId}/overview`;
+      case 'master-build':
+        return `/chains/${resolvedChainId}/master-build`;
       case 'jumpers':
         return `/chains/${resolvedChainId}/jumpers${buildSearch(selectedJumperId)}`;
       case 'companions':
@@ -592,6 +600,13 @@ export function ChainWorkspaceLayout() {
           to: getModulePath('overview'),
           description: 'Return here for guided setup, setup status, and branch-wide orientation.',
           readiness: showGuidedSetup ? 'start' : 'core',
+        },
+        {
+          key: 'master-build',
+          label: 'Master Build',
+          to: getModulePath('master-build'),
+          description: 'See every perk, item, and location across all jumps in one live-filtered view.',
+          readiness: hasJumps ? 'core' : 'optional',
         },
         {
           key: 'jumpers',

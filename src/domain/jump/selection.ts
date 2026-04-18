@@ -7,9 +7,10 @@ export type SelectionKind =
   | 'scenario'
   | 'companion-import';
 
-export type PurchaseSection = 'perk' | 'subsystem' | 'item' | 'other';
+export type PurchaseSection = 'perk' | 'subsystem' | 'item' | 'location' | 'other';
 
 export type CostModifier = 'full' | 'discounted' | 'double-discounted' | 'free' | 'custom';
+export type SelectionAccessibilityStatus = 'unlocked' | 'not-yet-unlocked' | 'suppressed';
 
 export interface SelectionCost {
   amount: number;
@@ -47,6 +48,17 @@ export interface ComboBoost {
   sourceSelectionId?: string | number | null;
 }
 
+export interface MergedSelectionSource {
+  id?: string;
+  title: string;
+  purchaseSection?: PurchaseSection;
+  participationId?: string;
+  jumpId?: string;
+  participantName?: string;
+  jumpTitle?: string;
+  sourcePurchaseId?: string | number | null;
+}
+
 export interface ParticipationSelection {
   id?: string;
   selectionKind: SelectionKind;
@@ -68,6 +80,11 @@ export interface ParticipationSelection {
   prerequisites?: SelectionPrerequisite[];
   scenarioRewards?: ScenarioReward[];
   comboBoosts?: ComboBoost[];
+  hidden?: boolean;
+  restrictionLevel?: number;
+  accessibilityStatus?: SelectionAccessibilityStatus;
+  mergedFrom?: MergedSelectionSource[];
+  mergedIntoId?: string | null;
   sourcePurchaseId?: string | number | null;
   sourceJumpDocId?: string | null;
   sourceTemplateId?: string | number | null;
@@ -120,6 +137,37 @@ function getTags(value: unknown) {
     : [];
 }
 
+function normalizeMergedSelectionSources(value: unknown): MergedSelectionSource[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sources = value.flatMap((entry) => {
+    const record = asRecord(entry);
+    const title =
+      getOptionalString(record.title) ??
+      getOptionalString(record.name) ??
+      getOptionalString(record.summary);
+
+    if (!title) {
+      return [];
+    }
+
+    return [{
+      id: getOptionalString(record.id) ?? undefined,
+      title,
+      purchaseSection: normalizePurchaseSection(record.purchaseSection),
+      participationId: getOptionalString(record.participationId) ?? undefined,
+      jumpId: getOptionalString(record.jumpId) ?? undefined,
+      participantName: getOptionalString(record.participantName) ?? undefined,
+      jumpTitle: getOptionalString(record.jumpTitle) ?? undefined,
+      sourcePurchaseId: getOptionalString(record.sourcePurchaseId) ?? null,
+    }];
+  });
+
+  return sources.length > 0 ? sources : undefined;
+}
+
 export function normalizeCostModifier(value: unknown): CostModifier {
   if (value === 'full' || value === 'discounted' || value === 'double-discounted' || value === 'free' || value === 'custom') {
     return value;
@@ -134,6 +182,32 @@ export function normalizeCostModifier(value: unknown): CostModifier {
   }
 
   return 'full';
+}
+
+function normalizeRestrictionLevel(value: unknown) {
+  const level = getOptionalNumber(value);
+
+  if (level === null) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.floor(level));
+}
+
+function normalizeAccessibilityStatus(value: unknown): SelectionAccessibilityStatus | undefined {
+  return value === 'not-yet-unlocked' || value === 'suppressed' || value === 'unlocked'
+    ? value
+    : undefined;
+}
+
+function normalizePurchaseSection(value: unknown): PurchaseSection | undefined {
+  return value === 'perk' ||
+    value === 'subsystem' ||
+    value === 'item' ||
+    value === 'location' ||
+    value === 'other'
+    ? value
+    : undefined;
 }
 
 export function getCostModifierFactor(modifier: CostModifier) {
@@ -185,13 +259,7 @@ export function normalizeParticipationSelection(value: unknown, fallbackKind: Se
     currencyKey: getOptionalString(record.currencyKey) ?? getOptionalString(record.currency) ?? '0',
     purchaseValue: free ? 0 : purchaseValue,
     costModifier,
-    purchaseSection:
-      record.purchaseSection === 'perk' ||
-      record.purchaseSection === 'subsystem' ||
-      record.purchaseSection === 'item' ||
-      record.purchaseSection === 'other'
-        ? record.purchaseSection
-        : undefined,
+    purchaseSection: normalizePurchaseSection(record.purchaseSection),
     subtypeKey: getOptionalString(record.subtypeKey) ?? getOptionalString(record.subtype),
     purchaseType: getOptionalNumber(record.purchaseType) ?? getOptionalNumber(record._type),
     tags: getTags(record.tags),
@@ -202,6 +270,11 @@ export function normalizeParticipationSelection(value: unknown, fallbackKind: Se
     prerequisites: Array.isArray(record.prerequisites) ? (record.prerequisites as SelectionPrerequisite[]) : undefined,
     scenarioRewards: Array.isArray(record.scenarioRewards) ? (record.scenarioRewards as ScenarioReward[]) : undefined,
     comboBoosts: Array.isArray(record.comboBoosts) ? (record.comboBoosts as ComboBoost[]) : undefined,
+    hidden: record.hidden === true ? true : undefined,
+    restrictionLevel: normalizeRestrictionLevel(record.restrictionLevel),
+    accessibilityStatus: normalizeAccessibilityStatus(record.accessibilityStatus),
+    mergedFrom: normalizeMergedSelectionSources(record.mergedFrom),
+    mergedIntoId: getOptionalString(record.mergedIntoId) ?? null,
     sourcePurchaseId: getOptionalString(sourcePurchaseId) ?? null,
     sourceJumpDocId: getOptionalString(record.sourceJumpDocId) ?? null,
     sourceTemplateId: getOptionalString(record.sourceTemplateId) ?? null,

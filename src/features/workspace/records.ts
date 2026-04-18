@@ -12,6 +12,7 @@ import type { Note } from '../../domain/notes/types';
 import { createDefaultRulesModuleSettings, type RulesDefaults } from '../../domain/rules/customization';
 import type { HouseRuleProfile, JumpRulesContext } from '../../domain/rules/types';
 import { createId } from '../../utils/id';
+import { rememberRecordDelete, rememberRecordSave } from './undo';
 
 function createTimestamp() {
   return new Date().toISOString();
@@ -30,6 +31,7 @@ export async function touchChain(chainId: string, updatedAt = createTimestamp())
 export async function saveChainEntity(chain: Chain) {
   await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
+  await rememberRecordSave(db.chains, chain);
   await db.chains.put({
     ...chain,
     updatedAt,
@@ -42,6 +44,7 @@ export async function saveChainRecord<T extends { id: string; chainId: string; u
 ) {
   await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
+  await rememberRecordSave(table, record);
 
   await table.put({
     ...record,
@@ -51,13 +54,14 @@ export async function saveChainRecord<T extends { id: string; chainId: string; u
   await touchChain(record.chainId, updatedAt);
 }
 
-export async function deleteChainRecord<T extends { chainId: string }>(
+export async function deleteChainRecord<T extends { id: string; chainId: string }>(
   table: Table<T, string>,
   recordId: string,
   chainId: string,
 ) {
   await ensureDatabaseOpen();
   const updatedAt = createTimestamp();
+  await rememberRecordDelete(table, recordId, chainId);
   await table.delete(recordId);
   await touchChain(chainId, updatedAt);
 }

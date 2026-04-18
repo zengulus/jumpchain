@@ -21,7 +21,7 @@ export interface JumpDocPdfAnnotation extends JumpDocPageRect {
   notes: string;
   extractedText: string;
   exportKind: 'purchase' | 'drawback' | 'origin' | 'scenario' | 'companion' | 'note';
-  purchaseSection?: 'perk' | 'subsystem' | 'item' | 'other';
+  purchaseSection?: 'perk' | 'subsystem' | 'item' | 'location' | 'other';
   costAmount: number | null;
   currencyKey: string;
   exportedTemplateId?: string | null;
@@ -68,7 +68,7 @@ export interface JumpDocTemplateBase {
 
 export interface JumpDocPurchaseTemplate extends JumpDocTemplateBase {
   templateKind: 'purchase';
-  purchaseSection: 'perk' | 'subsystem' | 'item' | 'other';
+  purchaseSection: 'perk' | 'subsystem' | 'item' | 'location' | 'other';
   subtypeKey: string | null;
   temporary: boolean;
   comboBoosts: ComboBoost[];

@@ -43,6 +43,10 @@ export const appRouter = createHashRouter([
             lazy: lazyRoute(() => import('../features/chain-overview/ChainOverviewPage'), 'ChainOverviewPage'),
           },
           {
+            path: 'master-build',
+            lazy: lazyRoute(() => import('../features/master-build-overview/MasterBuildOverviewPage'), 'MasterBuildOverviewPage'),
+          },
+          {
             path: 'jumpers',
             lazy: lazyRoute(() => import('../features/jumpers/JumpersPage'), 'JumpersPage'),
           },

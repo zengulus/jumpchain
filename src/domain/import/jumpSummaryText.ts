@@ -609,6 +609,20 @@ function getPurchaseTypeDefinition(sectionTitle: string, sectionIndex: number) {
     };
   }
 
+  if (normalizedTitle === 'location' || normalizedTitle === 'locations') {
+    return {
+      purchaseType: 4,
+      subtypeKey: '2',
+      definition: {
+        name: 'Location',
+        stipend: 0,
+        currency: 0,
+        type: 4,
+        essential: true,
+      },
+    };
+  }
+
   if (normalizedTitle.includes('power') || normalizedTitle.includes('subsystem')) {
     return {
       purchaseType: 2,

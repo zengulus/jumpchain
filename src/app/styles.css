@@ -1917,6 +1917,77 @@ button {
   background: rgba(4, 11, 17, 0.34);
 }
 
+.master-build-toggle {
+  align-content: center;
+}
+
+.master-build-toggle input {
+  width: auto;
+}
+
+.master-build-entry {
+  position: relative;
+  overflow: hidden;
+}
+
+.master-build-entry.is-inaccessible {
+  border-color: rgba(159, 196, 220, 0.18);
+  background:
+    linear-gradient(180deg, rgba(92, 103, 111, 0.2), rgba(40, 48, 54, 0.18)),
+    rgba(4, 11, 17, 0.34);
+  color: rgba(238, 246, 250, 0.68);
+}
+
+.master-build-entry.is-inaccessible .editor-section__copy,
+.master-build-entry.is-inaccessible .token,
+.master-build-entry.is-inaccessible .pill {
+  color: rgba(238, 246, 250, 0.62);
+}
+
+.master-build-entry__restriction-controls {
+  position: relative;
+  z-index: 1;
+  padding: 0.7rem;
+  border: 1px solid rgba(159, 196, 220, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(5, 14, 20, 0.34);
+}
+
+.master-build-entry__chains {
+  position: absolute;
+  inset: -12% -8%;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: rgba(238, 246, 250, 0.34);
+  font-weight: 800;
+  letter-spacing: 0;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.master-build-entry__chains span {
+  width: 140%;
+  padding: 0.15rem 0;
+  border-block: 1px solid rgba(238, 246, 250, 0.15);
+  background: rgba(5, 14, 20, 0.34);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.master-build-entry__chains span:first-child {
+  transform: rotate(28deg);
+}
+
+.master-build-entry__chains span:last-child {
+  transform: rotate(-28deg);
+}
+
+.master-build-entry > :not(.master-build-entry__chains) {
+  position: relative;
+  z-index: 1;
+}
+
 .selection-editor__header {
   display: flex;
   justify-content: space-between;

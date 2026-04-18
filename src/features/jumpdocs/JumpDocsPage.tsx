@@ -22,7 +22,13 @@ function countTemplates(jumpDoc: JumpDoc) {
 
 function getAnnotationExportLabel(annotation: JumpDocPdfAnnotation) {
   if (annotation.exportKind === 'purchase') {
-    return annotation.purchaseSection === 'item' ? 'Item' : annotation.purchaseSection === 'subsystem' ? 'Subsystem' : 'Perk';
+    return annotation.purchaseSection === 'item'
+      ? 'Item'
+      : annotation.purchaseSection === 'location'
+        ? 'Location'
+        : annotation.purchaseSection === 'subsystem'
+          ? 'Subsystem'
+          : 'Perk';
   }
 
   return annotation.exportKind[0]?.toUpperCase() + annotation.exportKind.slice(1);
@@ -232,6 +238,8 @@ function getSelectionFromAnnotation(jumpDoc: JumpDoc, annotation: JumpDocPdfAnno
     purchaseType:
       annotation.purchaseSection === 'item'
         ? 1
+        : annotation.purchaseSection === 'location'
+          ? 4
         : annotation.purchaseSection === 'subsystem'
           ? 2
           : annotation.exportKind === 'purchase'
@@ -806,7 +814,7 @@ export function JumpDocsPage() {
                               onChange={(event) => {
                                 const value = event.target.value;
                                 updateAnnotation(annotation.id, (current) =>
-                                  value === 'perk' || value === 'item' || value === 'subsystem' || value === 'other'
+                                  value === 'perk' || value === 'item' || value === 'location' || value === 'subsystem' || value === 'other'
                                     ? { ...current, exportKind: 'purchase', purchaseSection: value }
                                     : { ...current, exportKind: value as JumpDocPdfAnnotation['exportKind'], purchaseSection: current.purchaseSection },
                                 );
@@ -814,6 +822,7 @@ export function JumpDocsPage() {
                             >
                               <option value="perk">Perk</option>
                               <option value="item">Item</option>
+                              <option value="location">Location</option>
                               <option value="subsystem">Subsystem</option>
                               <option value="other">Other purchase</option>
                               <option value="drawback">Drawback</option>
