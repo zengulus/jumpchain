@@ -1,4 +1,5 @@
 import type { BodymodMode, ChainScopedRecord, JsonMap } from '../common';
+import type { SelectionAccessibilityStatus } from '../jump/selection';
 
 export const iconicSelectionKinds = ['perk', 'power', 'item', 'race', 'species', 'alt-form', 'other'] as const;
 export type IconicSelectionKind = (typeof iconicSelectionKinds)[number];
@@ -8,6 +9,8 @@ export interface IconicSelection {
   title: string;
   source: string;
   summary: string;
+  restrictionLevel?: number;
+  accessibilityStatus?: SelectionAccessibilityStatus;
 }
 
 export interface BodymodForm {

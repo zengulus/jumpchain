@@ -1930,12 +1930,21 @@ button {
   overflow: hidden;
 }
 
+.master-build-entry.is-restricted {
+  border-color: rgba(255, 93, 93, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 93, 93, 0.1);
+}
+
 .master-build-entry.is-inaccessible {
   border-color: rgba(159, 196, 220, 0.18);
   background:
     linear-gradient(180deg, rgba(92, 103, 111, 0.2), rgba(40, 48, 54, 0.18)),
     rgba(4, 11, 17, 0.34);
   color: rgba(238, 246, 250, 0.68);
+}
+
+.master-build-entry.is-restricted.is-inaccessible {
+  border-color: rgba(255, 93, 93, 0.46);
 }
 
 .master-build-entry.is-inaccessible .editor-section__copy,
@@ -1960,27 +1969,29 @@ button {
   display: grid;
   place-items: center;
   pointer-events: none;
-  color: rgba(238, 246, 250, 0.34);
-  font-weight: 800;
-  letter-spacing: 0;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 93, 93, 0.24);
+  background: rgba(95, 13, 20, 0.2);
 }
 
-.master-build-entry__chains span {
+.master-build-entry__chain {
   width: 140%;
-  padding: 0.15rem 0;
-  border-block: 1px solid rgba(238, 246, 250, 0.15);
-  background: rgba(5, 14, 20, 0.34);
-  text-align: center;
-  white-space: nowrap;
+  height: 4.6rem;
+  overflow: visible;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 
-.master-build-entry__chains span:first-child {
+.master-build-entry__chain--forward {
   transform: rotate(28deg);
 }
 
-.master-build-entry__chains span:last-child {
+.master-build-entry__chain--backward {
   transform: rotate(-28deg);
+}
+
+.master-build-entry__chain-link {
+  fill: none;
+  stroke: rgba(255, 93, 93, 0.72);
+  stroke-width: 8;
 }
 
 .master-build-entry > :not(.master-build-entry__chains) {

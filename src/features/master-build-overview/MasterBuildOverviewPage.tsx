@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { db } from '../../db/database';
+import type { BodymodProfile, IconicSelection } from '../../domain/bodymod/types';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
 import type { ParticipationSelection, SelectionAccessibilityStatus } from '../../domain/jump/selection';
 import { createId } from '../../utils/id';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
-import { saveChainEntity, saveParticipationRecord } from '../workspace/records';
+import { saveChainEntity, saveChainRecord, saveParticipationRecord } from '../workspace/records';
 import { EmptyWorkspaceCard, WorkspaceModuleHeader } from '../workspace/shared';
 import { useAutosaveRecord } from '../workspace/useAutosaveRecord';
 import { useChainWorkspace } from '../workspace/useChainWorkspace';
 
-type MasterBuildCategory = 'all' | 'perk' | 'item' | 'location';
+type MasterBuildCategory = 'all' | 'perk' | 'item' | 'location' | 'iconic';
+type MergeBuildCategory = 'perk' | 'item' | 'location';
 type WorkspaceParticipation = BranchWorkspace['participations'][number];
+type RestrictableBuildEntry = ParticipationSelection | IconicSelection;
 type RestrictionSettings = {
   activeLevel: number;
   levelCount: number;
@@ -22,9 +26,11 @@ interface MasterBuildEntry {
   id: string;
   category: Exclude<MasterBuildCategory, 'all'>;
   categoryLabel: string;
-  selection: ParticipationSelection;
+  selection: RestrictableBuildEntry;
   selectionIndex: number;
-  participation: WorkspaceParticipation;
+  sourceType: 'purchase' | 'iconic';
+  participation?: WorkspaceParticipation;
+  profile?: BodymodProfile;
   jumpId: string;
   jumpTitle: string;
   jumpOrder: number;
@@ -39,9 +45,10 @@ const categoryOptions: Array<{ id: MasterBuildCategory; label: string }> = [
   { id: 'perk', label: 'Perks' },
   { id: 'item', label: 'Items' },
   { id: 'location', label: 'Locations' },
+  { id: 'iconic', label: 'Iconic' },
 ];
 
-const mergeCategoryOptions: Array<{ id: Exclude<MasterBuildCategory, 'all'>; label: string }> = [
+const mergeCategoryOptions: Array<{ id: MergeBuildCategory; label: string }> = [
   { id: 'perk', label: 'Perk' },
   { id: 'item', label: 'Item' },
   { id: 'location', label: 'Location' },
@@ -101,11 +108,11 @@ function getNonNegativeInteger(value: unknown, fallback: number) {
   return Math.max(0, Math.floor(parsed));
 }
 
-function getSelectionRestrictionLevel(selection: ParticipationSelection) {
+function getSelectionRestrictionLevel(selection: RestrictableBuildEntry) {
   return getNonNegativeInteger(selection.restrictionLevel, 0);
 }
 
-function getSelectionAccessibilityStatus(selection: ParticipationSelection): SelectionAccessibilityStatus {
+function getSelectionAccessibilityStatus(selection: RestrictableBuildEntry): SelectionAccessibilityStatus {
   return selection.accessibilityStatus === 'not-yet-unlocked' || selection.accessibilityStatus === 'suppressed'
     ? selection.accessibilityStatus
     : 'unlocked';
@@ -136,16 +143,34 @@ function normalizeRestrictionSettings(value: RestrictionSettings): RestrictionSe
   };
 }
 
-function isSelectionHidden(selection: ParticipationSelection) {
-  return selection.hidden === true;
+function isParticipationSelection(selection: RestrictableBuildEntry): selection is ParticipationSelection {
+  return 'selectionKind' in selection;
 }
 
-function getMergedFromCount(selection: ParticipationSelection) {
-  return selection.mergedFrom?.length ?? 0;
+function isSelectionHidden(selection: RestrictableBuildEntry) {
+  return isParticipationSelection(selection) && selection.hidden === true;
 }
 
-function getSelectionTitle(selection: ParticipationSelection) {
+function getMergedFromCount(selection: RestrictableBuildEntry) {
+  return isParticipationSelection(selection) ? selection.mergedFrom?.length ?? 0 : 0;
+}
+
+function getSelectionTitle(selection: RestrictableBuildEntry) {
   return selection.title.trim() || selection.summary?.trim() || 'Untitled purchase';
+}
+
+function getSelectionDescription(selection: RestrictableBuildEntry) {
+  return isParticipationSelection(selection) ? selection.description : selection.summary;
+}
+
+function getSelectionTags(selection: RestrictableBuildEntry) {
+  return isParticipationSelection(selection) ? selection.tags : [selection.kind, selection.source].filter(Boolean);
+}
+
+function isPurchaseEntry(
+  entry: MasterBuildEntry | undefined,
+): entry is MasterBuildEntry & { sourceType: 'purchase'; selection: ParticipationSelection; participation: WorkspaceParticipation } {
+  return Boolean(entry) && entry?.sourceType === 'purchase' && Boolean(entry.participation) && isParticipationSelection(entry.selection);
 }
 
 function getSelectionCategory(selection: ParticipationSelection): MasterBuildEntry['category'] | null {
@@ -180,6 +205,8 @@ function formatCategoryLabel(category: MasterBuildEntry['category']) {
       return 'Item';
     case 'location':
       return 'Location';
+    case 'iconic':
+      return 'Iconic';
   }
 }
 
@@ -192,7 +219,7 @@ function formatCost(selection: ParticipationSelection) {
   return `${selection.purchaseValue} ${currency === '0' ? 'CP' : currency}`;
 }
 
-function getPurchaseTypeForCategory(category: Exclude<MasterBuildCategory, 'all'>) {
+function getPurchaseTypeForCategory(category: MergeBuildCategory) {
   switch (category) {
     case 'item':
       return 1;
@@ -204,7 +231,7 @@ function getPurchaseTypeForCategory(category: Exclude<MasterBuildCategory, 'all'
   }
 }
 
-function getDefaultSubtypeForCategory(category: Exclude<MasterBuildCategory, 'all'>) {
+function getDefaultSubtypeForCategory(category: MergeBuildCategory) {
   switch (category) {
     case 'item':
       return '1';
@@ -261,8 +288,9 @@ export function MasterBuildOverviewPage() {
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
   const [mergeTitle, setMergeTitle] = useState('');
   const [mergeDescription, setMergeDescription] = useState('');
-  const [mergeCategory, setMergeCategory] = useState<Exclude<MasterBuildCategory, 'all'>>('perk');
+  const [mergeCategory, setMergeCategory] = useState<MergeBuildCategory>('perk');
   const [showMergedComponents, setShowMergedComponents] = useState(false);
+  const [includeIconic, setIncludeIconic] = useState(false);
   const [mergeStatus, setMergeStatus] = useState<string | null>(null);
   const [restrictionStatus, setRestrictionStatus] = useState<string | null>(null);
   const searchQuery = searchParams.get('search') ?? '';
@@ -270,47 +298,92 @@ export function MasterBuildOverviewPage() {
   const jumpFilter = searchParams.get('jump') ?? 'all';
   const participantFilter = searchParams.get('participant') ?? 'all';
 
-  const entries = useMemo(() => workspace.participations.flatMap<MasterBuildEntry>((participation) => {
-    const jump = workspace.jumps.find((entry) => entry.id === participation.jumpId);
-    const participant = getParticipantName(workspace, participation);
+  const entries = useMemo(() => {
+    const purchaseEntries = workspace.participations.flatMap<MasterBuildEntry>((participation) => {
+      const jump = workspace.jumps.find((entry) => entry.id === participation.jumpId);
+      const participant = getParticipantName(workspace, participation);
 
-    return participation.purchases.flatMap((selection, index) => {
-      const category = getSelectionCategory(selection);
+      return participation.purchases.flatMap((selection, index) => {
+        const category = getSelectionCategory(selection);
 
-      if (!category) {
-        return [];
-      }
+        if (!category) {
+          return [];
+        }
 
-      const jumpTitle = jump?.title ?? 'Unknown jump';
-      const tab = category === 'location' ? 'locations' : `${category}s`;
+        const jumpTitle = jump?.title ?? 'Unknown jump';
+        const tab = category === 'location' ? 'locations' : `${category}s`;
 
-      return [{
-        id: `${participation.id}:${selection.id ?? index}:${category}`,
-        category,
-        categoryLabel: formatCategoryLabel(category),
-        selection,
-        selectionIndex: index,
-        participation,
-        jumpId: participation.jumpId,
-        jumpTitle,
-        jumpOrder: jump?.orderIndex ?? Number.MAX_SAFE_INTEGER,
-        participantId: participation.participantId,
-        participantName: participant.name,
-        participantKind: participant.kind,
-        to: withSearchParams(`/chains/${chainId}/jumps/${participation.jumpId}`, {
-          participant: participation.participantId,
-          panel: 'participation',
-          participationTab: tab,
-          search: searchQuery,
-        }),
-      }];
+        return [{
+          id: `${participation.id}:${selection.id ?? index}:${category}`,
+          category,
+          categoryLabel: formatCategoryLabel(category),
+          selection,
+          selectionIndex: index,
+          sourceType: 'purchase' as const,
+          participation,
+          jumpId: participation.jumpId,
+          jumpTitle,
+          jumpOrder: jump?.orderIndex ?? Number.MAX_SAFE_INTEGER,
+          participantId: participation.participantId,
+          participantName: participant.name,
+          participantKind: participant.kind,
+          to: withSearchParams(`/chains/${chainId}/jumps/${participation.jumpId}`, {
+            participant: participation.participantId,
+            panel: 'participation',
+            participationTab: tab,
+            search: searchQuery,
+          }),
+        }];
+      });
     });
-  }).sort((left, right) =>
+
+    const iconicEntries = includeIconic
+      ? workspace.bodymodProfiles.flatMap<MasterBuildEntry>((profile) => {
+          const jumper = workspace.jumpers.find((entry) => entry.id === profile.jumperId);
+          const participantName = jumper?.name ?? 'Jumper';
+
+          return profile.iconicSelections.flatMap((selection, index) =>
+            getSelectionTitle(selection).trim().length > 0 || selection.source.trim().length > 0 || selection.summary.trim().length > 0
+              ? [{
+                  id: `${profile.id}:iconic:${index}`,
+                  category: 'iconic' as const,
+                  categoryLabel: 'Iconic',
+                  selection,
+                  selectionIndex: index,
+                  sourceType: 'iconic' as const,
+                  profile,
+                  jumpId: 'iconic',
+                  jumpTitle: 'Iconic',
+                  jumpOrder: -1,
+                  participantId: profile.jumperId,
+                  participantName,
+                  participantKind: 'jumper' as const,
+                  to: withSearchParams(`/chains/${chainId}/bodymod`, {
+                    jumper: profile.jumperId,
+                    search: searchQuery,
+                  }),
+                }]
+              : [],
+          );
+        })
+      : [];
+
+    return [...iconicEntries, ...purchaseEntries].sort((left, right) =>
     left.jumpOrder - right.jumpOrder ||
     left.jumpTitle.localeCompare(right.jumpTitle) ||
     left.participantName.localeCompare(right.participantName) ||
     getSelectionTitle(left.selection).localeCompare(getSelectionTitle(right.selection)),
-  ), [chainId, searchQuery, workspace.companions, workspace.jumpers, workspace.jumps, workspace.participations]);
+    );
+  }, [
+    chainId,
+    includeIconic,
+    searchQuery,
+    workspace.bodymodProfiles,
+    workspace.companions,
+    workspace.jumpers,
+    workspace.jumps,
+    workspace.participations,
+  ]);
 
   const visibleEntryIds = useMemo(() => new Set(entries.map((entry) => entry.id)), [entries]);
 
@@ -320,7 +393,7 @@ export function MasterBuildOverviewPage() {
 
   const selectedEntries = selectedEntryIds
     .map((entryId) => entries.find((entry) => entry.id === entryId))
-    .filter((entry): entry is MasterBuildEntry => Boolean(entry));
+    .filter(isPurchaseEntry);
 
   useEffect(() => {
     if (selectedEntries.length === 0) {
@@ -339,7 +412,7 @@ export function MasterBuildOverviewPage() {
       );
     }
 
-    setMergeCategory(selectedEntries[0].category);
+    setMergeCategory(selectedEntries[0].category as MergeBuildCategory);
   }, [selectedEntryIds]);
 
   const visibleEntries = entries.filter((entry) => {
@@ -354,8 +427,8 @@ export function MasterBuildOverviewPage() {
         searchQuery,
         getSelectionTitle(entry.selection),
         entry.selection.summary,
-        entry.selection.description,
-        entry.selection.tags,
+        getSelectionDescription(entry.selection),
+        getSelectionTags(entry.selection),
         entry.categoryLabel,
         entry.jumpTitle,
         entry.participantName,
@@ -365,6 +438,7 @@ export function MasterBuildOverviewPage() {
     perk: entries.filter((entry) => entry.category === 'perk' && !isSelectionHidden(entry.selection)).length,
     item: entries.filter((entry) => entry.category === 'item' && !isSelectionHidden(entry.selection)).length,
     location: entries.filter((entry) => entry.category === 'location' && !isSelectionHidden(entry.selection)).length,
+    iconic: entries.filter((entry) => entry.category === 'iconic' && !isSelectionHidden(entry.selection)).length,
   };
   const hiddenMergedCount = entries.filter((entry) => isSelectionHidden(entry.selection)).length;
   const restrictedCount = entries.filter((entry) =>
@@ -438,7 +512,7 @@ export function MasterBuildOverviewPage() {
       return {
         id: sourceId,
         title: getSelectionTitle(entry.selection),
-        purchaseSection: entry.category,
+        purchaseSection: entry.category as MergeBuildCategory,
         participationId: entry.participation.id,
         jumpId: entry.jumpId,
         participantName: entry.participantName,
@@ -519,23 +593,41 @@ export function MasterBuildOverviewPage() {
 
   async function updateEntryRestriction(
     entry: MasterBuildEntry,
-    patch: Pick<Partial<ParticipationSelection>, 'restrictionLevel' | 'accessibilityStatus'>,
+    patch: Pick<Partial<RestrictableBuildEntry>, 'restrictionLevel' | 'accessibilityStatus'>,
   ) {
-    const purchases = entry.participation.purchases.map((purchase, index) =>
-      index === entry.selectionIndex
-        ? {
-            ...purchase,
-            ...patch,
-          }
-        : purchase,
-    );
-
     try {
       setRestrictionStatus('Saving restriction...');
-      await saveParticipationRecord({
-        ...entry.participation,
-        purchases,
-      });
+
+      if (isPurchaseEntry(entry)) {
+        const purchases = entry.participation.purchases.map((purchase, index) =>
+          index === entry.selectionIndex
+            ? {
+                ...purchase,
+                ...patch,
+              }
+            : purchase,
+        );
+
+        await saveParticipationRecord({
+          ...entry.participation,
+          purchases,
+        });
+      } else if (entry.sourceType === 'iconic' && entry.profile) {
+        const iconicSelections = entry.profile.iconicSelections.map((selection, index) =>
+          index === entry.selectionIndex
+            ? {
+                ...selection,
+                ...patch,
+              }
+            : selection,
+        );
+
+        await saveChainRecord(db.bodymodProfiles, {
+          ...entry.profile,
+          iconicSelections,
+        });
+      }
+
       setRestrictionStatus('Restriction saved.');
     } catch (error) {
       setRestrictionStatus(error instanceof Error ? error.message : 'Unable to save restriction.');
@@ -612,6 +704,14 @@ export function MasterBuildOverviewPage() {
         </div>
         <div className="inline-meta">
           <span className="pill pill--soft">{inaccessibleCount} not fully accessible</span>
+          <button
+            className={`choice-chip${includeIconic ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setIncludeIconic((current) => !current)}
+          >
+            <span>Include Iconic?</span>
+            <span>{includeIconic ? 'Yes' : 'No'}</span>
+          </button>
           <span className="pill pill--soft">
             Settings {chainAutosave.status.phase === 'dirty' || chainAutosave.status.phase === 'saving' ? 'saving' : 'saved'}
           </span>
@@ -636,6 +736,10 @@ export function MasterBuildOverviewPage() {
           <article className="metric">
             <strong>{counts.location}</strong>
             <span>Locations</span>
+          </article>
+          <article className="metric">
+            <strong>{counts.iconic}</strong>
+            <span>Iconic</span>
           </article>
           <article className="metric">
             <strong>{visibleEntries.length}</strong>
@@ -670,6 +774,7 @@ export function MasterBuildOverviewPage() {
             <span>Jump</span>
             <select value={jumpFilter} onChange={(event) => updateFilter('jump', event.target.value)}>
               <option value="all">All jumps</option>
+              {includeIconic ? <option value="iconic">Iconic</option> : null}
               {jumpOptions.map((jump) => (
                 <option key={jump.id} value={jump.id}>
                   {jump.title}
@@ -752,7 +857,7 @@ export function MasterBuildOverviewPage() {
                   <span>Category</span>
                   <select
                     value={mergeCategory}
-                    onChange={(event) => setMergeCategory(event.target.value as Exclude<MasterBuildCategory, 'all'>)}
+                    onChange={(event) => setMergeCategory(event.target.value as MergeBuildCategory)}
                   >
                     {mergeCategoryOptions.map((option) => (
                       <option key={option.id} value={option.id}>
@@ -799,12 +904,12 @@ export function MasterBuildOverviewPage() {
 
       <section className="card stack">
         <div className="section-heading">
-          <h3>Purchases</h3>
+          <h3>Build Entries</h3>
           <span className="pill">{visibleEntries.length}</span>
         </div>
 
         {visibleEntries.length === 0 ? (
-          <p className="editor-section__empty">No perks, items, or locations match the current filters.</p>
+          <p className="editor-section__empty">No perks, items, locations, or included Iconic entries match the current filters.</p>
         ) : (
           <div className="selection-editor-list">
             {visibleEntries.map((entry) => {
@@ -825,8 +930,22 @@ export function MasterBuildOverviewPage() {
               >
                 {isRestricted ? (
                   <div className="master-build-entry__chains" aria-hidden="true">
-                    <span>⛓ ⛓ ⛓ ⛓ ⛓ ⛓</span>
-                    <span>⛓ ⛓ ⛓ ⛓ ⛓ ⛓</span>
+                    <svg className="master-build-entry__chain master-build-entry__chain--forward" viewBox="0 0 720 72" focusable="false">
+                      {Array.from({ length: 8 }, (_, index) => (
+                        <g key={`chain-forward-${index}`} transform={`translate(${index * 90} 0)`}>
+                          <rect className="master-build-entry__chain-link" x="8" y="16" width="54" height="28" rx="14" />
+                          <rect className="master-build-entry__chain-link" x="40" y="28" width="54" height="28" rx="14" />
+                        </g>
+                      ))}
+                    </svg>
+                    <svg className="master-build-entry__chain master-build-entry__chain--backward" viewBox="0 0 720 72" focusable="false">
+                      {Array.from({ length: 8 }, (_, index) => (
+                        <g key={`chain-backward-${index}`} transform={`translate(${index * 90} 0)`}>
+                          <rect className="master-build-entry__chain-link" x="8" y="16" width="54" height="28" rx="14" />
+                          <rect className="master-build-entry__chain-link" x="40" y="28" width="54" height="28" rx="14" />
+                        </g>
+                      ))}
+                    </svg>
                   </div>
                 ) : null}
                 <div className="selection-editor__header">
@@ -835,7 +954,7 @@ export function MasterBuildOverviewPage() {
                       <input
                         type="checkbox"
                         checked={selectedEntryIds.includes(entry.id)}
-                        disabled={isSelectionHidden(entry.selection)}
+                        disabled={entry.sourceType !== 'purchase' || isSelectionHidden(entry.selection)}
                         onChange={(event) => toggleSelectedEntry(entry.id, event.target.checked)}
                       />
                       <strong>
@@ -844,7 +963,11 @@ export function MasterBuildOverviewPage() {
                     </label>
                     <div className="inline-meta">
                       <span className="pill">{entry.categoryLabel}</span>
-                      <span className="pill pill--soft">{formatCost(entry.selection)}</span>
+                      {isParticipationSelection(entry.selection) ? (
+                        <span className="pill pill--soft">{formatCost(entry.selection)}</span>
+                      ) : (
+                        <span className="pill pill--soft">{entry.selection.kind}</span>
+                      )}
                       <span className="pill">{entry.jumpTitle}</span>
                       <span className="pill">{entry.participantName}</span>
                       <span className="pill pill--soft">Level {entryRestrictionLevel}</span>
@@ -895,12 +1018,12 @@ export function MasterBuildOverviewPage() {
                     </select>
                   </label>
                 </div>
-                {entry.selection.description.trim().length > 0 ? (
+                {getSelectionDescription(entry.selection).trim().length > 0 ? (
                   <p className="editor-section__copy">
-                    <SearchHighlight text={entry.selection.description} query={searchQuery} />
+                    <SearchHighlight text={getSelectionDescription(entry.selection)} query={searchQuery} />
                   </p>
                 ) : null}
-                {entry.selection.mergedFrom && entry.selection.mergedFrom.length > 0 ? (
+                {isParticipationSelection(entry.selection) && entry.selection.mergedFrom && entry.selection.mergedFrom.length > 0 ? (
                   <div className="stack stack--compact">
                     <strong>Merged From</strong>
                     <div className="chip-grid">
@@ -919,9 +1042,9 @@ export function MasterBuildOverviewPage() {
                     </div>
                   </div>
                 ) : null}
-                {entry.selection.tags.length > 0 ? (
+                {getSelectionTags(entry.selection).length > 0 ? (
                   <div className="chip-grid">
-                    {entry.selection.tags.map((tag) => (
+                    {getSelectionTags(entry.selection).map((tag) => (
                       <span className="token" key={`${entry.id}:${tag}`}>
                         <SearchHighlight text={tag} query={searchQuery} />
                       </span>

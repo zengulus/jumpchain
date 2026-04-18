@@ -396,6 +396,8 @@ export const IconicSelectionSchema = z.object({
   title: z.string(),
   source: z.string(),
   summary: z.string(),
+  restrictionLevel: z.number().int().nonnegative().optional(),
+  accessibilityStatus: z.enum(['unlocked', 'not-yet-unlocked', 'suppressed']).optional(),
 });
 
 export const BodymodProfileSchema = ChainScopedRecordSchema.extend({
