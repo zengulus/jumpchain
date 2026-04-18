@@ -1964,34 +1964,26 @@ button {
 
 .master-build-entry__chains {
   position: absolute;
-  inset: -12% -8%;
+  inset: 0;
   z-index: 0;
-  display: grid;
-  place-items: center;
+  display: block;
   pointer-events: none;
-  border: 1px solid rgba(255, 93, 93, 0.24);
-  background: rgba(95, 13, 20, 0.2);
+  border: 1px solid rgba(255, 93, 93, 0.28);
+  background: rgba(95, 13, 20, 0.12);
 }
 
-.master-build-entry__chain {
-  width: 140%;
-  height: 4.6rem;
-  overflow: visible;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-}
-
-.master-build-entry__chain--forward {
-  transform: rotate(28deg);
-}
-
-.master-build-entry__chain--backward {
-  transform: rotate(-28deg);
+.master-build-entry__chain-svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.58;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.42));
 }
 
 .master-build-entry__chain-link {
   fill: none;
-  stroke: rgba(255, 93, 93, 0.72);
-  stroke-width: 8;
+  stroke: rgba(255, 93, 93, 0.78);
+  stroke-width: 6;
+  vector-effect: non-scaling-stroke;
 }
 
 .master-build-entry > :not(.master-build-entry__chains) {

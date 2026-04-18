@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { db } from '../../db/database';
 import type { BodymodProfile, IconicSelection } from '../../domain/bodymod/types';
@@ -66,6 +66,21 @@ const DEFAULT_RESTRICTION_SETTINGS: RestrictionSettings = {
   levelCount: 3,
   hideRestricted: false,
 };
+
+interface ChainLineSpec {
+  id: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
+interface ChainLinkSpec {
+  id: string;
+  x: number;
+  y: number;
+  angle: number;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -272,6 +287,110 @@ function readCategory(value: string | null): MasterBuildCategory {
   return categoryOptions.some((option) => option.id === value)
     ? (value as MasterBuildCategory)
     : 'all';
+}
+
+function buildChainLinks(line: ChainLineSpec): ChainLinkSpec[] {
+  const deltaX = line.endX - line.startX;
+  const deltaY = line.endY - line.startY;
+  const length = Math.hypot(deltaX, deltaY);
+
+  if (length <= 0) {
+    return [];
+  }
+
+  const linkWidth = 44;
+  const spacing = 34;
+  const linkCount = Math.max(3, Math.floor(length / spacing));
+  const unitX = deltaX / length;
+  const unitY = deltaY / length;
+  const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+  const firstDistance = linkWidth / 2;
+  const usableLength = Math.max(1, length - linkWidth);
+  const step = linkCount > 1 ? usableLength / (linkCount - 1) : 0;
+
+  return Array.from({ length: linkCount }, (_, index) => {
+    const distance = firstDistance + index * step;
+
+    return {
+      id: `${line.id}-${index}`,
+      x: line.startX + unitX * distance,
+      y: line.startY + unitY * distance,
+      angle,
+    };
+  });
+}
+
+function MasterBuildChainOverlay() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const node = ref.current;
+
+    if (!node) {
+      return;
+    }
+
+    const measuredNode = node;
+
+    function updateSize() {
+      const rect = measuredNode.getBoundingClientRect();
+      setSize((current) =>
+        Math.abs(current.width - rect.width) < 1 && Math.abs(current.height - rect.height) < 1
+          ? current
+          : { width: rect.width, height: rect.height },
+      );
+    }
+
+    updateSize();
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const width = Math.max(0, Math.round(size.width));
+  const height = Math.max(0, Math.round(size.height));
+  const chainLines = useMemo(() => {
+    if (width <= 0 || height <= 0) {
+      return [];
+    }
+
+    const xInset = Math.min(40, Math.max(18, width * 0.045));
+    const yInset = Math.min(28, Math.max(14, height * 0.12));
+
+    return [
+      {
+        id: 'forward',
+        startX: xInset,
+        startY: yInset,
+        endX: width - xInset,
+        endY: height - yInset,
+      },
+      {
+        id: 'backward',
+        startX: width - xInset,
+        startY: yInset,
+        endX: xInset,
+        endY: height - yInset,
+      },
+    ].flatMap(buildChainLinks);
+  }, [height, width]);
+
+  return (
+    <div className="master-build-entry__chains" aria-hidden="true" ref={ref}>
+      {width > 0 && height > 0 ? (
+        <svg className="master-build-entry__chain-svg" viewBox={`0 0 ${width} ${height}`} focusable="false">
+          {chainLines.map((link) => (
+            <g key={link.id} transform={`translate(${link.x} ${link.y}) rotate(${link.angle})`}>
+              <rect className="master-build-entry__chain-link" x="-22" y="-9" width="44" height="18" rx="9" />
+            </g>
+          ))}
+        </svg>
+      ) : null}
+    </div>
+  );
 }
 
 export function MasterBuildOverviewPage() {
@@ -928,26 +1047,7 @@ export function MasterBuildOverviewPage() {
                 ].filter(Boolean).join(' ')}
                 key={entry.id}
               >
-                {isRestricted ? (
-                  <div className="master-build-entry__chains" aria-hidden="true">
-                    <svg className="master-build-entry__chain master-build-entry__chain--forward" viewBox="0 0 720 72" focusable="false">
-                      {Array.from({ length: 8 }, (_, index) => (
-                        <g key={`chain-forward-${index}`} transform={`translate(${index * 90} 0)`}>
-                          <rect className="master-build-entry__chain-link" x="8" y="16" width="54" height="28" rx="14" />
-                          <rect className="master-build-entry__chain-link" x="40" y="28" width="54" height="28" rx="14" />
-                        </g>
-                      ))}
-                    </svg>
-                    <svg className="master-build-entry__chain master-build-entry__chain--backward" viewBox="0 0 720 72" focusable="false">
-                      {Array.from({ length: 8 }, (_, index) => (
-                        <g key={`chain-backward-${index}`} transform={`translate(${index * 90} 0)`}>
-                          <rect className="master-build-entry__chain-link" x="8" y="16" width="54" height="28" rx="14" />
-                          <rect className="master-build-entry__chain-link" x="40" y="28" width="54" height="28" rx="14" />
-                        </g>
-                      ))}
-                    </svg>
-                  </div>
-                ) : null}
+                {isRestricted ? <MasterBuildChainOverlay /> : null}
                 <div className="selection-editor__header">
                   <div className="stack stack--compact">
                     <label className="checkbox-row">
