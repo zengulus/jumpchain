@@ -4,6 +4,7 @@ import { useUiPreferences } from '../../app/UiPreferencesContext';
 import type { AttachmentRef } from '../../domain/attachments/types';
 import type { JumpDoc, JumpDocPdfAnnotation } from '../../domain/jumpdoc/types';
 import type { ParticipationSelection } from '../../domain/jump/selection';
+import type { WorkspaceParticipation } from '../../domain/jump/types';
 import { db } from '../../db/database';
 import { switchActiveJump } from '../../db/persistence';
 import { createId } from '../../utils/id';
@@ -73,6 +74,136 @@ function upsertSelection(records: ParticipationSelection[], record: Participatio
   return records.some((entry) => entry.id === record.id)
     ? records.map((entry) => entry.id === record.id ? record : entry)
     : [...records, record];
+}
+
+function applyAnnotationTemplateExport(jumpDoc: JumpDoc, annotation: JumpDocPdfAnnotation) {
+  const { templateId, baseTemplate } = createTemplateFromAnnotation(jumpDoc, annotation);
+  const exportedAnnotation = { ...annotation, exportedTemplateId: templateId };
+  const nextAnnotations = jumpDoc.pdfAnnotationBounds.map((entry) => entry.id === annotation.id ? exportedAnnotation : entry);
+
+  if (annotation.exportKind === 'drawback') {
+    return {
+      jumpDoc: {
+        ...jumpDoc,
+        pdfAnnotationBounds: nextAnnotations,
+        drawbacks: upsertById(jumpDoc.drawbacks, {
+          ...baseTemplate,
+          templateKind: 'drawback' as const,
+          durationYears: null,
+        }),
+      },
+      exportedAnnotation,
+    };
+  }
+
+  if (annotation.exportKind === 'origin') {
+    return {
+      jumpDoc: {
+        ...jumpDoc,
+        pdfAnnotationBounds: nextAnnotations,
+        origins: upsertById(jumpDoc.origins, {
+          id: templateId,
+          categoryKey: 'origin',
+          title: baseTemplate.title,
+          description: baseTemplate.description,
+          cost: baseTemplate.costs[0] ?? { amount: 0, currencyKey: annotation.currencyKey || '0' },
+          bounds: baseTemplate.bounds,
+          importSourceMetadata: baseTemplate.importSourceMetadata,
+        }),
+      },
+      exportedAnnotation,
+    };
+  }
+
+  if (annotation.exportKind === 'scenario') {
+    return {
+      jumpDoc: {
+        ...jumpDoc,
+        pdfAnnotationBounds: nextAnnotations,
+        scenarios: upsertById(jumpDoc.scenarios, {
+          ...baseTemplate,
+          templateKind: 'scenario' as const,
+          rewards: [],
+        }),
+      },
+      exportedAnnotation,
+    };
+  }
+
+  if (annotation.exportKind === 'companion') {
+    return {
+      jumpDoc: {
+        ...jumpDoc,
+        pdfAnnotationBounds: nextAnnotations,
+        companions: upsertById(jumpDoc.companions, {
+          ...baseTemplate,
+          templateKind: 'companion' as const,
+          count: 1,
+          allowances: {},
+          stipends: {},
+        }),
+      },
+      exportedAnnotation,
+    };
+  }
+
+  return {
+    jumpDoc: {
+      ...jumpDoc,
+      pdfAnnotationBounds: nextAnnotations,
+      purchases: upsertById(jumpDoc.purchases, {
+        ...baseTemplate,
+        templateKind: 'purchase' as const,
+        purchaseSection: annotation.purchaseSection ?? 'perk',
+        subtypeKey: null,
+        temporary: false,
+        comboBoosts: [],
+      }),
+    },
+    exportedAnnotation,
+  };
+}
+
+function applyAnnotationParticipationExport(
+  jumpDoc: JumpDoc,
+  participation: WorkspaceParticipation,
+  annotation: JumpDocPdfAnnotation,
+): WorkspaceParticipation {
+  const selection = getSelectionFromAnnotation(jumpDoc, annotation);
+
+  if (annotation.exportKind === 'drawback') {
+    return {
+      ...participation,
+      drawbacks: upsertSelection(participation.drawbacks, selection),
+    };
+  }
+
+  if (annotation.exportKind === 'origin') {
+    return {
+      ...participation,
+      origins: {
+        ...participation.origins,
+        [selection.id ?? annotation.id]: {
+          summary: selection.title,
+          description: selection.description,
+          sourceJumpDocId: jumpDoc.id,
+          sourceAnnotationId: annotation.id,
+        },
+      },
+    };
+  }
+
+  if (annotation.exportKind === 'note') {
+    return {
+      ...participation,
+      notes: [participation.notes, `${selection.title}: ${selection.description}`].filter(Boolean).join('\n\n'),
+    };
+  }
+
+  return {
+    ...participation,
+    purchases: upsertSelection(participation.purchases, selection),
+  };
 }
 
 function getSelectionFromAnnotation(jumpDoc: JumpDoc, annotation: JumpDocPdfAnnotation): ParticipationSelection {
@@ -346,133 +477,59 @@ export function JumpDocsPage() {
     }));
   }
 
-  async function exportAnnotation(annotation: JumpDocPdfAnnotation) {
+  function deleteAnnotation(annotationId: string) {
+    updateDraft((current) => ({
+      ...current,
+      pdfAnnotationBounds: current.pdfAnnotationBounds.filter((annotation) => annotation.id !== annotationId),
+    }));
+    setNotice({ tone: 'success', message: 'Deleted the annotation.' });
+  }
+
+  async function exportAnnotations(annotations: JumpDocPdfAnnotation[]) {
     if (!draftJumpDoc || !targetJump || !targetParticipation) {
       setNotice({ tone: 'error', message: 'Link a jump and choose a participant before exporting to the chain.' });
       return;
     }
 
-    let exportedTemplateId: string | null = null;
-
-    updateDraft((current) => {
-      const { templateId, baseTemplate } = createTemplateFromAnnotation(current, annotation);
-      exportedTemplateId = templateId;
-      const nextAnnotation = { ...annotation, exportedTemplateId: templateId };
-      const nextAnnotations = current.pdfAnnotationBounds.map((entry) => entry.id === annotation.id ? nextAnnotation : entry);
-
-      if (annotation.exportKind === 'drawback') {
-        return {
-          ...current,
-          pdfAnnotationBounds: nextAnnotations,
-          drawbacks: upsertById(current.drawbacks, {
-            ...baseTemplate,
-            templateKind: 'drawback',
-            durationYears: null,
-          }),
-        };
-      }
-
-      if (annotation.exportKind === 'origin') {
-        return {
-          ...current,
-          pdfAnnotationBounds: nextAnnotations,
-          origins: upsertById(current.origins, {
-            id: templateId,
-            categoryKey: 'origin',
-            title: baseTemplate.title,
-            description: baseTemplate.description,
-            cost: baseTemplate.costs[0] ?? { amount: 0, currencyKey: annotation.currencyKey || '0' },
-            bounds: baseTemplate.bounds,
-            importSourceMetadata: baseTemplate.importSourceMetadata,
-          }),
-        };
-      }
-
-      if (annotation.exportKind === 'scenario') {
-        return {
-          ...current,
-          pdfAnnotationBounds: nextAnnotations,
-          scenarios: upsertById(current.scenarios, {
-            ...baseTemplate,
-            templateKind: 'scenario',
-            rewards: [],
-          }),
-        };
-      }
-
-      if (annotation.exportKind === 'companion') {
-        return {
-          ...current,
-          pdfAnnotationBounds: nextAnnotations,
-          companions: upsertById(current.companions, {
-            ...baseTemplate,
-            templateKind: 'companion',
-            count: 1,
-            allowances: {},
-            stipends: {},
-          }),
-        };
-      }
-
-      return {
-        ...current,
-        pdfAnnotationBounds: nextAnnotations,
-        purchases: upsertById(current.purchases, {
-          ...baseTemplate,
-          templateKind: 'purchase',
-          purchaseSection: annotation.purchaseSection ?? 'perk',
-          subtypeKey: null,
-          temporary: false,
-          comboBoosts: [],
-        }),
-      };
-    });
-
-    if (!exportedTemplateId) {
-      setNotice({ tone: 'error', message: 'Unable to prepare the annotation export.' });
+    if (annotations.length === 0) {
+      setNotice({ tone: 'error', message: 'Add an annotation before exporting to the jump.' });
       return;
     }
 
-    const exportedAnnotation = { ...annotation, exportedTemplateId };
-    const selection = getSelectionFromAnnotation(draftJumpDoc, exportedAnnotation);
-    const participation = targetParticipation;
+    let nextJumpDoc = draftJumpDoc;
+    const exportedAnnotations: JumpDocPdfAnnotation[] = [];
+
+    for (const annotation of annotations) {
+      const result = applyAnnotationTemplateExport(nextJumpDoc, annotation);
+      nextJumpDoc = result.jumpDoc;
+      exportedAnnotations.push(result.exportedAnnotation);
+    }
+
+    jumpDocAutosave.updateDraft(nextJumpDoc);
+
+    let nextParticipation = targetParticipation;
+
+    for (const exportedAnnotation of exportedAnnotations) {
+      nextParticipation = applyAnnotationParticipationExport(nextJumpDoc, nextParticipation, exportedAnnotation);
+    }
 
     try {
-      if (exportedAnnotation.exportKind === 'drawback') {
-        await saveParticipationRecord({
-          ...participation,
-          drawbacks: upsertSelection(participation.drawbacks, selection),
-        });
-      } else if (exportedAnnotation.exportKind === 'origin') {
-        await saveParticipationRecord({
-          ...participation,
-          origins: {
-            ...participation.origins,
-            [selection.id ?? exportedAnnotation.id]: {
-              summary: selection.title,
-              description: selection.description,
-              sourceJumpDocId: draftJumpDoc.id,
-              sourceAnnotationId: exportedAnnotation.id,
-            },
-          },
-        });
-      } else if (exportedAnnotation.exportKind === 'note') {
-        await saveParticipationRecord({
-          ...participation,
-          notes: [participation.notes, `${selection.title}: ${selection.description}`].filter(Boolean).join('\n\n'),
-        });
-      } else {
-        await saveParticipationRecord({
-          ...participation,
-          purchases: upsertSelection(participation.purchases, selection),
-        });
-      }
+      await saveParticipationRecord(nextParticipation);
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to export annotation to the jump.' });
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Unable to export annotations to the jump.' });
       return;
     }
 
-    setNotice({ tone: 'success', message: `Exported annotation to ${targetJump.title} as ${getAnnotationExportLabel(annotation)}.` });
+    setNotice({
+      tone: 'success',
+      message: annotations.length === 1
+        ? `Exported annotation to ${targetJump.title} as ${getAnnotationExportLabel(annotations[0])}.`
+        : `Exported ${annotations.length} annotations to ${targetJump.title}.`,
+    });
+  }
+
+  async function exportAnnotation(annotation: JumpDocPdfAnnotation) {
+    await exportAnnotations([annotation]);
   }
 
   async function handleCreateParticipationTarget() {
@@ -684,7 +741,17 @@ export function JumpDocsPage() {
                 <section className="jumpdoc-annotation-panel stack stack--compact">
                   <div className="section-heading">
                     <h3>Annotation exports</h3>
-                    <span className="pill">{draftJumpDoc.pdfAnnotationBounds.length}</span>
+                    <div className="inline-meta">
+                      <span className="pill">{draftJumpDoc.pdfAnnotationBounds.length}</span>
+                      <button
+                        className="button button--secondary"
+                        type="button"
+                        disabled={!targetJump || !targetParticipation}
+                        onClick={() => void exportAnnotations(draftJumpDoc.pdfAnnotationBounds)}
+                      >
+                        Export all to jump
+                      </button>
+                    </div>
                   </div>
                   <div className="field-grid field-grid--two">
                     <label className="field">
@@ -787,6 +854,9 @@ export function JumpDocsPage() {
                             <span>{annotation.exportedTemplateId ? 'Update template' : 'Create template'}</span>
                             <button className="button button--secondary" type="button" disabled={!targetJump || !targetParticipation} onClick={() => void exportAnnotation(annotation)}>
                               Export to jump
+                            </button>
+                            <button className="button button--danger" type="button" onClick={() => deleteAnnotation(annotation.id)}>
+                              Delete
                             </button>
                           </div>
                         </div>
