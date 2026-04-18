@@ -7,7 +7,14 @@ import { switchActiveJump } from '../../db/persistence';
 import { ParticipationEditorCard, type ParticipationActor } from '../participation/ParticipationPage';
 import { SearchHighlight } from '../search/SearchHighlight';
 import { matchesSearchQuery, withSearchParams } from '../search/searchUtils';
-import { createBlankJump, createBlankParticipation, saveChainRecord, saveParticipationRecord, syncJumpParticipantMembership } from '../workspace/records';
+import {
+  createBlankJump,
+  createBlankParticipation,
+  deleteJumpCascade,
+  saveChainRecord,
+  saveParticipationRecord,
+  syncJumpParticipantMembership,
+} from '../workspace/records';
 import {
   AdvancedJsonDetails,
   AutosaveStatusIndicator,
@@ -422,6 +429,50 @@ export function JumpsPage() {
       setNotice({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Unable to switch the current jump.',
+      });
+    }
+  }
+
+  async function handleDeleteJump() {
+    const targetJump = draftJump ?? selectedJump;
+
+    if (!targetJump) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete "${targetJump.title}" and its associated records?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    const orderedJumps = workspace.jumps.slice().sort((left, right) => left.orderIndex - right.orderIndex);
+    const remainingJumps = orderedJumps.filter((jump) => jump.id !== targetJump.id);
+    const nextJump =
+      remainingJumps.find((jump) => jump.orderIndex > targetJump.orderIndex) ?? remainingJumps[remainingJumps.length - 1] ?? null;
+
+    try {
+      jumpAutosave.updateDraft(null);
+      await deleteJumpCascade(chainId, targetJump.id);
+
+      navigate(
+        nextJump
+          ? withSearchParams(`/chains/${chainId}/jumps/${nextJump.id}`, {
+              search: searchQuery,
+              guide: simpleMode ? '1' : null,
+            })
+          : withSearchParams(`/chains/${chainId}/jumps`, {
+              search: searchQuery,
+            }),
+      );
+      setNotice({
+        tone: 'success',
+        message: 'Jump deleted with its participation and rules records.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to delete jump.',
       });
     }
   }
@@ -1034,6 +1085,11 @@ export function JumpsPage() {
                             Make Current Jump
                           </button>
                         ) : null}
+                        {!activeGuideVisible ? (
+                          <button className="button button--secondary" type="button" onClick={() => void handleDeleteJump()}>
+                            Delete Jump
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ) : (
@@ -1053,6 +1109,9 @@ export function JumpsPage() {
                             Make Current Jump
                           </button>
                         )}
+                        <button className="button button--secondary" type="button" onClick={() => void handleDeleteJump()}>
+                          Delete Jump
+                        </button>
                       </div>
                     </div>
                   )}

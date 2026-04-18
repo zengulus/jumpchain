@@ -416,6 +416,63 @@ export async function deleteCompanionCascade(chainId: string, companionId: strin
   );
 }
 
+export async function deleteJumpCascade(chainId: string, jumpId: string) {
+  await ensureDatabaseOpen();
+  const updatedAt = createTimestamp();
+
+  await db.transaction(
+    'rw',
+    [
+      db.chains,
+      db.jumps,
+      db.participations,
+      db.companionParticipations,
+      db.jumpRulesContexts,
+      db.notes,
+      db.effects,
+      db.attachments,
+    ],
+    async () => {
+      const targetJump = await db.jumps.get(jumpId);
+      const jumperParticipationIds = await db.participations.where('jumpId').equals(jumpId).primaryKeys();
+      const companionParticipationIds = await db.companionParticipations.where('jumpId').equals(jumpId).primaryKeys();
+      const allParticipationIds = [...jumperParticipationIds, ...companionParticipationIds].map((id) => String(id));
+
+      await db.jumps.delete(jumpId);
+      await db.participations.where('jumpId').equals(jumpId).delete();
+      await db.companionParticipations.where('jumpId').equals(jumpId).delete();
+      await db.jumpRulesContexts.where('jumpId').equals(jumpId).delete();
+
+      await deleteOwnedRecordsForEntity('jump', jumpId);
+
+      for (const participationId of allParticipationIds) {
+        await deleteOwnedRecordsForEntity('participation', participationId);
+      }
+
+      const chain = await db.chains.get(chainId);
+      let activeJumpId = chain?.activeJumpId ?? null;
+
+      if (activeJumpId === jumpId) {
+        const branchJumps = targetJump
+          ? await db.jumps.where('branchId').equals(targetJump.branchId).toArray()
+          : await db.jumps.where('chainId').equals(chainId).toArray();
+        const orderedJumps = branchJumps.slice().sort((left, right) => left.orderIndex - right.orderIndex);
+        const nextJump =
+          targetJump
+            ? orderedJumps.find((jump) => jump.orderIndex > targetJump.orderIndex) ?? orderedJumps[orderedJumps.length - 1] ?? null
+            : orderedJumps[orderedJumps.length - 1] ?? null;
+
+        activeJumpId = nextJump?.id ?? null;
+      }
+
+      await db.chains.update(chainId, {
+        activeJumpId,
+        updatedAt,
+      });
+    },
+  );
+}
+
 async function deleteOwnedRecordsForEntity(ownerEntityType: Note['ownerEntityType'], ownerEntityId: string) {
   const notes = await db.notes
     .filter((note) => note.ownerEntityType === ownerEntityType && note.ownerEntityId === ownerEntityId)

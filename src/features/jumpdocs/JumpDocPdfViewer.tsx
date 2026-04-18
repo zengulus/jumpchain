@@ -413,6 +413,14 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
             className="button button--secondary"
             type="button"
             disabled={!documentProxy || pageNumber <= 1}
+            onClick={() => setPageNumber(1)}
+          >
+            First
+          </button>
+          <button
+            className="button button--secondary"
+            type="button"
+            disabled={!documentProxy || pageNumber <= 1}
             onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
           >
             Previous
@@ -425,6 +433,14 @@ export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsC
             onClick={() => setPageNumber((current) => documentProxy ? Math.min(documentProxy.numPages, current + 1) : current)}
           >
             Next
+          </button>
+          <button
+            className="button button--secondary"
+            type="button"
+            disabled={!documentProxy || pageNumber >= documentProxy.numPages}
+            onClick={() => documentProxy && setPageNumber(documentProxy.numPages)}
+          >
+            Last
           </button>
           <button className="button button--secondary" type="button" disabled={!documentProxy} onClick={() => setScale((current) => Math.max(0.6, Number((current - 0.15).toFixed(2))))}>
             Zoom out

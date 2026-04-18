@@ -1,1 +1,0 @@
-import{bG as e}from"./main-6ak_4PwZ.js";function n(t){return`Safety Snapshot: ${t}`}function r(t,a){const o=[`Automatic checkpoint created before ${t.toLowerCase()}.`];return a&&a.trim().length>0&&o.push(a.trim()),o.join(" ")}async function s(t){return e(t.chainId,t.branchId,n(t.actionLabel),r(t.actionLabel,t.details))}export{s as c};

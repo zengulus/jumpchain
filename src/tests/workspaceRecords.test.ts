@@ -1,5 +1,5 @@
 import { db } from '../db/database';
-import { createBlankChain, getChainBundle } from '../db/persistence';
+import { createBlankChain, getChainBundle, switchActiveJump } from '../db/persistence';
 import type { AttachmentRef } from '../domain/attachments/types';
 import type { Effect } from '../domain/effects/types';
 import type { Note } from '../domain/notes/types';
@@ -9,7 +9,9 @@ import {
   createBlankJump,
   createBlankJumper,
   createBlankNote,
+  createBlankJumpRulesContext,
   deleteCompanionCascade,
+  deleteJumpCascade,
   saveChainRecord,
   syncJumpParticipantMembership,
 } from '../features/workspace/records';
@@ -139,6 +141,112 @@ describe('workspace record helpers', () => {
 
     expect(persisted?.companions).toHaveLength(0);
     expect(persisted?.companionParticipations).toHaveLength(0);
+    expect(persisted?.notes).toHaveLength(0);
+    expect(persisted?.effects).toHaveLength(0);
+    expect(persisted?.attachments).toHaveLength(0);
+  });
+
+  it('cascades jump-owned and jump-participation-owned records on delete', async () => {
+    await resetDatabase();
+    const bundle = await createBlankChain('Jump Cascade');
+    const branchId = bundle.chain.activeBranchId;
+    const jumper = createBlankJumper(bundle.chain.id, branchId);
+    const companion = createBlankCompanion(bundle.chain.id, branchId);
+    const deletedJump = {
+      ...createBlankJump(bundle.chain.id, branchId, 0),
+      title: 'Deleted Jump',
+    };
+    const keptJump = {
+      ...createBlankJump(bundle.chain.id, branchId, 1),
+      title: 'Kept Jump',
+    };
+
+    await saveChainRecord(db.jumpers, jumper);
+    await saveChainRecord(db.companions, companion);
+    await saveChainRecord(db.jumps, deletedJump);
+    await saveChainRecord(db.jumps, keptJump);
+    await syncJumpParticipantMembership(bundle.chain.id, deletedJump, jumper.id, 'jumper', true);
+    await syncJumpParticipantMembership(bundle.chain.id, deletedJump, companion.id, 'companion', true);
+    await switchActiveJump(bundle.chain.id, deletedJump.id);
+
+    const withParticipations = await getChainBundle(bundle.chain.id);
+    const jumperParticipation = withParticipations?.participations[0];
+    const companionParticipation = withParticipations?.companionParticipations[0];
+
+    if (!jumperParticipation || !companionParticipation) {
+      throw new Error('Expected jump participation records.');
+    }
+
+    const jumpNote: Note = {
+      ...createBlankNote(bundle.chain.id, branchId, deletedJump.id),
+      ownerEntityType: 'jump',
+      ownerEntityId: deletedJump.id,
+      scopeType: 'jump',
+      noteType: 'jump',
+      title: 'Jump note',
+    };
+    const jumpEffect: Effect = {
+      ...createBlankEffect(bundle.chain.id, branchId, deletedJump.id),
+      ownerEntityType: 'jump',
+      ownerEntityId: deletedJump.id,
+      scopeType: 'jump',
+      title: 'Jump effect',
+    };
+    const participationNote: Note = {
+      ...createBlankNote(bundle.chain.id, branchId, jumperParticipation.id),
+      ownerEntityType: 'participation',
+      ownerEntityId: jumperParticipation.id,
+      scopeType: 'participation',
+      noteType: 'participation',
+      title: 'Participation note',
+    };
+    const companionParticipationEffect: Effect = {
+      ...createBlankEffect(bundle.chain.id, branchId, companionParticipation.id),
+      ownerEntityType: 'participation',
+      ownerEntityId: companionParticipation.id,
+      scopeType: 'participation',
+      title: 'Companion participation effect',
+    };
+    const jumpAttachment: AttachmentRef = {
+      id: 'attachment-jump-test',
+      chainId: bundle.chain.id,
+      branchId,
+      createdAt: deletedJump.createdAt,
+      updatedAt: deletedJump.updatedAt,
+      ownerEntityType: 'jump',
+      ownerEntityId: deletedJump.id,
+      scopeType: 'jump',
+      label: 'Jump attachment',
+      kind: 'link',
+      url: 'https://example.invalid/jump',
+      storage: 'external',
+    };
+    const jumpRulesContext = createBlankJumpRulesContext(bundle.chain.id, branchId, deletedJump.id, {
+      gauntlet: false,
+      warehouseAccess: 'full',
+      powerAccess: 'full',
+      itemAccess: 'full',
+      altFormAccess: 'full',
+      supplementAccess: 'full',
+    });
+
+    await saveChainRecord(db.notes, jumpNote);
+    await saveChainRecord(db.effects, jumpEffect);
+    await saveChainRecord(db.notes, participationNote);
+    await saveChainRecord(db.effects, companionParticipationEffect);
+    await saveChainRecord(db.attachments, jumpAttachment);
+    await saveChainRecord(db.jumpRulesContexts, jumpRulesContext);
+
+    await deleteJumpCascade(bundle.chain.id, deletedJump.id);
+
+    const persisted = await getChainBundle(bundle.chain.id);
+
+    expect(persisted?.jumps).toHaveLength(1);
+    expect(persisted?.jumps[0]?.id).toBe(keptJump.id);
+    expect(persisted?.chain.activeJumpId).toBe(keptJump.id);
+    expect(persisted?.participations).toHaveLength(0);
+    expect(persisted?.companionParticipations).toHaveLength(0);
+    expect(persisted?.jumpRulesContexts).toHaveLength(0);
     expect(persisted?.notes).toHaveLength(0);
     expect(persisted?.effects).toHaveLength(0);
     expect(persisted?.attachments).toHaveLength(0);
