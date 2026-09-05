@@ -75,10 +75,24 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
   add('Current jump', {id: campaign.state.scene.stamp.jumpId, title: bundle.jumps.find(j => j.id === campaign.state.scene.stamp.jumpId)?.title, documents: bundle.jumpDocs.filter(d => bundle.jumps.find(j => j.id === campaign.state.scene.stamp.jumpId)?.jumpDocIds.includes(d.id)).map(d => ({id:d.id,title:d.title,author:d.author,source:d.source,notes:d.notes}))}, [], {salience: 'required', authority: 'authoritative', domain: 'mechanics', required: true});
   add('Current scene facts', campaign.state.scene, [], {salience: 'required', authority: 'campaign-established', domain: 'world-state', required: true});
   add('Current user action', action, [], {salience: 'directive', authority: null, domain: 'player-action', required: true});
-  // NPC state is first-class. Never serialize beliefs as reality. The claim "the NPC believes X" is
-  // itself campaign-established (it is stored in the reviewed NPC record), but its npc-epistemic
-  // domain prevents it from competing as objective world truth: it never claims "X is true".
-  for (const npc of campaign.state.npcs.filter(n => campaign.state.scene.npcIds.includes(n.id) || campaign.state.scene.presentCompanionIds.includes(n.companionId ?? '') || tokens(`${n.name} ${n.aliases.join(' ')}`).some(t => tokens(action).includes(t)))) add('NPC beliefs and knowledge (not objective reality)', npc, [npc.id], {salience: 'required', authority: 'campaign-established', domain: 'npc-epistemic', required: true});
+  // NPC state is first-class and split by claim kind. Selection is unchanged: present in the
+  // scene, linked to a present companion, or explicitly referenced by the current action.
+  const selectedNpcs = campaign.state.npcs.filter(n => campaign.state.scene.npcIds.includes(n.id) || campaign.state.scene.presentCompanionIds.includes(n.companionId ?? '') || tokens(`${n.name} ${n.aliases.join(' ')}`).some(t => tokens(action).includes(t)));
+  for (const npc of selectedNpcs) {
+    // Layer 1 — NPC campaign/objective state: reviewed claims about established campaign reality
+    // (identity, location, relationship, resources, current goals/plans, event links).
+    add('NPC campaign state', {
+      id: npc.id, name: npc.name, aliases: npc.aliases, setting: npc.setting, companionId: npc.companionId,
+      background: npc.background, location: npc.location, relationship: npc.relationship,
+      goals: npc.goals, plans: npc.plans, resources: npc.resources, eventIds: npc.eventIds,
+      lastInteraction: npc.lastInteraction,
+    }, [npc.id], {salience: 'required', authority: 'campaign-established', domain: 'world-state', required: true});
+    // Layer 2 — NPC epistemic/subjective state: "the NPC believes/knows/suspects X" is itself
+    // campaign-established, but its npc-epistemic domain prevents it from competing as objective
+    // world truth: it never claims "X is true". Omitted entirely when empty.
+    const epistemic = { beliefs: npc.beliefs, knowledge: npc.knowledge, beliefsAboutJumper: npc.beliefsAboutJumper, suspicions: npc.suspicions, opinions: npc.opinions };
+    if ([...epistemic.beliefs, ...epistemic.knowledge, ...epistemic.beliefsAboutJumper, ...epistemic.suspicions, ...epistemic.opinions].length > 0) add('NPC beliefs and knowledge (not objective reality)', epistemic, [npc.id], {salience: 'required', authority: 'campaign-established', domain: 'npc-epistemic', required: true});
+  }
   const terms = new Set(tokens(`${action} ${campaign.state.scene.location} ${campaign.state.scene.threads.join(' ')}`));
   const optional = records.filter(r => !r.required).map(r => ({r, score: tokens(r.text).reduce((n,t) => n+(terms.has(t) ? 1 : 0),0) + (campaign.state.scene.presentCompanionIds.includes(r.owner) ? 2 : 0) })).sort((a,b) => b.score-a.score || a.r.id.localeCompare(b.r.id));
   let mechanicsLeft = settings.mechanicsBudget;

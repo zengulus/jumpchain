@@ -77,6 +77,32 @@ describe('context layer authority, salience, domain, and mandatory metadata',()=
     const fact=context.layers.find(l=>l.name==='Retrieved campaign memories');
     expect(fact?.domain).toBe('world-state');expect(fact?.authority).toBe('campaign-established');
   });
+  it('compiles reviewed NPC objective state as campaign-established world-state',()=>{
+    const {bundle,campaign}=aiFixture();
+    campaign.state.npcs=[NpcSchema.parse({id:'npc',name:'Minerva',location:'Hogwarts',beliefs:['The Jumper cannot fly.']})];campaign.state.scene.npcIds=['npc'];
+    const context=compileContext(bundle,campaign,'Talk to Minerva',ProviderSchema.parse({}));
+    const objective=context.layers.find(l=>l.name==='NPC campaign state');
+    expect(objective?.authority).toBe('campaign-established');expect(objective?.domain).toBe('world-state');
+    expect(objective?.salience).toBe('required');expect(objective?.mandatory).toBe(true);expect(objective?.content).toContain('Hogwarts');
+    const epistemic=context.layers.find(l=>l.name.startsWith('NPC beliefs'));
+    expect(epistemic?.authority).toBe('campaign-established');expect(epistemic?.domain).toBe('npc-epistemic');
+    expect(epistemic?.content).not.toContain('Hogwarts');
+  });
+  it('keeps NPC goals and plans in the objective campaign-state layer, not the epistemic layer',()=>{
+    const {bundle,campaign}=aiFixture();
+    campaign.state.npcs=[NpcSchema.parse({id:'npc',name:'Minerva',goals:['Keep Hogwarts safe.'],plans:['Investigate the jumper.']})];campaign.state.scene.npcIds=['npc'];
+    const context=compileContext(bundle,campaign,'Talk to Minerva',ProviderSchema.parse({}));
+    const objective=context.layers.find(l=>l.name==='NPC campaign state');
+    expect(objective?.domain).toBe('world-state');expect(objective?.content).toContain('Keep Hogwarts safe.');expect(objective?.content).toContain('Investigate the jumper.');
+    expect(context.layers.some(l=>l.name.startsWith('NPC beliefs'))).toBe(false);
+  });
+  it('omits empty NPC epistemic layers while keeping the objective layer',()=>{
+    const {bundle,campaign}=aiFixture();
+    campaign.state.npcs=[NpcSchema.parse({id:'npc',name:'Minerva',location:'Hogwarts'})];campaign.state.scene.npcIds=['npc'];
+    const context=compileContext(bundle,campaign,'Talk to Minerva',ProviderSchema.parse({}));
+    expect(context.layers.some(l=>l.name.startsWith('NPC beliefs'))).toBe(false);
+    expect(context.layers.some(l=>l.name==='NPC campaign state')).toBe(true);
+  });
   it('distinguishes directives and user actions from factual authority',()=>{
     const {bundle,campaign}=aiFixture();const context=compileContext(bundle,campaign,'Attack the troll',ProviderSchema.parse({}));
     for(const name of ['GM system rules','Campaign style and rules']){
