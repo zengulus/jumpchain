@@ -108,11 +108,19 @@ export type ContextSalience = z.infer<typeof ContextSalienceSchema>;
 // factual claim (presentation directives, the current user action, provisional narration).
 export const ContextAuthoritySchema = AuthoritySchema.nullable();
 export type ContextAuthority = z.infer<typeof ContextAuthoritySchema>;
+// ContextDomain describes the KIND of information a layer carries, independent of how strongly
+// it wins conflicts (authority) or how much attention it gets (salience). An NPC belief is a
+// campaign-established claim about the NPC's internal state (npc-epistemic), NOT a claim about
+// objective world reality (world-state): "Minerva believes X" and "X is true" are distinct claims.
+export const ContextDomainSchema = z.enum(['directive', 'player-action', 'mechanics', 'world-state', 'npc-epistemic', 'narrative-history']);
+export type ContextDomain = z.infer<typeof ContextDomainSchema>;
 export const ContextLayerSchema = z.object({
   name: z.string(), content: z.string(), sourceIds: strings, estimatedTokens: z.number(),
   // Defaults keep legacy saved contexts parseable; compiled layers always carry explicit values.
   salience: ContextSalienceSchema.default('background'),
   authority: ContextAuthoritySchema.default(null),
+  domain: ContextDomainSchema.default('narrative-history'),
+  mandatory: z.boolean().default(false),
 });
 export type ContextLayer = z.infer<typeof ContextLayerSchema>;
 export const ContextSchema = z.object({
