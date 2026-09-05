@@ -39,13 +39,37 @@ describe('local API and mock model orchestration',()=>{
     const parent=await store.get('vertical');const res=await post('/campaigns/vertical/fork',{revision:parent.revision,turnId:parent.turns[0].id,title:'Alternate'});expect(res.status).toBe(201);expect(res.body.turns).toHaveLength(0);expect(res.body.state).toEqual(parent.turns[0].before);expect((await store.get('vertical')).turns).toHaveLength(1);
   });
   it('rebuilds and deletes disposable indexes without deleting world knowledge',async()=>{
-    const {campaign}=aiFixture();campaign.id='index';campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Hogwarts',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'entry',title:'Hogwarts',text:'Hogwarts castle has moving stairs.'}]})];await store.save(campaign);
+    const {bundle,campaign}=aiFixture();campaign.id='index';campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Hogwarts',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'entry',title:'Hogwarts',text:'Hogwarts castle has moving stairs.'}]})];await store.save(campaign);
     const config=await store.config();config.providers.embeddings=ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-embedding'});await store.saveConfig(config);
-    expect((await post('/campaigns/index/rebuild-index',{})).body.count).toBe(1);expect((await store.index('index'))?.vectors).toBeDefined();
+    expect((await post('/campaigns/index/rebuild-index',{bundle})).body.count).toBe(1);expect((await store.index('index'))?.vectors).toBeDefined();
     const query=await post('/campaigns/index/query',{query:'Hogwarts'});expect(query.body.results[0].reason).toContain('dense');
     await post('/campaigns/index/delete-index',{});expect(await store.index('index')).toBeUndefined();expect((await store.get('index')).worldbooks).toHaveLength(1);
     expect((await post('/campaigns/index/query',{query:'Hogwarts'})).body.diagnostics[0]).toMatch(/Index stale or absent/);
     delete config.providers.embeddings;await store.saveConfig(config);
+  });
+  it('E: rejects saving worldbooks whose Jump scope is outside the campaign branch, leaving persisted books untouched',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='wb-save';await store.save(campaign);
+    const bad=WorldbookSchema.parse({id:'bad-book',title:'Fate Lore',jumpId:'banana',entries:[{id:'e',title:'T',text:'X'}]});
+    const result=await post('/campaigns/wb-save/worldbooks',{bundle,revision:0,worldbooks:[...campaign.worldbooks,bad]});
+    expect(result.body.error).toMatch(/Fate Lore/);expect(result.body.error).toMatch(/banana/);
+    expect((await store.get('wb-save')).worldbooks).toEqual(campaign.worldbooks);
+  });
+  it('F: generation fails before narration when a persisted worldbook has an invalid Jump scope',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='stale-scope';
+    campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Fate Lore',jumpId:'banana',entries:[{id:'e',title:'T',text:'X'}]})];await store.save(campaign);
+    const res=await fetch(`${base}/api/v1/campaigns/stale-scope/turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bundle,revision:0,action:'Enter the hall'})});
+    const events=(await res.text()).trim().split('\n').map(l=>JSON.parse(l));
+    const error=events.find(e=>e.type==='error')?.error ?? '';
+    expect(error).toMatch(/Fate Lore/);expect(error).toMatch(/banana/);expect(error).toMatch(/campaign branch/);
+    expect(events.some(e=>e.type==='token')).toBe(false);expect(events.some(e=>e.type==='done')).toBe(false);
+  });
+  it('G: rejects embedding rebuilds when worldbook ownership cannot be validated, before embedding work',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='bad-index';
+    campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Fate Lore',jumpId:'banana',entries:[{id:'e',title:'T',text:'X'}]})];await store.save(campaign);
+    // No embeddings model is assigned; the scope error must surface instead of an embeddings error.
+    const result=await post('/campaigns/bad-index/rebuild-index',{bundle});
+    expect(result.body.error).toMatch(/Fate Lore/);expect(result.body.error).toMatch(/banana/);
+    expect(await store.index('bad-index')).toBeUndefined();
   });
   it('rejects stale revisions and hostile browser origins/Host headers',async()=>{
     const c=await store.get('vertical');expect((await post('/campaigns/vertical/settings',{revision:-1,settings:c.settings})).body.error).toMatch(/another window/);

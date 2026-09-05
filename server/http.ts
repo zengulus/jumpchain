@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { NativeChainBundleSchema } from '../src/schemas/save';
 import { CampaignSchema, SettingsSchema, ServiceConfigSchema, ProviderSchema, RoleSchema, SceneSchema, StateSchema, WorldbookSchema, SummarySchema, migrateCampaign, stableStringify, type Campaign } from '../src/ai/schema';
-import { applyProposal, auditChange, rollbackLatest, validateState } from '../src/ai/state';
+import { applyProposal, auditChange, rollbackLatest, validateState, validateWorldbookScopes } from '../src/ai/state';
 import { trackerFingerprint } from '../src/ai/context';
 import { PdfSectionSchema, extractionInstructions, validateExtraction } from '../src/ai/documents';
 import { LocalStore } from './store';
@@ -104,7 +104,10 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
         }
         await gm.exclusive(campaignId,async signal => {
           const c = await store.get(campaignId);
-          if (operation === 'rebuild-index') {json(res,await gm.rebuild(c,signal));return;}
+          if (operation === 'rebuild-index') {
+            const input = z.object({bundle:NativeChainBundleSchema}).parse(raw);
+            json(res,await gm.rebuild(c,input.bundle,signal));return;
+          }
           if (operation === 'delete-index') {await store.deleteIndex(campaignId);json(res,{ok:true});return;}
           if (operation === 'fork') {
             const input = z.object({revision:z.number().int(),turnId:z.string().optional(),title:z.string().min(1)}).parse(raw); revision(c,input.revision);
@@ -133,7 +136,14 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
           await store.transaction(campaignId,latest => {
             const input = z.object({revision:z.number().int()}).passthrough().parse(raw);revision(latest,input.revision);
             if (operation === 'settings') latest.settings=SettingsSchema.parse(input.settings);
-            else if (operation === 'worldbooks') latest.worldbooks=z.array(WorldbookSchema).parse(input.worldbooks);
+            else if (operation === 'worldbooks') {
+              // Worldbook ownership is checked against the supplied tracker bundle before saving:
+              // a book scoped to a Jump outside this campaign branch must fail explicitly rather
+              // than silently becoming invisible lore. The whole update is rejected on failure.
+              const parsed = BodySchema.extend({worldbooks:z.array(WorldbookSchema)}).parse(raw);
+              validateWorldbookScopes(latest, parsed.bundle, parsed.worldbooks);
+              latest.worldbooks = parsed.worldbooks;
+            }
             else if (operation === 'state') {
               const parsed=BodySchema.extend({state:StateSchema}).parse(raw);validateState(parsed.state,parsed.bundle,latest);
               auditChange(latest,parsed.state,'Player edited campaign state',null,id());

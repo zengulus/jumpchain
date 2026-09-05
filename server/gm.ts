@@ -3,7 +3,7 @@ import type { NativeChainBundle } from '../src/domain/save';
 import { compileContext, estimateTokens } from '../src/ai/context';
 import { knowledgeRecords, hybridRetriever, indexFingerprint, type RetrievalFilter, type Retrieved } from '../src/ai/retrieval';
 import { ProposalSchema, SummarySchema, stableStringify, type Campaign, type ProviderConfig, type Turn } from '../src/ai/schema';
-import { applyProposal, proposalInstructions } from '../src/ai/state';
+import { applyProposal, proposalInstructions, validateWorldbookScopes } from '../src/ai/state';
 import { LocalStore } from './store';
 import { openAICompatible, parseModelJson, type Message } from './provider';
 
@@ -34,7 +34,10 @@ export class GMService {
     const memories = results.filter(r => r.record.sourceType !== 'world').slice(0,campaign.settings.memoryDepth);
     return {results:[...memories,...lore],diagnostics};
   }
-  async rebuild(campaign: Campaign, signal?: AbortSignal) {
+  async rebuild(campaign: Campaign, bundle: NativeChainBundle, signal?: AbortSignal) {
+    // Reject worldbooks whose Jump ownership cannot be validated against the supplied tracker
+    // bundle before any embedding work begins. Bad ownership must fail loudly, never index silently.
+    validateWorldbookScopes(campaign, bundle);
     const config = (await this.store.config()).providers.embeddings;
     if (!config) throw new Error('No embeddings model assigned. Lexical retrieval already works without an index.');
     const records = knowledgeRecords(campaign);
@@ -61,6 +64,9 @@ export class GMService {
     const campaign = await this.store.get(id);
     if (campaign.revision !== expectedRevision) throw new Error('Campaign changed in another window. Reload before generating.');
     if (campaign.turns.some(t => t.proposalStatus === 'pending')) throw new Error('Review or reject pending changes before the next turn.');
+    // Imported/stale campaign data must not reach retrieval or narration while a persisted
+    // worldbook names a Jump outside this branch. Fail loudly with the actionable scope error.
+    validateWorldbookScopes(campaign, bundle);
     const config = await this.store.config();
     const {results,diagnostics} = await this.retrieve(campaign,action,{},signal);
     const context = compileContext(bundle,campaign,action,config.providers.narrator,results,diagnostics);

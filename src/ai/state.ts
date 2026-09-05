@@ -1,6 +1,6 @@
 import type { NativeChainBundle } from '../domain/save';
 import { buildBranchWorkspace } from '../domain/chain/selectors';
-import { migrateCampaign, ProposalSchema, StateSchema, stableStringify, type Campaign, type CampaignState, type Proposal } from './schema';
+import { migrateCampaign, ProposalSchema, StateSchema, stableStringify, type Campaign, type CampaignState, type Proposal, type Worldbook } from './schema';
 
 export function validateState(state: CampaignState, bundle?: NativeChainBundle, campaign?: Campaign) {
   StateSchema.parse(state);
@@ -29,6 +29,18 @@ export function validateState(state: CampaignState, bundle?: NativeChainBundle, 
     const participating = new Set(ws.participations.filter(p => p.jumpId === state.scene.stamp.jumpId && p.participantKind === 'companion' && p.status === 'active').map(p => p.participantId));
     for (const id of state.scene.presentCompanionIds) if (!participating.has(id)) throw new Error(`Companion ${id} is not active in this jump’s tracker participation.`);
     for (const npc of state.npcs) if (npc.companionId && !ws.companions.some(c => c.id === npc.companionId)) throw new Error('NPC links to an unknown tracker companion.');
+  }
+}
+// Explicit-but-invalid worldbook Jump ownership is an ERROR, not legacy missing scope. Migration
+// (migrateCampaign) handles genuinely legacy books that predate book-level jumpId; this validator
+// is for current data that names a Jump outside the campaign's branch. Disabled books are validated
+// too: disabled means "don't retrieve this source", not "ignore broken referential integrity".
+export function validateWorldbookScopes(campaign: Campaign, bundle: NativeChainBundle, worldbooks: Worldbook[] = campaign.worldbooks): void {
+  if (bundle.chain.id !== campaign.chainId || !bundle.branches.some(b => b.id === campaign.branchId)) throw new Error('Tracker does not match this campaign.');
+  const ws = buildBranchWorkspace(bundle, campaign.branchId);
+  const valid = new Set(ws.jumps.map(j => j.id));
+  for (const book of worldbooks) {
+    if (!valid.has(book.jumpId)) throw new Error(`Worldbook "${book.title}" is scoped to unknown Jump ID "${book.jumpId}". Reassign the worldbook to a Jump in this campaign branch.`);
   }
 }
 export function applyProposal(previous: CampaignState, raw: unknown, bundle: NativeChainBundle, campaign: Campaign, sourceMessageIds: string[]): CampaignState {

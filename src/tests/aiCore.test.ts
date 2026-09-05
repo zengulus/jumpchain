@@ -2,7 +2,7 @@ import { describe,it,expect } from 'vitest';
 import { compileContext, mechanicalRecords, trackerFingerprint } from '../ai/context';
 import { ContextSchema, FactSchema, NpcSchema, ProviderSchema, ProposalSchema, TurnSchema, WorldbookSchema, stableStringify, migrateCampaign } from '../ai/schema';
 import { eligibleRecords, hybridRetriever, indexFingerprint, knowledgeRecords } from '../ai/retrieval';
-import { applyProposal, auditChange, rollbackLatest, validateState } from '../ai/state';
+import { applyProposal, auditChange, rollbackLatest, validateState, validateWorldbookScopes } from '../ai/state';
 import { exportSillyTavernWorldbook, isSillyTavernWorldInfo } from '../ai/sillyTavern';
 import { extractedJumpDoc, importWorldbook, validateExtraction } from '../ai/documents';
 import { createBlankJumpDoc } from '../features/workspace/records';
@@ -318,6 +318,47 @@ describe('worldbook Jump ownership scope',()=>{
     expect(importWorldbook(JSON.stringify(withJump),'n.json','ignored',{currentJumpId:'jump-a'}).jumpId).toBe('explicit-jump');
     const legacy={id:'n',title:'Native',entries:[{id:'e',title:'T',text:'X'}]};
     expect(importWorldbook(JSON.stringify(legacy),'n.json','ignored',{currentJumpId:'jump-a'}).jumpId).toBe('jump-a');
+  });
+});
+describe('worldbook scope validation against the tracker branch',()=>{
+  function validBundle(){const {bundle,campaign}=aiFixture();return {bundle,campaign};}
+  it('A: accepts worldbooks scoped to a Jump that exists in the campaign branch',()=>{
+    const {bundle,campaign}=validBundle();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'w',title:'Canon lore',jumpId:bundle.jumps[0].id,entries:[{id:'e',title:'T',text:'X'}]})];
+    expect(()=>validateWorldbookScopes(campaign,bundle)).not.toThrow();
+  });
+  it('B: fails clearly for a worldbook scoped to an unknown Jump, naming the book and the bad ID',()=>{
+    const {bundle,campaign}=validBundle();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'w',title:'Fate Lore',jumpId:'banana',entries:[{id:'e',title:'T',text:'X'}]})];
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/Fate Lore/);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/banana/);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/unknown Jump ID/);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/campaign branch/);
+  });
+  it('C: rejects a Jump that exists in the tracker but belongs to a different branch',()=>{
+    const {bundle,campaign}=validBundle();
+    const otherBranch={...bundle.branches.find(b=>b.id===campaign.branchId)!,id:'other-branch'};
+    const otherJump={...bundle.jumps[0],id:'other-jump',branchId:'other-branch'};
+    bundle.branches=[...bundle.branches,otherBranch];bundle.jumps=[...bundle.jumps,otherJump];
+    campaign.worldbooks=[WorldbookSchema.parse({id:'w',title:'Cross-branch lore',jumpId:'other-jump',entries:[{id:'e',title:'T',text:'X'}]})];
+    expect(bundle.jumps.some(j=>j.id==='other-jump')).toBe(true);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/other-jump/);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/Cross-branch lore/);
+  });
+  it('D: validates disabled worldbooks too — disabled is not an excuse for broken ownership',()=>{
+    const {bundle,campaign}=validBundle();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'w',title:'Sealed lore',jumpId:'banana',enabled:false,entries:[{id:'e',title:'T',text:'X'}]})];
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/Sealed lore/);
+    expect(()=>validateWorldbookScopes(campaign,bundle)).toThrow(/banana/);
+    const valid={...campaign.worldbooks[0],jumpId:bundle.jumps[0].id};
+    expect(()=>validateWorldbookScopes(campaign,bundle,[valid])).not.toThrow();
+  });
+  it('validates an explicit worldbooks argument rather than only persisted books',()=>{
+    const {bundle,campaign}=validBundle();
+    const good=WorldbookSchema.parse({id:'good',title:'Good',jumpId:bundle.jumps[0].id,entries:[{id:'e',title:'T',text:'X'}]});
+    const bad=WorldbookSchema.parse({id:'bad',title:'Bad lore',jumpId:'banana',entries:[{id:'e',title:'T',text:'X'}]});
+    expect(()=>validateWorldbookScopes(campaign,bundle,[good])).not.toThrow();
+    expect(()=>validateWorldbookScopes(campaign,bundle,[good,bad])).toThrow(/Bad lore/);
   });
 });
 describe('reviewed ingestion',()=>{
