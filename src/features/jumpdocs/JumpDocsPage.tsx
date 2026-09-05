@@ -740,6 +740,7 @@ export function JumpDocsPage() {
 
               <JumpDocPdfViewer
                 source={pdfSource}
+                initialPage={Number(searchParams.get('page') ?? 1)}
                 fileName={pdfFileName}
                 annotations={draftJumpDoc.pdfAnnotationBounds ?? []}
                 onAnnotationsChange={(pdfAnnotationBounds) => updateDraft((current) => ({ ...current, pdfAnnotationBounds }))}

@@ -1,0 +1,30 @@
+.ai-workspace { max-width: 1500px; margin: 0 auto; width: 100%; }
+.ai-heading, .ai-actions, .ai-source-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.ai-heading { justify-content:space-between; }
+.ai-heading h1 { margin:0; }
+.ai-panel { padding:24px; border:1px solid var(--border, #384152); border-radius:14px; background:var(--surface, #18212e); }
+.ai-tabs { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:12px; border-bottom:1px solid #394253; }
+.ai-tabs [aria-current="page"] { background:#315c66; color:#fff; border-color:#72b4b0; }
+.ai-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+.ai-workspace label { display:flex; flex-direction:column; gap:6px; }
+.ai-workspace label:has(input[type="checkbox"]) { display:flex; flex-direction:row; align-items:center; }
+.ai-workspace input[type="checkbox"] { width:auto; }
+.ai-workspace textarea, .ai-workspace input:not([type="checkbox"]), .ai-workspace select { width:100%; }
+.ai-workspace button { white-space:normal; }
+.ai-workspace fieldset { border:1px solid #394253; border-radius:8px; padding:16px; display:grid; gap:14px; }
+.ai-play-grid { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:24px; align-items:start; }
+.ai-play-grid aside { position:sticky; top:20px; max-height:85vh; overflow:auto; }
+.ai-narrative { min-width:0; }
+.ai-turn { padding:22px; border:1px solid #394253; border-radius:12px; }
+.ai-turn header { color:#9baebb; font-size:.85rem; }
+.ai-user-action { border-left:3px solid #79b8ad; padding:4px 14px; }
+.ai-user-action p, .ai-prose { white-space:pre-wrap; overflow-wrap:anywhere; }
+.ai-prose { line-height:1.8; }
+.ai-compose { padding:20px; border:1px solid #6e9f9b; border-radius:12px; }
+.ai-empty { padding:40px 24px; color:#abbcca; }
+.ai-workspace pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:520px; overflow:auto; padding:14px; background:#111924; border-radius:8px; font-size:.85rem; }
+.ai-json { font-family:monospace; font-size:.85rem; }
+.ai-workspace summary { cursor:pointer; padding:8px 0; }
+.ai-notice { border-left:3px solid #dab277; padding:12px 16px; background:#30291f; }
+.ai-source-sections { max-height:360px; overflow:auto; display:grid; gap:12px; }
+@media(max-width:1100px) { .ai-play-grid { grid-template-columns:1fr; } .ai-play-grid aside { position:static;max-height:none; } }

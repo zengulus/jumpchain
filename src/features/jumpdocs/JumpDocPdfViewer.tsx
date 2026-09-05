@@ -17,6 +17,7 @@ type TextBlock = Pick<JumpDocPdfAnnotation, 'x' | 'y' | 'width' | 'height' | 'ex
 
 interface JumpDocPdfViewerProps {
   source: string | null;
+  initialPage?: number;
   fileName?: string;
   annotations: JumpDocPdfAnnotation[];
   onAnnotationsChange: (annotations: JumpDocPdfAnnotation[]) => void;
@@ -168,11 +169,14 @@ async function getTextBlocks(documentProxy: pdfjs.PDFDocumentProxy, pageNumber: 
   });
 }
 
-export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsChange }: JumpDocPdfViewerProps) {
+export function JumpDocPdfViewer({ source, fileName, annotations, onAnnotationsChange, initialPage = 1 }: JumpDocPdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const [documentProxy, setDocumentProxy] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
+  useEffect(() => {
+    if (documentProxy) setPageNumber(Math.max(1, Math.min(documentProxy.numPages, Number.isFinite(initialPage) ? Math.trunc(initialPage) : 1)));
+  }, [documentProxy, initialPage]);
   const [scale, setScale] = useState(1.15);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [status, setStatus] = useState('No PDF loaded.');

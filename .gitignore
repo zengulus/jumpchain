@@ -8,3 +8,7 @@ Alt Chain Builder.pdf
 Chainmaker3-master.zip
 *.Identifier
 example
+server-dist
+.ai-data
+playwright-report
+test-results

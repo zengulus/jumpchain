@@ -39,6 +39,10 @@ export const appRouter = createHashRouter([
             element: <Navigate to="overview" replace />,
           },
           {
+            path: 'play',
+            lazy: lazyRoute(() => import('../features/ai/PlayPage'), 'PlayPage'),
+          },
+          {
             path: 'overview',
             lazy: lazyRoute(() => import('../features/chain-overview/ChainOverviewPage'), 'ChainOverviewPage'),
           },

@@ -24,6 +24,7 @@ interface WorkspaceState {
 }
 
 type ModuleKey =
+  | 'play'
   | 'overview'
   | 'master-build'
   | 'jumpers'
@@ -71,6 +72,7 @@ const WorkspaceHeaderAttachmentContext = createContext<Dispatch<SetStateAction<R
 type WorkspacePresentationMode = 'overview' | 'editor' | 'deep-task';
 
 const MODULE_LABELS: Record<ModuleKey, string> = {
+  play: 'Play / AI Setup',
   overview: 'Overview',
   'master-build': 'Master Build',
   jumpers: 'Jumpers',
@@ -151,6 +153,7 @@ export function useWorkspacePresentation(override: WorkspacePresentationOverride
 }
 
 function getActiveModuleKey(pathname: string): ModuleKey {
+  if (pathname.includes('/play')) return 'play';
   if (pathname.includes('/participation/')) {
     return 'jumps';
   }
@@ -437,6 +440,8 @@ export function ChainWorkspaceLayout() {
 
   function getModulePath(moduleKey: ModuleKey) {
     switch (moduleKey) {
+      case 'play':
+        return `/chains/${resolvedChainId}/play`;
       case 'overview':
         return `/chains/${resolvedChainId}/overview`;
       case 'master-build':
@@ -590,6 +595,11 @@ export function ChainWorkspaceLayout() {
   const threeBoonsAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'three-boons');
 
   const moduleGroups: WorkspaceModuleGroup[] = [
+    {
+      id: 'campaign',
+      title: 'Optional campaign play',
+      items: [{key:'play',label:'Play / AI Setup',to:getModulePath('play'),description:'Keep Sheet Only or enable a persistent local AI GM.',readiness:'optional'}],
+    },
     {
       id: 'core',
       title: simpleMode ? 'Core setup' : 'Core Flow',
