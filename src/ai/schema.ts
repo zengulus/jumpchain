@@ -79,8 +79,12 @@ export const SummarySchema = z.object({
 // SillyTavern World Info interop metadata. Preserved for round-trip export; never used by
 // Jumpchain's own retrieval/context engine. metadata holds unknown/extension fields from the
 // original ST entry (minus fields captured natively) so exports can restore them.
+// uid is the value of the ST `uid` field; entryKey is the original top-level `entries` object key.
+// They are distinct identities: a malformed source may repeat a uid under different object keys.
+// entryKey is optional so data written before this distinction existed (uid only) still parses.
 export const SillyTavernEntryInteropSchema = z.object({
   uid: z.union([z.number(), z.string()]).optional(),
+  entryKey: z.string().optional(),
   secondaryKeys: strings,
   metadata: z.record(z.string(), z.unknown()).optional(),
 }).strict();

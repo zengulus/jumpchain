@@ -224,6 +224,44 @@ describe('SillyTavern World Info interoperability',()=>{
   it('rejects unrelated JSON with a clear unsupported-worldbook error',()=>{
     expect(()=>importWorldbook(JSON.stringify({foo:1,bar:[]}),'x.json','b')).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
   });
+  it('keeps the ST object key and uid distinct in identity and interop metadata',()=>{
+    const raw={entries:{'17':{uid:42,key:['Alice'],content:'Alice.'}}};
+    const book=importWorldbook(JSON.stringify(raw),'a.json','book');
+    const entry=book.entries[0];
+    expect(entry.id).toBe('book_st_17');
+    expect(entry.interop?.sillyTavern?.entryKey).toBe('17');
+    expect(entry.interop?.sillyTavern?.uid).toBe(42);
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{uid:number}>};
+    expect(out.entries['17'].uid).toBe(42);
+  });
+  it('does not collapse entries that share a uid but have distinct object keys',()=>{
+    const raw={entries:{'17':{uid:4,key:['Alice'],content:'Alice.'},'29':{uid:4,key:['Bob'],content:'Bob.'}}};
+    const book=importWorldbook(JSON.stringify(raw),'d.json','book');
+    expect(book.entries).toHaveLength(2);
+    expect(new Set(book.entries.map(e=>e.id)).size).toBe(2);
+    const byText=new Map(book.entries.map(e=>[e.text,e]));
+    expect(byText.get('Alice.')?.interop?.sillyTavern?.entryKey).toBe('17');
+    expect(byText.get('Bob.')?.interop?.sillyTavern?.entryKey).toBe('29');
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{content:string;uid:number}>};
+    expect(Object.keys(out.entries)).toHaveLength(2);
+    expect(out.entries['17'].content).toBe('Alice.');expect(out.entries['17'].uid).toBe(4);
+    expect(out.entries['29'].content).toBe('Bob.');expect(out.entries['29'].uid).toBe(4);
+  });
+  it('rejects unrelated entries-object JSON as unsupported',()=>{
+    const raw={entries:{tax:{amount:5,category:'income'}}};
+    expect(isSillyTavernWorldInfo(raw)).toBe(false);
+    expect(()=>importWorldbook(JSON.stringify(raw),'t.json','b')).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
+  });
+  it('fails clearly on ST entries with no usable content, naming the offending entry',()=>{
+    expect(()=>importWorldbook(JSON.stringify({entries:{'42':{key:['Alice'],content:''}}}),'e.json','b')).toThrow(/SillyTavern entry "42" has no usable content/);
+    expect(()=>importWorldbook(JSON.stringify({entries:{'9':{key:['Bob']}}}),'e.json','b')).toThrow(/SillyTavern entry "9" has no usable content/);
+  });
+  it('parses legacy interop data without entryKey and falls back safely on export',()=>{
+    const book=WorldbookSchema.parse({id:'b',title:'Legacy',entries:[{id:'e1',title:'T',text:'X',interop:{sillyTavern:{uid:42,secondaryKeys:[],metadata:{order:100}}}}]});
+    expect(book.entries[0].interop?.sillyTavern?.entryKey).toBeUndefined();
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{uid:number;order:number}>};
+    expect(out.entries['42'].uid).toBe(42);expect(out.entries['42'].order).toBe(100);
+  });
 });
 describe('reviewed ingestion',()=>{
   it('imports markdown with separate sections and validates JSON formats',()=>{expect(importWorldbook('# Places\nHogwarts\n# People\nSnape','lore.md','book').entries).toHaveLength(2);expect(()=>importWorldbook('{broken','lore.json','book')).toThrow();expect(()=>importWorldbook('','empty.txt','book')).toThrow();});
