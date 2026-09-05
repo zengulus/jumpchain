@@ -10,6 +10,15 @@ This repo now starts from an importer-first foundation:
 
 The current implementation intentionally favors schema safety and preservation of unmapped source data over polished module screens.
 
+## SillyTavern World Info interoperability
+
+Jumpchain can import and export SillyTavern World Info / lorebook JSON files as worldbooks (`src/ai/sillyTavern.ts`):
+
+- Import detects native Jumpchain worldbook JSON vs. SillyTavern World Info JSON automatically; unrelated JSON is rejected with a clear error.
+- SillyTavern activation/insertion metadata (keys, secondary keys, UIDs, order, position, probability, vectorized flags, and unknown extension fields) is preserved for round-trip export.
+- Jumpchain does **not** emulate SillyTavern's activation algorithm. Imported lore becomes world knowledge served by Jumpchain's own hybrid retrieval/context engine; ST metadata never controls Jumpchain context behaviour.
+- Disabled ST entries import as `enabled: false` and are excluded from retrieval/index candidates while remaining persisted and editable.
+
 Additional planning docs:
 
 - `docs/companion-management-suite.md` outlines the next-step companion management suite.

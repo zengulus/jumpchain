@@ -76,6 +76,19 @@ export const SummarySchema = z.object({
   id: z.string(), level: z.enum(['scene', 'chapter', 'arc', 'jump', 'chain']), title: z.string(), text: z.string(),
   eventIds: strings, stamp: StampSchema, authority: z.literal('inferred').default('inferred'),
 }).strict();
+// SillyTavern World Info interop metadata. Preserved for round-trip export; never used by
+// Jumpchain's own retrieval/context engine. metadata holds unknown/extension fields from the
+// original ST entry (minus fields captured natively) so exports can restore them.
+export const SillyTavernEntryInteropSchema = z.object({
+  uid: z.union([z.number(), z.string()]).optional(),
+  secondaryKeys: strings,
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+export type SillyTavernEntryInterop = z.infer<typeof SillyTavernEntryInteropSchema>;
+export const SillyTavernBookInteropSchema = z.object({
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+export type SillyTavernBookInterop = z.infer<typeof SillyTavernBookInteropSchema>;
 export const WorldEntrySchema = z.object({
   id: z.string().min(1), title: z.string().min(1), kind: z.enum(['entity', 'faction', 'location', 'concept', 'system', 'timeline', 'fact', 'document']).default('fact'),
   text: z.string().min(1).max(2000000), aliases: strings, tags: strings, entities: strings,
@@ -84,11 +97,15 @@ export const WorldEntrySchema = z.object({
   authority: AuthoritySchema.exclude(['authoritative', 'campaign-established']).default('canonical-source'),
   source: z.string().default(''), annotation: z.string().default(''),
   page: z.number().int().positive().optional(),
+  enabled: z.boolean().default(true),
+  interop: z.object({ sillyTavern: SillyTavernEntryInteropSchema }).strict().optional(),
 }).strict();
+export type WorldEntry = z.infer<typeof WorldEntrySchema>;
 export const WorldbookSchema = z.object({
   id: z.string().min(1), title: z.string().min(1), setting: z.string().default(''), tags: strings, enabled: z.boolean().default(true),
   entries: z.array(WorldEntrySchema),
   attachments: z.array(z.object({ id: z.string(), name: z.string(), mimeType: z.string(), dataUrl: z.string() }).strict()).default([]),
+  interop: z.object({ sillyTavern: SillyTavernBookInteropSchema }).strict().optional(),
 }).strict();
 export type Worldbook = z.infer<typeof WorldbookSchema>;
 export const StateSchema = z.object({ scene: SceneSchema, npcs: z.array(NpcSchema).default([]), facts: z.array(FactSchema).default([]), events: z.array(EventSchema).default([]), summaries: z.array(SummarySchema).default([]) }).strict();

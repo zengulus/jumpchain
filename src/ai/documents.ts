@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AlternativeCostSchema, SelectionCostSchema, SelectionPrerequisiteSchema, ScenarioRewardSchema, JumpDocSchema } from '../schemas/entities';
 import type { JumpDoc } from '../domain/jumpdoc/types';
 import { WorldbookSchema, type Worldbook } from './schema';
+import { isSillyTavernWorldInfo, parseSillyTavernWorldInfo } from './sillyTavern';
 
 export const PdfSectionSchema = z.object({id:z.string(),title:z.string(),text:z.string().min(1).max(30000),page:z.number().int().positive(),bounds:z.array(z.object({page:z.number().int().positive(),x:z.number().min(0).max(1),y:z.number().min(0).max(1),width:z.number().min(0).max(1),height:z.number().min(0).max(1)})).min(1)}).strict();
 export type PdfSection = z.infer<typeof PdfSectionSchema>;
@@ -44,7 +45,18 @@ export function extractedJumpDoc(base: JumpDoc, raw: unknown, sections: PdfSecti
   return JumpDocSchema.parse(doc);
 }
 export function importWorldbook(text: string, filename: string, id: string, setting = ''): Worldbook {
-  if (/\.json$/i.test(filename)) return WorldbookSchema.parse(JSON.parse(text));
+  if (/\.json$/i.test(filename)) {
+    const raw = JSON.parse(text);
+    try { return WorldbookSchema.parse(raw); }
+    catch (nativeError) {
+      if (isSillyTavernWorldInfo(raw)) return parseSillyTavernWorldInfo(raw, filename, id, setting);
+      // Near-native JSON (an `entries` array) keeps the native validation error so fixes are
+      // actionable; anything else gets a clear unsupported-format error instead of being
+      // silently reinterpreted as lore text.
+      if (raw && typeof raw === 'object' && Array.isArray((raw as Record<string, unknown>).entries)) throw nativeError;
+      throw new Error('Unsupported JSON: the file matched neither a Jumpchain native worldbook nor a supported SillyTavern World Info format.');
+    }
+  }
   const parts = text.split(/(?=^#{1,4} )/m).filter(t => t.trim());
   if (!parts.length) throw new Error('Source contains no text.');
   return WorldbookSchema.parse({id,title:filename,setting,entries:parts.map((part,i) => ({id:`${id}_${i}`,title:part.split('\n')[0].replace(/^#+\s*/, '').slice(0,200) || filename,text:part,source:filename,kind:'document'}))});

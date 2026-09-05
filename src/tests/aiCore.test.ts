@@ -3,6 +3,7 @@ import { compileContext, mechanicalRecords, trackerFingerprint } from '../ai/con
 import { ContextSchema, FactSchema, NpcSchema, ProviderSchema, ProposalSchema, TurnSchema, WorldbookSchema, stableStringify, migrateCampaign } from '../ai/schema';
 import { eligibleRecords, hybridRetriever, indexFingerprint, knowledgeRecords } from '../ai/retrieval';
 import { applyProposal, auditChange, rollbackLatest, validateState } from '../ai/state';
+import { exportSillyTavernWorldbook, isSillyTavernWorldInfo } from '../ai/sillyTavern';
 import { extractedJumpDoc, importWorldbook, validateExtraction } from '../ai/documents';
 import { createBlankJumpDoc } from '../features/workspace/records';
 import { normalizeParticipationSelections } from '../domain/jump/selection';
@@ -160,6 +161,68 @@ describe('proposals, validation, audit, and rollback',()=>{
   it('round trips versioned campaign saves and rejects future versions/cyclic supersession',()=>{
     const {campaign}=aiFixture();expect(migrateCampaign(JSON.parse(stableStringify(campaign)))).toEqual(campaign);expect(()=>migrateCampaign({...campaign,schemaVersion:999})).toThrow();
     const fact=FactSchema.parse({id:'a',key:'x',text:'A',authority:'inferred',stamp:campaign.state.scene.stamp,supersededBy:'b'});campaign.state.facts=[fact,{...fact,id:'b',supersededBy:'a'}];expect(()=>validateState(campaign.state)).toThrow(/Cyclic/);
+  });
+});
+describe('SillyTavern World Info interoperability',()=>{
+  const stSample={entries:{'42':{uid:42,key:['Kirei','Kotomine'],keysecondary:['Church'],comment:'Kirei Kotomine',content:'Kirei is a priest.',constant:false,order:250,position:0,disable:false,probability:75,vectorized:true}}};
+  it('detects and imports an ST lorebook with preserved interop metadata',()=>{
+    expect(isSillyTavernWorldInfo(stSample)).toBe(true);
+    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book');
+    const entry=book.entries[0];
+    expect(entry.title).toBe('Kirei Kotomine');expect(entry.text).toBe('Kirei is a priest.');
+    expect(entry.aliases).toContain('Kirei');expect(entry.aliases).toContain('Kotomine');
+    expect(entry.enabled).toBe(true);expect(entry.authority).toBe('canonical-source');expect(entry.source).toContain('fate.json');
+    const st=entry.interop?.sillyTavern;
+    expect(st?.uid).toBe(42);expect(st?.secondaryKeys).toEqual(['Church']);
+    expect(st?.metadata?.order).toBe(250);expect(st?.metadata?.position).toBe(0);expect(st?.metadata?.probability).toBe(75);expect(st?.metadata?.vectorized).toBe(true);
+    expect(st?.metadata?.content).toBeUndefined();
+  });
+  it('imports disabled ST entries as disabled and excludes them from retrieval while keeping them persisted',()=>{
+    const raw={entries:{'7':{uid:7,key:['Sealed'],comment:'Sealed lore',content:'Hidden.',disable:true},'8':{uid:8,key:['Open'],comment:'Open lore',content:'Visible.',disable:false}}};
+    const book=importWorldbook(JSON.stringify(raw),'s.json','book');
+    expect(book.entries.find(e=>e.interop?.sillyTavern?.uid===7)?.enabled).toBe(false);
+    expect(book.entries.find(e=>e.interop?.sillyTavern?.uid===8)?.enabled).toBe(true);
+    const {campaign}=aiFixture();campaign.worldbooks=[book];
+    const records=knowledgeRecords(campaign);
+    expect(records.some(r=>r.text.includes('Hidden.'))).toBe(false);
+    expect(records.some(r=>r.text.includes('Visible.'))).toBe(true);
+    expect(campaign.worldbooks[0].entries).toHaveLength(2);
+  });
+  it('round trips ST import → native edit → ST export',()=>{
+    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book');
+    book.entries[0].text='Kirei is a priest of the Church.';
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{uid:number;key:string[];keysecondary:string[];comment:string;content:string;disable:boolean;order:number;probability:number;vectorized:boolean}>};
+    const e=out.entries['42'];
+    expect(e.content).toBe('Kirei is a priest of the Church.');expect(e.comment).toBe('Kirei Kotomine');
+    expect(e.key).toEqual(expect.arrayContaining(['Kirei','Kotomine']));expect(e.keysecondary).toEqual(['Church']);
+    expect(e.uid).toBe(42);expect(e.disable).toBe(false);
+    expect(e.order).toBe(250);expect(e.probability).toBe(75);expect(e.vectorized).toBe(true);
+  });
+  it('exports native entries with sensible ST defaults',()=>{
+    const book=WorldbookSchema.parse({id:'b',title:'Settings',entries:[{id:'e1',title:'Clock Tower',aliases:["Mage's Association",'Clock Tower'],text:'The Clock Tower is the center of magecraft.'}]});
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,Record<string,unknown>>};
+    const e=out.entries['e1'];
+    expect(e.content).toBe('The Clock Tower is the center of magecraft.');expect(e.comment).toBe('Clock Tower');
+    expect(e.key).toContain('Clock Tower');expect(e.disable).toBe(false);
+    expect(e.constant).toBe(false);expect(e.selective).toBe(false);expect(e.order).toBe(100);expect(e.position).toBe(0);
+    expect(e.probability).toBe(100);expect(e.useProbability).toBe(true);expect(e.excludeRecursion).toBe(false);expect(e.depth).toBe(4);expect(e.vectorized).toBe(false);
+  });
+  it('preserves unknown ST extension fields across a round trip',()=>{
+    const raw={entries:{'x':{uid:'x',key:['Mystery'],comment:'M',content:'C.',customField:{nested:true},another:42}}};
+    const book=importWorldbook(JSON.stringify(raw),'u.json','book');
+    const out=exportSillyTavernWorldbook(book) as {entries:Record<string,Record<string,unknown>>};
+    expect(out.entries['x'].customField).toEqual({nested:true});expect(out.entries['x'].another).toBe(42);
+    expect(out.entries['x'].content).toBe('C.');
+  });
+  it('imports native JSON worldbooks unchanged and defaults missing enabled/interop fields',()=>{
+    const native={id:'n',title:'Native',entries:[{id:'e',title:'T',text:'X'}]};
+    const book=importWorldbook(JSON.stringify(native),'native.json','ignored');
+    expect(book).toEqual(WorldbookSchema.parse(native));
+    expect(book.entries[0].enabled).toBe(true);expect(book.entries[0].interop).toBeUndefined();
+    expect(isSillyTavernWorldInfo(native)).toBe(false);
+  });
+  it('rejects unrelated JSON with a clear unsupported-worldbook error',()=>{
+    expect(()=>importWorldbook(JSON.stringify({foo:1,bar:[]}),'x.json','b')).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
   });
 });
 describe('reviewed ingestion',()=>{

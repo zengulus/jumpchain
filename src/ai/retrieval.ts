@@ -27,7 +27,9 @@ export function chunks(text: string, size = 1800): string[] {
 }
 export function knowledgeRecords(campaign: Campaign): KnowledgeRecord[] {
   const records: KnowledgeRecord[] = [];
-  for (const book of campaign.worldbooks.filter(b => b.enabled)) for (const entry of book.entries) {
+  // Disabled entries (e.g. imported SillyTavern entries with disable: true) stay persisted and
+  // editable but are never retrieval/index candidates.
+  for (const book of campaign.worldbooks.filter(b => b.enabled)) for (const entry of book.entries.filter(e => e.enabled)) {
     chunks(entry.text + (entry.annotation ? `\nPlayer annotation: ${entry.annotation}` : '')).forEach((text, i) => records.push({
       id: `${book.id}/${entry.id}/${i}`, sourceId: entry.id, text, title: entry.title, authority: entry.authority, factKey: entry.factKey,
       sourceType: 'world', setting: book.setting, jump: entry.jumpId, entities: [...entry.entities, ...entry.aliases], character: entry.entities,
