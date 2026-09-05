@@ -1,6 +1,6 @@
 import type { NativeChainBundle } from '../domain/save';
 import { buildBranchWorkspace } from '../domain/chain/selectors';
-import { CampaignSchema, ProposalSchema, StateSchema, stableStringify, type Campaign, type CampaignState, type Proposal } from './schema';
+import { migrateCampaign, ProposalSchema, StateSchema, stableStringify, type Campaign, type CampaignState, type Proposal } from './schema';
 
 export function validateState(state: CampaignState, bundle?: NativeChainBundle, campaign?: Campaign) {
   StateSchema.parse(state);
@@ -82,7 +82,9 @@ export function rollbackLatest(campaign: Campaign) {
   for (const turn of campaign.turns) if (turn.proposalStatus === 'pending') turn.proposalStatus = 'rejected';
 }
 export function validateCampaign(raw: unknown) {
-  const campaign = CampaignSchema.parse(raw); validateState(campaign.state);
+  // Migration runs at every persistence boundary so legacy saves (worldbooks predating book-level
+  // Jump ownership) load unchanged and are scoped deterministically.
+  const campaign = migrateCampaign(raw); validateState(campaign.state);
   const ids=new Set<string>();
   for (const book of campaign.worldbooks) {
     if(ids.has(book.id)) throw new Error('Duplicate worldbook ID.'); ids.add(book.id);

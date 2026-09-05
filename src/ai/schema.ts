@@ -97,6 +97,8 @@ export const WorldEntrySchema = z.object({
   id: z.string().min(1), title: z.string().min(1), kind: z.enum(['entity', 'faction', 'location', 'concept', 'system', 'timeline', 'fact', 'document']).default('fact'),
   text: z.string().min(1).max(2000000), aliases: strings, tags: strings, entities: strings,
   factKey: z.string().default(''), location: z.string().default(''), owner: z.string().default(''),
+  // Legacy/finer-grained metadata: book-level Worldbook.jumpId is the authoritative Jump scope
+  // for retrieval. An entry-level value must never widen a book into another Jump.
   jumpId: z.string().default(''), validFrom: z.number().nonnegative().optional(), validTo: z.number().nonnegative().optional(),
   authority: AuthoritySchema.exclude(['authoritative', 'campaign-established']).default('canonical-source'),
   source: z.string().default(''), annotation: z.string().default(''),
@@ -106,7 +108,12 @@ export const WorldEntrySchema = z.object({
 }).strict();
 export type WorldEntry = z.infer<typeof WorldEntrySchema>;
 export const WorldbookSchema = z.object({
-  id: z.string().min(1), title: z.string().min(1), setting: z.string().default(''), tags: strings, enabled: z.boolean().default(true),
+  id: z.string().min(1), title: z.string().min(1), setting: z.string().default(''),
+  // The tracker Jump that owns this worldbook. Worldbooks are NOT implicitly chain-global: one
+  // worldbook belongs to exactly one Jump, and world lore must never leak into another Jump's
+  // retrieval merely because its entries carry no scope. Required (non-empty) so a book without
+  // ownership can never match every Jump filter.
+  jumpId: z.string().min(1), tags: strings, enabled: z.boolean().default(true),
   entries: z.array(WorldEntrySchema),
   attachments: z.array(z.object({ id: z.string(), name: z.string(), mimeType: z.string(), dataUrl: z.string() }).strict()).default([]),
   interop: z.object({ sillyTavern: SillyTavernBookInteropSchema }).strict().optional(),
@@ -169,8 +176,40 @@ export const CampaignSchema = z.object({
   audit: z.array(z.object({ id: z.string(), at: z.string(), action: z.string(), turnId: z.string().nullable(), before: StateSchema, after: StateSchema, rolledBack: z.boolean().default(false) })).default([]),
 }).strict();
 export type Campaign = z.infer<typeof CampaignSchema>;
+function migrateLegacyWorldbookScope(book: unknown, currentJumpId: string): Record<string, unknown> {
+  const migrated = { ...(book as Record<string, unknown>), jumpId: currentJumpId };
+  // A legacy worldbook with no usable entry Jump scope (blank or absent entry.jumpId) is scoped
+  // to the campaign's current scene Jump. Conflicting entry Jumps never create an accidental
+  // multi-Jump worldbook; entry data is preserved unchanged either way.
+  return migrated;
+}
 export function migrateCampaign(raw: unknown): Campaign {
   // Version 1 is deliberately independent of native tracker schema versions.
+  // Legacy worldbooks predate book-level Jump ownership. Migration compatibility rule:
+  //   1. if the book's existing entries contain exactly one distinct non-empty entry.jumpId,
+  //      that Jump owns the book;
+  //   2. otherwise (no usable entry scope, or conflicting entry scopes) the book is scoped to
+  //      the campaign's current scene Jump: campaign.state.scene.stamp.jumpId.
+  // Conflicting non-empty entry Jumps never widen a book into multiple Jumps.
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+  if (obj && Array.isArray(obj.worldbooks)) {
+    const state = obj.state as { scene?: { stamp?: { jumpId?: unknown } } } | undefined;
+    const currentJumpId = typeof state?.scene?.stamp?.jumpId === 'string' ? state.scene.stamp.jumpId : '';
+    let changed = false;
+    const worldbooks = obj.worldbooks.map(wb => {
+      if (!wb || typeof wb !== 'object' || Array.isArray(wb)) return wb;
+      const book = wb as Record<string, unknown>;
+      if (typeof book.jumpId === 'string' && book.jumpId) return wb;
+      const entryJumps = new Set<string>();
+      if (Array.isArray(book.entries)) for (const entry of book.entries) {
+        const jumpId = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>).jumpId : undefined;
+        if (typeof jumpId === 'string' && jumpId) entryJumps.add(jumpId);
+      }
+      changed = true;
+      return migrateLegacyWorldbookScope(wb, entryJumps.size === 1 ? [...entryJumps][0] : currentJumpId);
+    });
+    if (changed) raw = { ...obj, worldbooks };
+  }
   return CampaignSchema.parse(raw);
 }
 export function stableStringify(value: unknown): string {

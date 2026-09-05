@@ -135,7 +135,7 @@ describe('context layer authority, salience, domain, and mandatory metadata',()=
   });
 });
 describe('hybrid retrieval, chronology, provenance, and disposable indices',()=>{
-  function fixture(){const {campaign}=aiFixture();campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Canon',entries:[{id:'canon',title:'Snape',factKey:'snape-belief',text:'Snape believes Harry is a spy. spy spy spy',entities:['Snape']}]})];campaign.state.facts=[FactSchema.parse({id:'learned',key:'snape-belief',text:'Snape learned Harry is innocent.',authority:'campaign-established',stamp:campaign.state.scene.stamp,entities:['Snape']})];return campaign;}
+  function fixture(){const {campaign}=aiFixture();campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Canon',jumpId:'jump-a',entries:[{id:'canon',title:'Snape',factKey:'snape-belief',text:'Snape believes Harry is a spy. spy spy spy',entities:['Snape']}]})];campaign.state.facts=[FactSchema.parse({id:'learned',key:'snape-belief',text:'Snape learned Harry is innocent.',authority:'campaign-established',stamp:campaign.state.scene.stamp,entities:['Snape']})];return campaign;}
   it('resolves established campaign divergence before keyword scoring',()=>{const records=knowledgeRecords(fixture());const result=hybridRetriever.search('Snape spy',records,{limit:10});expect(result.map(r=>r.record.sourceId)).toContain('learned');expect(result.some(r=>r.record.sourceId==='canon')).toBe(false);});
   it('does not promote speculation over a source and filters entities, tags, authority, and location',()=>{const c=fixture();c.state.facts[0].authority='speculative';const records=knowledgeRecords(c);expect(hybridRetriever.search('Snape',records,{limit:10})[0].record.sourceId).toBe('canon');expect(eligibleRecords(records,{entity:'Unknown'})).toEqual([]);expect(eligibleRecords(records,{tags:['missing']})).toEqual([]);expect(eligibleRecords(records,{location:'Mars'})).toEqual([]);});
   it('surfaces historical facts before their superseding event and excludes future facts',()=>{const c=fixture();c.state.facts[0].supersededBy='new';c.state.facts.push(FactSchema.parse({...c.state.facts[0],id:'new',supersededBy:null,text:'Snape changed his mind.',stamp:{...c.state.scene.stamp,elapsedMinutes:200}}));const records=knowledgeRecords(c);expect(eligibleRecords(records,{jump:c.state.scene.stamp.jumpId,before:150}).map(r=>r.id)).toContain('learned');expect(eligibleRecords(records,{jump:c.state.scene.stamp.jumpId,before:250}).map(r=>r.id)).not.toContain('learned');});
@@ -167,7 +167,8 @@ describe('SillyTavern World Info interoperability',()=>{
   const stSample={entries:{'42':{uid:42,key:['Kirei','Kotomine'],keysecondary:['Church'],comment:'Kirei Kotomine',content:'Kirei is a priest.',constant:false,order:250,position:0,disable:false,probability:75,vectorized:true}}};
   it('detects and imports an ST lorebook with preserved interop metadata',()=>{
     expect(isSillyTavernWorldInfo(stSample)).toBe(true);
-    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book');
+    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book',{currentJumpId:'jump-a'});
+    expect(book.jumpId).toBe('jump-a');
     const entry=book.entries[0];
     expect(entry.title).toBe('Kirei Kotomine');expect(entry.text).toBe('Kirei is a priest.');
     expect(entry.aliases).toContain('Kirei');expect(entry.aliases).toContain('Kotomine');
@@ -179,7 +180,7 @@ describe('SillyTavern World Info interoperability',()=>{
   });
   it('imports disabled ST entries as disabled and excludes them from retrieval while keeping them persisted',()=>{
     const raw={entries:{'7':{uid:7,key:['Sealed'],comment:'Sealed lore',content:'Hidden.',disable:true},'8':{uid:8,key:['Open'],comment:'Open lore',content:'Visible.',disable:false}}};
-    const book=importWorldbook(JSON.stringify(raw),'s.json','book');
+    const book=importWorldbook(JSON.stringify(raw),'s.json','book',{currentJumpId:'jump-a'});
     expect(book.entries.find(e=>e.interop?.sillyTavern?.uid===7)?.enabled).toBe(false);
     expect(book.entries.find(e=>e.interop?.sillyTavern?.uid===8)?.enabled).toBe(true);
     const {campaign}=aiFixture();campaign.worldbooks=[book];
@@ -189,7 +190,7 @@ describe('SillyTavern World Info interoperability',()=>{
     expect(campaign.worldbooks[0].entries).toHaveLength(2);
   });
   it('round trips ST import → native edit → ST export',()=>{
-    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book');
+    const book=importWorldbook(JSON.stringify(stSample),'fate.json','book',{currentJumpId:'jump-a'});
     book.entries[0].text='Kirei is a priest of the Church.';
     const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{uid:number;key:string[];keysecondary:string[];comment:string;content:string;disable:boolean;order:number;probability:number;vectorized:boolean}>};
     const e=out.entries['42'];
@@ -199,7 +200,7 @@ describe('SillyTavern World Info interoperability',()=>{
     expect(e.order).toBe(250);expect(e.probability).toBe(75);expect(e.vectorized).toBe(true);
   });
   it('exports native entries with sensible ST defaults',()=>{
-    const book=WorldbookSchema.parse({id:'b',title:'Settings',entries:[{id:'e1',title:'Clock Tower',aliases:["Mage's Association",'Clock Tower'],text:'The Clock Tower is the center of magecraft.'}]});
+    const book=WorldbookSchema.parse({id:'b',title:'Settings',jumpId:'jump-a',entries:[{id:'e1',title:'Clock Tower',aliases:["Mage's Association",'Clock Tower'],text:'The Clock Tower is the center of magecraft.'}]});
     const out=exportSillyTavernWorldbook(book) as {entries:Record<string,Record<string,unknown>>};
     const e=out.entries['e1'];
     expect(e.content).toBe('The Clock Tower is the center of magecraft.');expect(e.comment).toBe('Clock Tower');
@@ -209,24 +210,25 @@ describe('SillyTavern World Info interoperability',()=>{
   });
   it('preserves unknown ST extension fields across a round trip',()=>{
     const raw={entries:{'x':{uid:'x',key:['Mystery'],comment:'M',content:'C.',customField:{nested:true},another:42}}};
-    const book=importWorldbook(JSON.stringify(raw),'u.json','book');
+    const book=importWorldbook(JSON.stringify(raw),'u.json','book',{currentJumpId:'jump-a'});
     const out=exportSillyTavernWorldbook(book) as {entries:Record<string,Record<string,unknown>>};
     expect(out.entries['x'].customField).toEqual({nested:true});expect(out.entries['x'].another).toBe(42);
     expect(out.entries['x'].content).toBe('C.');
   });
-  it('imports native JSON worldbooks unchanged and defaults missing enabled/interop fields',()=>{
+  it('imports native JSON worldbooks and defaults missing enabled/interop fields, scoping legacy books to the caller Jump',()=>{
     const native={id:'n',title:'Native',entries:[{id:'e',title:'T',text:'X'}]};
-    const book=importWorldbook(JSON.stringify(native),'native.json','ignored');
-    expect(book).toEqual(WorldbookSchema.parse(native));
+    const book=importWorldbook(JSON.stringify(native),'native.json','ignored',{currentJumpId:'jump-a'});
+    expect(book.jumpId).toBe('jump-a');
+    expect(book).toEqual(WorldbookSchema.parse({...native,jumpId:'jump-a'}));
     expect(book.entries[0].enabled).toBe(true);expect(book.entries[0].interop).toBeUndefined();
     expect(isSillyTavernWorldInfo(native)).toBe(false);
   });
   it('rejects unrelated JSON with a clear unsupported-worldbook error',()=>{
-    expect(()=>importWorldbook(JSON.stringify({foo:1,bar:[]}),'x.json','b')).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
+    expect(()=>importWorldbook(JSON.stringify({foo:1,bar:[]}),'x.json','b',{currentJumpId:'jump-a'})).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
   });
   it('keeps the ST object key and uid distinct in identity and interop metadata',()=>{
     const raw={entries:{'17':{uid:42,key:['Alice'],content:'Alice.'}}};
-    const book=importWorldbook(JSON.stringify(raw),'a.json','book');
+    const book=importWorldbook(JSON.stringify(raw),'a.json','book',{currentJumpId:'jump-a'});
     const entry=book.entries[0];
     expect(entry.id).toBe('book_st_17');
     expect(entry.interop?.sillyTavern?.entryKey).toBe('17');
@@ -236,7 +238,7 @@ describe('SillyTavern World Info interoperability',()=>{
   });
   it('does not collapse entries that share a uid but have distinct object keys',()=>{
     const raw={entries:{'17':{uid:4,key:['Alice'],content:'Alice.'},'29':{uid:4,key:['Bob'],content:'Bob.'}}};
-    const book=importWorldbook(JSON.stringify(raw),'d.json','book');
+    const book=importWorldbook(JSON.stringify(raw),'d.json','book',{currentJumpId:'jump-a'});
     expect(book.entries).toHaveLength(2);
     expect(new Set(book.entries.map(e=>e.id)).size).toBe(2);
     const byText=new Map(book.entries.map(e=>[e.text,e]));
@@ -250,21 +252,76 @@ describe('SillyTavern World Info interoperability',()=>{
   it('rejects unrelated entries-object JSON as unsupported',()=>{
     const raw={entries:{tax:{amount:5,category:'income'}}};
     expect(isSillyTavernWorldInfo(raw)).toBe(false);
-    expect(()=>importWorldbook(JSON.stringify(raw),'t.json','b')).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
+    expect(()=>importWorldbook(JSON.stringify(raw),'t.json','b',{currentJumpId:'jump-a'})).toThrow(/neither a Jumpchain native worldbook nor a supported SillyTavern World Info format/);
   });
   it('fails clearly on ST entries with no usable content, naming the offending entry',()=>{
-    expect(()=>importWorldbook(JSON.stringify({entries:{'42':{key:['Alice'],content:''}}}),'e.json','b')).toThrow(/SillyTavern entry "42" has no usable content/);
-    expect(()=>importWorldbook(JSON.stringify({entries:{'9':{key:['Bob']}}}),'e.json','b')).toThrow(/SillyTavern entry "9" has no usable content/);
+    expect(()=>importWorldbook(JSON.stringify({entries:{'42':{key:['Alice'],content:''}}}),'e.json','b',{currentJumpId:'jump-a'})).toThrow(/SillyTavern entry "42" has no usable content/);
+    expect(()=>importWorldbook(JSON.stringify({entries:{'9':{key:['Bob']}}}),'e.json','b',{currentJumpId:'jump-a'})).toThrow(/SillyTavern entry "9" has no usable content/);
   });
   it('parses legacy interop data without entryKey and falls back safely on export',()=>{
-    const book=WorldbookSchema.parse({id:'b',title:'Legacy',entries:[{id:'e1',title:'T',text:'X',interop:{sillyTavern:{uid:42,secondaryKeys:[],metadata:{order:100}}}}]});
+    const book=WorldbookSchema.parse({id:'b',title:'Legacy',jumpId:'jump-a',entries:[{id:'e1',title:'T',text:'X',interop:{sillyTavern:{uid:42,secondaryKeys:[],metadata:{order:100}}}}]});
     expect(book.entries[0].interop?.sillyTavern?.entryKey).toBeUndefined();
     const out=exportSillyTavernWorldbook(book) as {entries:Record<string,{uid:number;order:number}>};
     expect(out.entries['42'].uid).toBe(42);expect(out.entries['42'].order).toBe(100);
   });
 });
+describe('worldbook Jump ownership scope',()=>{
+  const stSample={entries:{'42':{uid:42,key:['Kirei'],comment:'Kirei',content:'Kirei is a priest.',constant:false,order:250,position:0,disable:false,probability:75,vectorized:true}}};
+  function bookCampaign(bookJumpId:string,entryText:string,entryJumpId=''){const {campaign}=aiFixture();campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Moon lore',jumpId:bookJumpId,entries:[{id:'e1',title:'Moon',text:entryText,jumpId:entryJumpId}]})];return campaign;}
+  function legacyCampaign(entryJumps:(string|undefined)[]){const {campaign}=aiFixture();campaign.state.scene.stamp.jumpId='scene-jump';const raw=JSON.parse(stableStringify(campaign)) as Record<string,unknown>;raw.worldbooks=[{id:'legacy-book',title:'Legacy',entries:entryJumps.map((jumpId,i)=>({id:`e${i}`,title:`T${i}`,text:`X${i}`,...(jumpId?{jumpId}:{})}))}];return migrateCampaign(raw).worldbooks[0];}
+  it('A/G: scopes imported, authored, and text worldbooks to the campaign current Jump',()=>{
+    const {campaign}=aiFixture();campaign.state.scene.stamp.jumpId='jump-a';
+    const imported=importWorldbook(JSON.stringify(stSample),'fate.json','book',{currentJumpId:campaign.state.scene.stamp.jumpId});
+    expect(imported.jumpId).toBe('jump-a');
+    const out=exportSillyTavernWorldbook(imported) as {entries:Record<string,{content:string;uid:number;key:string[]}>};
+    expect(out.entries['42'].content).toBe('Kirei is a priest.');expect(out.entries['42'].uid).toBe(42);expect(out.entries['42'].key).toEqual(['Kirei']);
+    expect(importWorldbook('Hogwarts castle lore','lore.txt','text-book',{currentJumpId:'jump-a'}).jumpId).toBe('jump-a');
+    expect(WorldbookSchema.parse({id:'a',title:'Authored',jumpId:'jump-a',entries:[{id:'x',title:'X',text:'Y'}]}).jumpId).toBe('jump-a');
+  });
+  it('B: excludes world lore owned by another Jump even when it is the stronger lexical match',()=>{
+    const {campaign}=aiFixture();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'a',title:'Book A',jumpId:'jump-a',entries:[{id:'a1',title:'Moon',text:'The moon is made of silver cheese.'}]}),WorldbookSchema.parse({id:'b',title:'Book B',jumpId:'jump-b',entries:[{id:'b1',title:'Moon',text:'The moon is a Reaper construct.'}]})];
+    const records=knowledgeRecords(campaign);const query='silver cheese Reaper construct';
+    expect(eligibleRecords(records,{jump:'jump-a'}).map(r=>r.sourceId)).toEqual(['a1']);
+    expect(hybridRetriever.search(query,records,{limit:10,filter:{jump:'jump-a'}}).map(r=>r.record.sourceId)).toEqual(['a1']);
+    expect(eligibleRecords(records,{jump:'jump-b'}).map(r=>r.sourceId)).toEqual(['b1']);
+    expect(hybridRetriever.search(query,records,{limit:10,filter:{jump:'jump-b'}}).map(r=>r.record.sourceId)).toEqual(['b1']);
+  });
+  it('C: a blank entry jumpId cannot leak a book into another Jump',()=>{
+    const campaign=bookCampaign('jump-a','The gates of the moon are silver.','');
+    const records=knowledgeRecords(campaign);
+    expect(records[0].jump).toBe('jump-a');
+    expect(eligibleRecords(records,{jump:'jump-b'})).toEqual([]);
+  });
+  it('D: a conflicting entry jumpId cannot widen the owning book scope',()=>{
+    const campaign=bookCampaign('jump-a','The moon is a Reaper construct.','jump-b');
+    const records=knowledgeRecords(campaign);
+    expect(records[0].jump).toBe('jump-a');
+    expect(eligibleRecords(records,{jump:'jump-a'}).map(r=>r.sourceId)).toEqual(['e1']);
+    expect(eligibleRecords(records,{jump:'jump-b'})).toEqual([]);
+  });
+  it('E: migrates legacy worldbooks missing book-level jumpId deterministically',()=>{
+    expect(legacyCampaign(['jump-old','jump-old']).jumpId).toBe('jump-old');
+    expect(legacyCampaign(['','']).jumpId).toBe('scene-jump');
+    expect(legacyCampaign([undefined,undefined]).jumpId).toBe('scene-jump');
+    expect(legacyCampaign(['jump-old','jump-new']).jumpId).toBe('scene-jump');
+  });
+  it('F: reassigning a worldbook to another Jump changes the index fingerprint',()=>{
+    const {campaign}=aiFixture();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'b',title:'Book',jumpId:'jump-a',entries:[{id:'e',title:'T',text:'X'}]})];
+    const before=indexFingerprint(knowledgeRecords(campaign));
+    campaign.worldbooks[0].jumpId='jump-b';
+    expect(indexFingerprint(knowledgeRecords(campaign))).not.toBe(before);
+  });
+  it('H: native import preserves an explicit jumpId and scopes legacy native JSON to the caller Jump',()=>{
+    const withJump={id:'n',title:'Native',jumpId:'explicit-jump',entries:[{id:'e',title:'T',text:'X'}]};
+    expect(importWorldbook(JSON.stringify(withJump),'n.json','ignored',{currentJumpId:'jump-a'}).jumpId).toBe('explicit-jump');
+    const legacy={id:'n',title:'Native',entries:[{id:'e',title:'T',text:'X'}]};
+    expect(importWorldbook(JSON.stringify(legacy),'n.json','ignored',{currentJumpId:'jump-a'}).jumpId).toBe('jump-a');
+  });
+});
 describe('reviewed ingestion',()=>{
-  it('imports markdown with separate sections and validates JSON formats',()=>{expect(importWorldbook('# Places\nHogwarts\n# People\nSnape','lore.md','book').entries).toHaveLength(2);expect(()=>importWorldbook('{broken','lore.json','book')).toThrow();expect(()=>importWorldbook('','empty.txt','book')).toThrow();});
+  it('imports markdown with separate sections and validates JSON formats',()=>{expect(importWorldbook('# Places\nHogwarts\n# People\nSnape','lore.md','book',{currentJumpId:'jump-a'}).entries).toHaveLength(2);expect(()=>importWorldbook('{broken','lore.json','book',{currentJumpId:'jump-a'})).toThrow();expect(()=>importWorldbook('','empty.txt','book',{currentJumpId:'jump-a'})).toThrow();});
   it('preserves costs, options, source bounds, and warns about ungrounded extraction',()=>{
     const section={id:'s1',title:'Perks',text:'Fly anywhere.',page:3,bounds:[{page:3,x:.1,y:.2,width:.6,height:.3}]};
     const raw={title:'Flight',entries:[{kind:'perk',title:'Flying',description:'Fly anywhere.',sectionId:'s1',costs:[{amount:100,currencyKey:'0'}],temporary:true,discounts:'Free for birds'}]};

@@ -49,7 +49,11 @@ export function isSillyTavernWorldInfo(raw: unknown): boolean {
 }
 
 /** Convert a SillyTavern World Info JSON object into a native Jumpchain Worldbook. */
-export function parseSillyTavernWorldInfo(raw: unknown, filename: string, id: string, setting = ''): Worldbook {
+export function parseSillyTavernWorldInfo(raw: unknown, filename: string, id: string, options: { currentJumpId: string; setting?: string }): Worldbook {
+  // A SillyTavern file carries no Jumpchain Jump ID, so the book is scoped to the currently
+  // selected campaign Jump supplied by the caller. Jumpchain jumpId is deliberately kept OUT of
+  // the ST interop metadata: SillyTavern remains a pure interchange format.
+  const setting = options.setting ?? '';
   const source = `Imported from SillyTavern World Info: ${filename}`;
   const obj = raw as Record<string, unknown>;
   const rawEntries = (obj.entries ?? {}) as Record<string, unknown>;
@@ -94,7 +98,7 @@ export function parseSillyTavernWorldInfo(raw: unknown, filename: string, id: st
   const bookMetadata: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) if (k !== 'entries' && k !== 'name') bookMetadata[k] = v;
   return WorldbookSchema.parse({
-    id, title: name, setting, entries,
+    id, title: name, setting, jumpId: options.currentJumpId, entries,
     interop: { sillyTavern: { metadata: Object.keys(bookMetadata).length ? bookMetadata : undefined } },
   });
 }

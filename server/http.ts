@@ -4,7 +4,7 @@ import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { NativeChainBundleSchema } from '../src/schemas/save';
-import { CampaignSchema, SettingsSchema, ServiceConfigSchema, ProviderSchema, RoleSchema, SceneSchema, StateSchema, WorldbookSchema, SummarySchema, stableStringify, type Campaign } from '../src/ai/schema';
+import { CampaignSchema, SettingsSchema, ServiceConfigSchema, ProviderSchema, RoleSchema, SceneSchema, StateSchema, WorldbookSchema, SummarySchema, migrateCampaign, stableStringify, type Campaign } from '../src/ai/schema';
 import { applyProposal, auditChange, rollbackLatest, validateState } from '../src/ai/state';
 import { trackerFingerprint } from '../src/ai/context';
 import { PdfSectionSchema, extractionInstructions, validateExtraction } from '../src/ai/documents';
@@ -63,7 +63,9 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
         await store.save(c); json(res,c,201); return;
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/import') {
-        const raw = CampaignSchema.parse(await body(req)); validateState(raw.state);
+        // migrateCampaign keeps imported legacy saves (worldbooks without book-level Jump
+        // ownership) parseable by scoping them deterministically.
+        const raw = migrateCampaign(await body(req)); validateState(raw.state);
         const c = {...raw,id:id(),parentCampaignId:raw.id,revision:0,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
         for (const t of c.turns) if (t.status === 'generating') {t.status='failed';t.error='Imported interrupted generation.';}
         // Imported contexts remain historical; proposals must be regenerated against the restored sheet.

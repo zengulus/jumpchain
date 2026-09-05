@@ -1,15 +1,18 @@
 import { z } from 'zod';
 import type { NativeChainBundle } from '../domain/save';
-import { CampaignSchema, type Campaign } from './schema';
+import { CampaignSchema, migrateCampaign, type Campaign } from './schema';
 import { migrateNativeSaveEnvelope } from '../migrations/nativeSave';
-export const CampaignBackupSchema=z.object({format:z.literal('jumpchain-campaign'),schemaVersion:z.literal(1),exportedAt:z.string(),tracker:z.unknown(),campaigns:z.array(CampaignSchema)}).strict();
+// Campaigns are kept as unknown in the envelope so legacy campaign JSON (e.g. worldbooks
+// predating book-level Jump ownership) can pass through migrateCampaign before validation.
+export const CampaignBackupSchema=z.object({format:z.literal('jumpchain-campaign'),schemaVersion:z.literal(1),exportedAt:z.string(),tracker:z.unknown(),campaigns:z.array(z.unknown())}).strict();
 export function validateBackup(raw:unknown) {
-  const backup=CampaignBackupSchema.parse(raw);const tracker=migrateNativeSaveEnvelope(backup.tracker);
-  for (const campaign of backup.campaigns) {
+  const backup=CampaignBackupSchema.parse(raw);const campaigns=backup.campaigns.map(c => migrateCampaign(c));
+  const tracker=migrateNativeSaveEnvelope(backup.tracker);
+  for (const campaign of campaigns) {
     const chain=tracker.chains.find(b => b.chain.id===campaign.chainId);
     if (!chain || !chain.branches.some(b => b.id===campaign.branchId)) throw new Error('Backup campaign has no matching tracker chain/branch.');
   }
-  return {...backup,tracker};
+  return {...backup,campaigns,tracker};
 }
 export function remapCampaign(campaign:Campaign, before:NativeChainBundle, after:NativeChainBundle):Campaign {
   const ids=new Map<string,string>();

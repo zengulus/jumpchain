@@ -30,9 +30,13 @@ export function knowledgeRecords(campaign: Campaign): KnowledgeRecord[] {
   // Disabled entries (e.g. imported SillyTavern entries with disable: true) stay persisted and
   // editable but are never retrieval/index candidates.
   for (const book of campaign.worldbooks.filter(b => b.enabled)) for (const entry of book.entries.filter(e => e.enabled)) {
+    // Book-level Worldbook.jumpId is the authoritative Jump scope: the whole book belongs to its
+    // owning Jump. entry.jumpId is legacy/finer-grained metadata and must never widen a book
+    // into another Jump (a blank entry value in particular must not leak across Jumps).
+    const jump = book.jumpId;
     chunks(entry.text + (entry.annotation ? `\nPlayer annotation: ${entry.annotation}` : '')).forEach((text, i) => records.push({
       id: `${book.id}/${entry.id}/${i}`, sourceId: entry.id, text, title: entry.title, authority: entry.authority, factKey: entry.factKey,
-      sourceType: 'world', setting: book.setting, jump: entry.jumpId, entities: [...entry.entities, ...entry.aliases], character: entry.entities,
+      sourceType: 'world', setting: book.setting, jump, entities: [...entry.entities, ...entry.aliases], character: entry.entities,
       location: entry.location, owner: entry.owner, tags: [...book.tags, ...entry.tags], time: entry.validFrom, validTo: entry.validTo, superseded: false,
     }));
   }
