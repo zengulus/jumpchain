@@ -102,9 +102,22 @@ export const ChangeSchema = z.discriminatedUnion('kind', [
 ]);
 export const ProposalSchema = z.object({ rationale: z.string().max(20000), changes: z.array(ChangeSchema).max(100) }).strict();
 export type Proposal = z.infer<typeof ProposalSchema>;
+export const ContextSalienceSchema = z.enum(['directive', 'focused', 'required', 'relevant', 'background']);
+export type ContextSalience = z.infer<typeof ContextSalienceSchema>;
+// Context authority is the Authority model plus null: null marks a layer that is not itself a
+// factual claim (presentation directives, the current user action, provisional narration).
+export const ContextAuthoritySchema = AuthoritySchema.nullable();
+export type ContextAuthority = z.infer<typeof ContextAuthoritySchema>;
+export const ContextLayerSchema = z.object({
+  name: z.string(), content: z.string(), sourceIds: strings, estimatedTokens: z.number(),
+  // Defaults keep legacy saved contexts parseable; compiled layers always carry explicit values.
+  salience: ContextSalienceSchema.default('background'),
+  authority: ContextAuthoritySchema.default(null),
+});
+export type ContextLayer = z.infer<typeof ContextLayerSchema>;
 export const ContextSchema = z.object({
   messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })),
-  layers: z.array(z.object({ name: z.string(), content: z.string(), sourceIds: strings, estimatedTokens: z.number() })),
+  layers: z.array(ContextLayerSchema),
   estimatedTokens: z.number(), inputBudget: z.number(), omittedIds: strings, diagnostics: strings,
   trackerFingerprint: z.string(),
 });
