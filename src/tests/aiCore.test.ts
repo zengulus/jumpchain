@@ -150,6 +150,10 @@ describe('canonical search projection and scene-aware lore queries',()=>{
   }
   it('builds the narration lore query from the action plus scene location and threads only',()=>{
     expect(narrationLoreQuery('I look around.',{location:'Great Hall',threads:['The feast is about to begin.','Investigate the owlery']})).toBe('I look around. Great Hall The feast is about to begin. Investigate the owlery');
+    // Threads are bounded scene signal: action and location always survive, verbose threads fill a
+    // deterministic character budget in scene order, later threads are dropped entirely.
+    expect(narrationLoreQuery('I look around.',{threads:['x'.repeat(600),'second thread never fits']})).toBe(`I look around. ${'x'.repeat(600)}`);
+    expect(narrationLoreQuery('I look around.',{threads:['a'.repeat(300),'b'.repeat(300),'c'.repeat(300)]})).toBe(`I look around. ${'a'.repeat(300)} ${'b'.repeat(300)}`);
     expect(narrationLoreQuery('Act',{threads:['a','b']})).toBe('Act a b');
     expect(narrationLoreQuery('Act',{location:'  '})).toBe('Act');
     expect(narrationLoreQuery('Act')).toBe('Act');
@@ -246,6 +250,62 @@ describe('canonical search projection and scene-aware lore queries',()=>{
     const results=hybridRetriever.search('Kirei',records,{limit:2,index,queryVector:embed('Kirei')});
     expect(results[0].record.sourceId).toBe('alias-only');
     expect(results[0].reason).toContain('dense');
+  });
+});
+describe('lore source diversity for long chunked entries',()=>{
+  // One long entry produces four near-duplicate chunks; four independent entries are also
+  // relevant. Search must stay rank-neutral; diversity is enforced only at lore admission.
+  // A small loreDepth (4) keeps the groupCount quota (2) below the long entry's chunk count,
+  // so the pre-fix behavior (3-4 services chunks admitted) is directly observable.
+  function crowdingCampaign(){const {bundle,campaign}=aiFixture();const filler=Array.from({length:60},(_,i)=>`Center paragraph ${i}: healing machines hum while trainers wait for their pokemon to recover.`).join('\n\n');
+    campaign.settings.loreDepth=4;
+    campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Canon',jumpId:campaign.state.scene.stamp.jumpId,entries:[
+      {id:'services',title:'Pokemon Center services',text:`Services opening.\n\n${filler}\n\nServices closing.`},
+      {id:'medical',title:'Trainer medical practice',text:'Trainer medical practice treats people hurt in battle.'},
+      {id:'fainting',title:'Injury and fainting',text:'Injury and fainting rules for pokemon hurt in battle.'},
+      {id:'norms',title:'Battle norms',text:'Battle norms govern fair fights between trainers.'},
+      {id:'regulations',title:'Local regulations',text:'Local regulations for battle venues and trainers.'},
+    ]})];return {bundle,campaign};}
+  it('returns all matching chunks in rank order without reordering retrieval',()=>{
+    const {campaign}=crowdingCampaign();const results=hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100});
+    const service=results.filter(r=>r.record.sourceId==='services');
+    // Retrieval is untouched: all four chunks are retrieved, the top of the ranking is
+    // dominated by them, and interleaving with other sources is allowed and never reordered.
+    expect(service).toHaveLength(4);
+    expect(results.slice(0,4).filter(r=>r.record.sourceId==='services').length).toBeGreaterThanOrEqual(3);
+  });
+  it('admits other independent sources before redundant chunks of one long entry',()=>{
+    const {bundle,campaign}=crowdingCampaign();
+    const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
+    const selected=context.plan?.selected.filter(c=>c.pool==='lore').map(c=>c.groupKey) ?? [];
+    // Pre-fix behavior would admit all four near-duplicate services chunks; the quota leaves
+    // room for three of the four independent sources within the same small lore budget.
+    expect(selected).toHaveLength(4);
+    expect(selected.filter(g=>g==='book/services')).toHaveLength(2);
+    expect(selected.filter(g=>g!=='book/services')).toHaveLength(2);
+    // Chunks 1 and 2 rank at the top; chunk 0 (and 3) fall to the quota even though chunk 0
+    // outranks two of the independent sources that take the remaining slots.
+    expect(context.plan?.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.sourceIds[0]).sort()).toEqual(['book/services/0','book/services/3']);
+  });
+  it('qualifies group keys by owning book so identical entry ids never merge',()=>{
+    const {bundle,campaign}=crowdingCampaign();
+    campaign.worldbooks.push(WorldbookSchema.parse({id:'book2',title:'Other',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'services',title:'Battle healing services',text:'Battle healing services: battle healing battle healing.'}]}));
+    const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
+    const lore=context.plan?.decisions.filter(d=>d.candidate.pool==='lore').map(d=>[d.candidate.groupKey,d.included]) ?? [];
+    // The same entry id in two books stays two logical sources, each counted against its own
+    // quota: two book/services chunks and the book2 chunk are all admitted together.
+    expect(lore.filter(([g])=>g==='book/services')).toHaveLength(4);
+    expect(lore.filter(([g])=>g==='book2/services')).toHaveLength(1);
+    expect(lore.filter(([g,included])=>g==='book/services'&&included)).toHaveLength(2);
+    expect(lore.filter(([g,included])=>g==='book2/services'&&included)).toHaveLength(1);
+  });
+  it('fingerprints exactly the embedding inputs, not unrelated record metadata',()=>{
+    const {campaign}=crowdingCampaign();const records=knowledgeRecords(campaign);const before=indexFingerprint(records);
+    const authorityFlip=records.map(r=>({...r,authority:r.authority==='canonical-source'?'speculative' as const:'canonical-source' as const}));
+    expect(indexFingerprint(authorityFlip)).toBe(before);
+    const relabeled=records.map(r=>({...r,id:`x${r.id}`}));
+    expect(indexFingerprint(relabeled)).not.toBe(before);
+    expect(indexFingerprint(records.map(r=>({...r,text:`${r.text} changed`})))).not.toBe(before);
   });
 });
 describe('proposals, validation, audit, and rollback',()=>{
@@ -414,12 +474,12 @@ describe('worldbook Jump ownership scope',()=>{
     expect(legacyCampaign([undefined,undefined]).jumpId).toBe('scene-jump');
     expect(legacyCampaign(['jump-old','jump-new']).jumpId).toBe('scene-jump');
   });
-  it('F: reassigning a worldbook to another Jump changes the index fingerprint',()=>{
+  it("F: reassigning a worldbook to another Jump leaves stored vectors valid — the fingerprint covers exactly the embedding inputs (ID + projection), so scope changes don't force rebuilds",()=>{
     const {campaign}=aiFixture();
     campaign.worldbooks=[WorldbookSchema.parse({id:'b',title:'Book',jumpId:'jump-a',entries:[{id:'e',title:'T',text:'X'}]})];
     const before=indexFingerprint(knowledgeRecords(campaign));
     campaign.worldbooks[0].jumpId='jump-b';
-    expect(indexFingerprint(knowledgeRecords(campaign))).not.toBe(before);
+    expect(indexFingerprint(knowledgeRecords(campaign))).toBe(before);
   });
   it('H: native import preserves an explicit jumpId and scopes legacy native JSON to the caller Jump',()=>{
     const withJump={id:'n',title:'Native',jumpId:'explicit-jump',entries:[{id:'e',title:'T',text:'X'}]};

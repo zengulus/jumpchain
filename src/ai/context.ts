@@ -52,14 +52,15 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
   if (bundle.chain.id !== campaign.chainId || bundle.chain.activeBranchId !== campaign.branchId) throw new Error('Campaign belongs to a different tracker chain or branch.');
   const records = mechanicalRecords(bundle, campaign); const settings = campaign.settings;
   const candidates: ContextCandidate[] = [];
-  interface LayerOptions { salience?: ContextSalience; authority?: ContextAuthority; domain: ContextDomain; required?: boolean; relevance?: number; pool?: string; signal?: string; sourceClass?: string; section?: string }
+  interface LayerOptions { salience?: ContextSalience; authority?: ContextAuthority; domain: ContextDomain; required?: boolean; relevance?: number; pool?: string; signal?: string; sourceClass?: string; section?: string; groupKey?: string }
   const add = (name: string, value: unknown, ids: string[] = [], opts: LayerOptions) => {
     const content = typeof value === 'string' ? value : stableStringify(value);
     candidates.push({id: `${name}/${ids.join('/')}`, name, content, sourceIds:ids,
       estimatedTokens:estimateTokens(`${name}\n${content}`)+32,
       salience:opts.salience ?? 'relevant', authority:opts.authority ?? null, domain:opts.domain,
       mandatory:opts.required ?? false, relevance:opts.relevance ?? 0, pool:opts.pool, section:opts.section ?? 'system',
-      signal:opts.signal ?? 'current tracker/campaign context', sourceClass:opts.sourceClass ?? 'tracker-campaign'});
+      signal:opts.signal ?? 'current tracker/campaign context', sourceClass:opts.sourceClass ?? 'tracker-campaign',
+      ...(opts.groupKey !== undefined ? {groupKey: opts.groupKey} : {})});
   };
   // Reserve action and hard constraints before relevance-selected material.
   // Presentation/configuration directives: salient, but not factual claims about the world.
@@ -99,16 +100,25 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
   }
   // Small deterministic domain mapping: world lore and reviewed memory records (facts/events) claim
   // objective reality; summaries are inferred narrative material. Authority comes from the record.
-  for (const r of retrieved) add(r.record.sourceType === 'world' ? 'Retrieved world lore' : 'Retrieved campaign memories', { ...r.record, selectionReason: r.reason }, [r.record.id], {salience: 'relevant', authority: r.record.authority, domain: r.record.sourceType === 'summary' ? 'narrative-history' : 'world-state', relevance:r.score, signal:r.reason, sourceClass:r.record.sourceType, pool:r.record.sourceType === 'world' ? 'lore' : 'memory'});
+  // World chunks share the sourceId of their logical WorldEntry, so the lore pool's groupCount cap
+  // can bound how many chunks of one entry the small lore budget may consume. Facts/events/
+  // summaries are one record per source and carry no groupKey (they cannot be diversified).
+  // Only world records carry a groupKey: chunks of one WorldEntry share its sourceId, qualified by
+  // the owning book so identical entry ids in different books never merge into one logical source.
+  // Facts/events/summaries are one record per source and stay diversification-free.
+  for (const r of retrieved) add(r.record.sourceType === 'world' ? 'Retrieved world lore' : 'Retrieved campaign memories', { ...r.record, selectionReason: r.reason }, [r.record.id], {salience: 'relevant', authority: r.record.authority, domain: r.record.sourceType === 'summary' ? 'narrative-history' : 'world-state', relevance:r.score, signal:r.reason, sourceClass:r.record.sourceType, pool:r.record.sourceType === 'world' ? 'lore' : 'memory', ...(r.record.sourceType === 'world' ? {groupKey:`${r.record.provenance?.bookId ?? ''}/${r.record.sourceId}`} : {})});
   campaign.turns.forEach((turn, sequence) => {
     if (turn.status !== 'complete' || !turn.inContinuity) return;
     candidates.push({id:`history/${turn.id}`,name:'Recent conversation',content:stableStringify([{role:'user',content:turn.action},{role:'assistant',content:turn.narrative}]),
       sourceIds:[turn.id],estimatedTokens:estimateTokens(turn.action)+estimateTokens(turn.narrative)+64,
       salience:'background',authority:null,domain:'narrative-history',mandatory:false,relevance:0,signal:'recent continuity exchange',sourceClass:'conversation',pool:'chat',section:'history',sequence});
   });
-  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth},memory:{count:settings.memoryDepth}}});
+  // loreDepth stays the count of admitted lore records; groupCount bounds chunks per logical
+  // entry at half the budget so one long source cannot monopolize lore while several genuinely
+  // needed chunks of it remain admissible when competitors are weaker.
+  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth,groupCount:Math.max(1,Math.ceil(settings.loreDepth/2))},memory:{count:settings.memoryDepth}}});
   const history = plan.selected.filter(c => c.pool === 'chat').flatMap(c => JSON.parse(c.content) as CompiledContext['messages']);
-  const layers = plan.selected.filter(c => c.pool !== 'chat').map(({id:_id,relevance:_relevance,signal:_signal,sourceClass:_sourceClass,pool:_pool,sequence:_sequence,section:_section,...layer}) => layer);
+  const layers = plan.selected.filter(c => c.pool !== 'chat').map(({id:_id,relevance:_relevance,signal:_signal,sourceClass:_sourceClass,pool:_pool,sequence:_sequence,section:_section,groupKey:_groupKey,...layer}) => layer);
   const system = layers.filter(l => l.name !== 'Current user action').map(l => `${l.name}\n${l.content}`).join('\n\n');
   layers.push({name:'Recent conversation',content:stableStringify(history),sourceIds:plan.selected.filter(c=>c.pool==='chat').flatMap(c=>c.sourceIds),estimatedTokens:plan.selected.filter(c=>c.pool==='chat').reduce((n,c)=>n+c.estimatedTokens,0),salience:'background',authority:null,domain:'narrative-history',mandatory:false});
   const omittedIds = plan.decisions.filter(d=>!d.included).flatMap(d=>d.candidate.sourceIds);

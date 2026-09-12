@@ -197,15 +197,17 @@ export const ContextLayerSchema = z.object({
 export type ContextLayer = z.infer<typeof ContextLayerSchema>;
 export const ContextCandidateSchema = ContextLayerSchema.extend({
   id:z.string().min(1), relevance:z.number().finite(), signal:z.string(), sourceClass:z.string(),
-  estimatedTokens:z.number().int().nonnegative(), pool:z.string().optional(), section:z.string().optional(), sequence:z.number().finite().optional(),
+  estimatedTokens:z.number().int().nonnegative(), pool:z.string().optional(),
+  // Logical source identity used by pool groupCount caps (worldbook entry chunks share one key).
+  groupKey:z.string().optional(), section:z.string().optional(), sequence:z.number().finite().optional(),
 });
 export const ContextPlanSchema = z.object({
   selected: z.array(ContextCandidateSchema),
   decisions: z.array(z.object({
     candidate: ContextCandidateSchema,
-    included:z.boolean(), reason:z.enum(['mandatory','selected','input-budget','pool-tokens','pool-count','history-tail']), budget:z.string().optional(),
+    included:z.boolean(), reason:z.enum(['mandatory','selected','input-budget','pool-tokens','pool-count','pool-group','history-tail']), budget:z.string().optional(),
   })),
-  policy:z.object({sections:z.array(z.string()).optional(),pools:z.record(z.object({tokens:z.number().int().nonnegative().optional(),count:z.number().int().nonnegative().optional(),tail:z.boolean().optional()})).optional()}),
+  policy:z.object({sections:z.array(z.string()).optional(),pools:z.record(z.object({tokens:z.number().int().nonnegative().optional(),count:z.number().int().nonnegative().optional(),groupCount:z.number().int().nonnegative().optional(),tail:z.boolean().optional()})).optional()}),
   inputBudget:z.number().int().nonnegative(), estimatedTokens:z.number().int().nonnegative(),
 });
 export const ContextSchema = z.object({

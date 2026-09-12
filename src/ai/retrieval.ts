@@ -26,21 +26,37 @@ export function chunks(text: string, size = 1800): string[] {
   if (buffer) result.push(buffer);
   return result;
 }
-// Canonical searchable projection of one knowledge record: the single text format used by BM25
-// documents, embedding index construction, reranking inputs, and the index fingerprint. Metadata
-// authored for retrieval (title, entities/aliases, tags) participates in both lexical and dense
-// retrieval through this one projection — as signal only, never as activation triggers or hard
-// filters. SillyTavern activation interop is deliberately not part of any record. The title is
-// repeated once to preserve the established lexical field weighting without a per-retriever format.
+// Semantic canonical projection of one knowledge record: title, entities/aliases, tags, text,
+// each represented once. It is the single text format for embedding index construction, reranking
+// inputs, and the index fingerprint. Retriever-specific weighting (BM25's historical title boost)
+// belongs to the lexical scorer, not to the semantic representation — embedding a title twice and
+// reranking it twice are artifacts, not signals. Metadata authored for retrieval participates in
+// dense retrieval through this projection — as signal only, never as activation triggers or hard
+// filters. SillyTavern activation interop is deliberately not part of any record.
 export function searchableText(record: KnowledgeRecord): string {
-  return `${record.title}\n${record.title}\n${record.entities.join(', ')}\n${record.tags.join(', ')}\n${record.text}`;
+  return `${record.title}\n${record.entities.join(', ')}\n${record.tags.join(', ')}\n${record.text}`;
 }
+// Hard cap on total active-thread characters added to a narration lore query. Threads are scene
+// context, not the query's subject: without a bound, many verbose threads would drown the player's
+// actual action in the lexical/dense signal. The action and location are always included in full;
+// threads are appended in scene order, whole while they fit, then one truncated thread fills any
+// remaining budget — deterministic, no model call, no semantic thread selection.
+const THREAD_QUERY_CHARS = 600;
 // Canonical narration-time lore query: the current action plus the scene's established location
-// and active threads. A vague action in a specific scene should retrieve that scene's lore without
-// authors adding generic trigger aliases. Deliberately narrow: NPC beliefs, statuses, and other
-// campaign state are context layers, not stable retrieval signals.
+// and a bounded amount of active thread context. A vague action in a specific scene should retrieve
+// that scene's lore without authors adding generic trigger aliases. Deliberately narrow: NPC
+// beliefs, statuses, and other campaign state are context layers, not stable retrieval signals.
 export function narrationLoreQuery(action: string, scene: { location?: string; threads?: string[] } = {}): string {
-  return [action, scene.location ?? '', (scene.threads ?? []).join(' ')].map(part => part.trim()).filter(Boolean).join(' ');
+  const parts = [action.trim(), (scene.location ?? '').trim()];
+  let used = 0;
+  for (const thread of scene.threads ?? []) {
+    const text = thread.trim();
+    if (!text || used >= THREAD_QUERY_CHARS) continue;
+    const remaining = THREAD_QUERY_CHARS - used;
+    parts.push(text.length <= remaining ? text : text.slice(0, remaining));
+    used += Math.min(text.length, remaining);
+  }
+  return parts.filter(Boolean).join(' ');
 }
 export function knowledgeRecords(campaign: Campaign): KnowledgeRecord[] {
   const records: KnowledgeRecord[] = [];
@@ -73,9 +89,11 @@ export function knowledgeRecords(campaign: Campaign): KnowledgeRecord[] {
 function factRecord(fact: Fact): KnowledgeRecord {
   return { id: fact.id, sourceId: fact.id, title: fact.key, text: fact.text, authority: fact.authority, factKey: fact.key, provenance:{sourceIds:fact.sourceIds}, sourceType: 'memory', setting: '', jump: fact.stamp.jumpId, time: fact.stamp.elapsedMinutes, entities: fact.entities, character: fact.entities, location: fact.location, owner: '', tags: fact.tags, superseded: !!fact.supersededBy };
 }
-// The fingerprint covers the exact projection embedding consumers see, so edits to retrieval
-// metadata (aliases, entities, tags, title) invalidate the dense index exactly like text edits.
-export function indexFingerprint(records: KnowledgeRecord[]): string { return fingerprint(records.slice().sort((a,b) => a.id.localeCompare(b.id)).map(r => ({ ...r, projection: searchableText(r) }))); }
+// Fingerprints exactly the embedding inputs: record identity plus the semantic projection. Those
+// alone determine every stored vector, so changes to them invalidate the index — while unrelated
+// metadata changes (Jump scope, authority, chronology, provenance) leave vectors valid and must
+// not force an unnecessary rebuild.
+export function indexFingerprint(records: KnowledgeRecord[]): string { return fingerprint(records.slice().sort((a,b) => a.id.localeCompare(b.id)).map(r => ({ id: r.id, projection: searchableText(r) }))); }
 export function cosine(a: number[], b: number[]): number {
   if (!a.length || a.length !== b.length) return 0;
   let dot = 0, aa = 0, bb = 0;
@@ -108,9 +126,9 @@ export function eligibleRecords(records: KnowledgeRecord[], filter: RetrievalFil
 export const hybridRetriever: Retriever = {
   search(query, records, { limit, filter = {}, index, queryVector }) {
     const eligible = eligibleRecords(records, filter); const terms = [...new Set(tokens(query))];
-    // Same canonical projection the dense index is built from, so metadata retrieval behaves
-    // consistently across lexical and dense paths.
-    const docs = eligible.map(r => tokens(searchableText(r)));
+    // BM25 keeps its historical explicit title boost: the title is scored twice (here and inside
+    // the projection) while the semantic projection used by embeddings/rerankers carries it once.
+    const docs = eligible.map(r => tokens(`${r.title} ${searchableText(r)}`));
     const avg = docs.reduce((n,d) => n+d.length, 0) / (docs.length || 1) || 1;
     const df = terms.map(t => docs.filter(d => d.includes(t)).length);
     const lexical = eligible.map((record, i) => ({ record, score: terms.reduce((sum, t, j) => {

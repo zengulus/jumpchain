@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planContext, planMessages, estimateTokens, type ContextCandidate } from '../ai/planner';
 import { compileContext } from '../ai/context';
-import { ContextSchema, FactSchema, ProviderSchema, TurnSchema, WorldbookSchema } from '../ai/schema';
+import { ContextPlanSchema, ContextSchema, FactSchema, ProviderSchema, TurnSchema, WorldbookSchema } from '../ai/schema';
 import { eligibleRecords, hybridRetriever, knowledgeRecords } from '../ai/retrieval';
 import { normalizeParticipationSelections } from '../domain/jump/selection';
 import { aiFixture } from './aiFixture';
@@ -79,5 +79,36 @@ describe('central context planning',()=>{
     expect(context.plan?.selected.at(-1)?.section).toBe('action');
     expect(context.messages.slice(1,-1).map(m=>m.content)).toEqual(['action0','reply0','action1','reply1','action2','reply2']);
     expect(context.messages.reduce((n,m)=>n+estimateTokens(m.content)+32,0)).toBeLessThanOrEqual(context.estimatedTokens);
+  });
+  it('caps chunks per logical source with a quota, never a rank change or rotation',()=>{
+    const candidates=[...Array.from({length:5},(_,i)=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:100})),...Array.from({length:5},(_,i)=>candidate(`other/${i}`,{pool:'lore',groupKey:`other/${i}`,relevance:1}))];
+    const policy={pools:{lore:{count:8,groupCount:2}}};
+    const plan=planContext(candidates,windowFor(100),policy);
+    // The quota skips candidates beyond two per source so weaker independent sources still fit,
+    // while admission order (relevance, then stable id) is untouched and one slot stays unused.
+    expect(plan.selected.map(c=>c.id)).toEqual(['chunk/0','chunk/1','other/0','other/1','other/2','other/3','other/4']);
+    expect(plan.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.id)).toEqual(['chunk/2','chunk/3','chunk/4']);
+    expect(planContext([...candidates].reverse(),windowFor(100),policy).selected.map(c=>c.id)).toEqual(plan.selected.map(c=>c.id));
+  });
+  it('admits a materially relevant second chunk ahead of a weak unrelated source',()=>{
+    const plan=planContext([
+      candidate('chunk-1',{pool:'lore',groupKey:'entry',relevance:100}),
+      candidate('chunk-2',{pool:'lore',groupKey:'entry',relevance:90}),
+      candidate('weak-unrelated',{pool:'lore',groupKey:'other',relevance:1}),
+    ],windowFor(30),{pools:{lore:{count:3,groupCount:2}}});
+    expect(plan.selected.map(c=>c.id)).toEqual(['chunk-1','chunk-2','weak-unrelated']);
+    expect(plan.decisions.find(d=>d.candidate.id==='chunk-2')?.reason).toBe('selected');
+  });
+  it('never excludes mandatory candidates via the group quota',()=>{
+    const hard=candidate('hard',{pool:'lore',groupKey:'other',mandatory:true,salience:'required',relevance:0});
+    const plan=planContext([hard,...[0,1,2,3].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:10}))],windowFor(50),{pools:{lore:{count:4,groupCount:2}}});
+    expect(plan.selected.map(c=>c.id)).toEqual(['hard','chunk/0','chunk/1']);
+    expect(plan.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.id)).toEqual(['chunk/2','chunk/3']);
+  });
+  it('rejects invalid group caps and persists pool-group decisions through the context schema',()=>{
+    expect(()=>planContext([candidate('a',{pool:'lore'})],windowFor(10),{pools:{lore:{groupCount:-1}}})).toThrow(/Invalid/);
+    const plan=planContext([candidate('a',{pool:'lore',groupKey:'g'}),candidate('b',{pool:'lore',groupKey:'g'}),candidate('c',{pool:'lore',groupKey:'h'})],windowFor(30),{pools:{lore:{count:2,groupCount:1}}});
+    expect(plan.decisions.find(d=>d.candidate.id==='b')?.reason).toBe('pool-group');
+    expect(ContextPlanSchema.parse(JSON.parse(JSON.stringify(plan))).decisions.map(d=>d.reason)).toEqual(plan.decisions.map(d=>d.reason));
   });
 });

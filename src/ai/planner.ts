@@ -8,6 +8,9 @@ export interface ContextCandidate extends ContextLayer {
   signal: string;
   sourceClass: string;
   pool?: string;
+  /** Logical source identity for diversity caps (e.g. one worldbook entry and all its chunks).
+   * Records that are one-to-one with their source (facts, events, summaries) omit it. */
+  groupKey?: string;
   /** Rendering section; affects presentation only, never admission. */
   section?: string;
   /** Within a tail pool, larger sequence values are newer. */
@@ -15,12 +18,12 @@ export interface ContextCandidate extends ContextLayer {
 }
 export interface ContextPolicy {
   sections?: string[];
-  pools?: Record<string, { tokens?: number; count?: number; tail?: boolean }>;
+  pools?: Record<string, { tokens?: number; count?: number; groupCount?: number; tail?: boolean }>;
 }
 export interface ContextDecision {
   candidate: ContextCandidate;
   included: boolean;
-  reason: 'mandatory' | 'selected' | 'input-budget' | 'pool-tokens' | 'pool-count' | 'history-tail';
+  reason: 'mandatory' | 'selected' | 'input-budget' | 'pool-tokens' | 'pool-count' | 'pool-group' | 'history-tail';
   budget?: string;
 }
 export interface ContextPlan {
@@ -43,7 +46,7 @@ export function planContext(candidates: ContextCandidate[], provider: Pick<Provi
     if (!Number.isFinite(c.relevance) || !Number.isInteger(c.estimatedTokens) || c.estimatedTokens < 0) throw new Error(`Invalid context cost/relevance: ${c.id}`);
   }
   for (const [pool, cap] of Object.entries(policy.pools ?? {})) {
-    for (const value of [cap.tokens,cap.count]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) throw new Error(`Invalid context pool cap: ${pool}`);
+    for (const value of [cap.tokens,cap.count,cap.groupCount]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) throw new Error(`Invalid context pool cap: ${pool}`);
     const members = candidates.filter(c=>c.pool===pool);
     if (cap.tail && (members.some(c=>c.mandatory || !Number.isFinite(c.sequence)) || new Set(members.map(c=>c.salience)).size > 1 || new Set(members.map(c=>c.section)).size > 1)) throw new Error(`Tail pool requires optional candidates with one salience/section and explicit chronology: ${pool}`);
   }
@@ -56,21 +59,25 @@ export function planContext(candidates: ContextCandidate[], provider: Pick<Provi
       || b.relevance-a.relevance || key(a.id,b.id);
   };
   const ordered = [...candidates].sort((a,b) => Number(b.mandatory)-Number(a.mandatory) || compare(a,b));
-  const usage = new Map<string, {tokens:number;count:number;closed:boolean}>();
+  const usage = new Map<string, {tokens:number;count:number;closed:boolean;groups:Map<string,number>}>();
   const decisions: ContextDecision[] = []; const selected: ContextCandidate[] = []; let total = 0;
   for (const candidate of ordered) {
     const pool = candidate.pool; const cap = pool ? policy.pools?.[pool] : undefined;
-    const used = usage.get(pool ?? '') ?? {tokens:0,count:0,closed:false};
+    const used = usage.get(pool ?? '') ?? {tokens:0,count:0,closed:false,groups:new Map<string,number>()};
     let reason: ContextDecision['reason'] = candidate.mandatory ? 'mandatory' : 'selected';
     let affected: string | undefined;
     if (!candidate.mandatory && used.closed) { reason = 'history-tail'; affected = pool; }
     else if (total + candidate.estimatedTokens > budget) { reason = 'input-budget'; affected = 'input'; }
     else if (cap?.tokens !== undefined && used.tokens + candidate.estimatedTokens > cap.tokens) { reason = 'pool-tokens'; affected = pool; }
     else if (cap?.count !== undefined && used.count + 1 > cap.count) { reason = 'pool-count'; affected = pool; }
+    // Source diversity: cap how many candidates of one logical source a pool may admit. Ordering
+    // is untouched — diversity is a quota, never a rank change or a round-robin rotation — and a
+    // candidate beyond the quota is skipped, so later candidates from other sources still fit.
+    else if (!candidate.mandatory && cap?.groupCount !== undefined && candidate.groupKey && (used.groups.get(candidate.groupKey) ?? 0) + 1 > cap.groupCount) { reason = 'pool-group'; affected = pool; }
     const included = reason === 'mandatory' || reason === 'selected';
     if (!included && candidate.mandatory) throw new Error(`Context exceeded budget in ${candidate.name} (${affected}, ${reason}). Required restrictions are never silently dropped.`);
     decisions.push({candidate, included, reason, ...(affected ? {budget:affected} : {})});
-    if (included) { selected.push(candidate); total += candidate.estimatedTokens; used.tokens += candidate.estimatedTokens; used.count++; }
+    if (included) { selected.push(candidate); total += candidate.estimatedTokens; used.tokens += candidate.estimatedTokens; used.count++; if (pool && candidate.groupKey) used.groups.set(candidate.groupKey,(used.groups.get(candidate.groupKey) ?? 0)+1); }
     else if (cap?.tail) used.closed = true;
     if (pool) usage.set(pool, used);
   }
