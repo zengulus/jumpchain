@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { inputBudget } from './budget';
 
 export const RoleSchema = z.enum(['narrator', 'extraction', 'summarization', 'embeddings', 'reranking']);
 export type ModelRole = z.infer<typeof RoleSchema>;
@@ -12,7 +13,7 @@ export const ProviderSchema = z.object({
   stop: z.array(z.string().min(1)).max(20).default([]),
   timeoutMs: z.number().int().min(1000).max(1800000).default(180000),
   streaming: z.boolean().default(true),
-}).strict().refine(p => p.maxOutput + 512 < p.contextWindow, 'Output must leave room for context');
+}).strict().refine(p => inputBudget(p) > 0, 'Output must leave room for context');
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 export const ServiceConfigSchema = z.object({
   schemaVersion: z.literal(1).default(1),
@@ -151,11 +152,25 @@ export const ContextLayerSchema = z.object({
   mandatory: z.boolean().default(false),
 });
 export type ContextLayer = z.infer<typeof ContextLayerSchema>;
+export const ContextCandidateSchema = ContextLayerSchema.extend({
+  id:z.string().min(1), relevance:z.number().finite(), signal:z.string(), sourceClass:z.string(),
+  estimatedTokens:z.number().int().nonnegative(), pool:z.string().optional(), section:z.string().optional(), sequence:z.number().finite().optional(),
+});
+export const ContextPlanSchema = z.object({
+  selected: z.array(ContextCandidateSchema),
+  decisions: z.array(z.object({
+    candidate: ContextCandidateSchema,
+    included:z.boolean(), reason:z.enum(['mandatory','selected','input-budget','pool-tokens','pool-count','history-tail']), budget:z.string().optional(),
+  })),
+  policy:z.object({sections:z.array(z.string()).optional(),pools:z.record(z.object({tokens:z.number().int().nonnegative().optional(),count:z.number().int().nonnegative().optional(),tail:z.boolean().optional()})).optional()}),
+  inputBudget:z.number().int().nonnegative(), estimatedTokens:z.number().int().nonnegative(),
+});
 export const ContextSchema = z.object({
   messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })),
   layers: z.array(ContextLayerSchema),
-  estimatedTokens: z.number(), inputBudget: z.number(), omittedIds: strings, diagnostics: strings,
+  estimatedTokens: z.number(), inputBudget: z.number(), omittedIds: z.array(z.string()), diagnostics: strings,
   trackerFingerprint: z.string(),
+  plan: ContextPlanSchema.optional(),
 });
 export type CompiledContext = z.infer<typeof ContextSchema>;
 export const TurnSchema = z.object({
@@ -165,6 +180,7 @@ export const TurnSchema = z.object({
   context: ContextSchema.nullable().default(null), proposal: ProposalSchema.nullable().default(null),
   proposalStatus: z.enum(['none', 'pending', 'accepted', 'rejected']).default('none'),
   before: StateSchema, baseRevision: z.number().int(),
+  extractionPlan: ContextPlanSchema.optional(),
   extractionContext: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })).default([]),
 });
 export type Turn = z.infer<typeof TurnSchema>;

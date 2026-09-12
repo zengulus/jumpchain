@@ -3,10 +3,9 @@ import { buildBranchWorkspace, getEffectiveCurrentJumpState } from '../domain/ch
 import type { Campaign, CompiledContext, ContextAuthority, ContextDomain, ContextSalience, ProviderConfig } from './schema';
 import { fingerprint, stableStringify } from './schema';
 import { tokens, type Retrieved } from './retrieval';
+import { estimateTokens, planContext, type ContextCandidate } from './planner';
+export { estimateTokens } from './budget';
 
-// UTF-8 byte count is a conservative upper bound for typical local byte-fallback tokenizers.
-// Reserve additional chat-template overhead; no guessed chars/4 budget silently overruns context.
-export function estimateTokens(text: string): number { return new TextEncoder().encode(text).length; }
 export function trackerFingerprint(bundle: NativeChainBundle) {
   const { snapshots: _snapshots, attachments: _attachments, importReports: _reports, ...state } = bundle;
   return fingerprint(state);
@@ -52,19 +51,15 @@ export function mechanicalRecords(bundle: NativeChainBundle, campaign: Campaign)
 export function compileContext(bundle: NativeChainBundle, campaign: Campaign, action: string, provider: ProviderConfig, retrieved: Retrieved[] = [], diagnostics: string[] = []): CompiledContext {
   if (bundle.chain.id !== campaign.chainId || bundle.chain.activeBranchId !== campaign.branchId) throw new Error('Campaign belongs to a different tracker chain or branch.');
   const records = mechanicalRecords(bundle, campaign); const settings = campaign.settings;
-  const context: CompiledContext = { messages: [], layers: [], estimatedTokens: 0, inputBudget: provider.contextWindow-provider.maxOutput-512, omittedIds: [], diagnostics: [...diagnostics, 'Conservative UTF-8 token bound; actual model token counts may be lower.'], trackerFingerprint: trackerFingerprint(bundle) };
-  interface LayerOptions { salience?: ContextSalience; authority?: ContextAuthority; domain: ContextDomain; required?: boolean; allowance?: number }
+  const candidates: ContextCandidate[] = [];
+  interface LayerOptions { salience?: ContextSalience; authority?: ContextAuthority; domain: ContextDomain; required?: boolean; relevance?: number; pool?: string; signal?: string; sourceClass?: string; section?: string }
   const add = (name: string, value: unknown, ids: string[] = [], opts: LayerOptions) => {
-    const { salience = 'relevant', authority = null, domain, required = false, allowance = Infinity } = opts;
     const content = typeof value === 'string' ? value : stableStringify(value);
-    const count = estimateTokens(`${name}\n${content}`)+32;
-    if (context.estimatedTokens+count > context.inputBudget || count > allowance) {
-      // required (fail-loudly budget handling) and mandatory (may this layer be omitted under token
-      // pressure) coincide for every current layer; keep them separate axes for future divergence.
-      if (required) throw new Error(`Context exceeded budget in ${name}. Increase context window, reduce output, or shorten scene/rules/action. Required restrictions are never silently dropped.`);
-      context.omittedIds.push(...ids); return false;
-    }
-    context.layers.push({name, content, sourceIds: ids, estimatedTokens: count, salience, authority, domain, mandatory: required}); context.estimatedTokens += count; return true;
+    candidates.push({id: `${name}/${ids.join('/')}`, name, content, sourceIds:ids,
+      estimatedTokens:estimateTokens(`${name}\n${content}`)+32,
+      salience:opts.salience ?? 'relevant', authority:opts.authority ?? null, domain:opts.domain,
+      mandatory:opts.required ?? false, relevance:opts.relevance ?? 0, pool:opts.pool, section:opts.section ?? 'system',
+      signal:opts.signal ?? 'current tracker/campaign context', sourceClass:opts.sourceClass ?? 'tracker-campaign'});
   };
   // Reserve action and hard constraints before relevance-selected material.
   // Presentation/configuration directives: salient, but not factual claims about the world.
@@ -74,7 +69,7 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
   // Current jump is tracker/jump configuration (ids, titles, document metadata), not descriptive lore.
   add('Current jump', {id: campaign.state.scene.stamp.jumpId, title: bundle.jumps.find(j => j.id === campaign.state.scene.stamp.jumpId)?.title, documents: bundle.jumpDocs.filter(d => bundle.jumps.find(j => j.id === campaign.state.scene.stamp.jumpId)?.jumpDocIds.includes(d.id)).map(d => ({id:d.id,title:d.title,author:d.author,source:d.source,notes:d.notes}))}, [], {salience: 'required', authority: 'authoritative', domain: 'mechanics', required: true});
   add('Current scene facts', campaign.state.scene, [], {salience: 'required', authority: 'campaign-established', domain: 'world-state', required: true});
-  add('Current user action', action, [], {salience: 'directive', authority: null, domain: 'player-action', required: true});
+  add('Current user action', action, [], {salience: 'directive', authority: null, domain: 'player-action', required: true, section:'action'});
   // NPC state is first-class and split by claim kind. Selection is unchanged: present in the
   // scene, linked to a present companion, or explicitly referenced by the current action.
   const selectedNpcs = campaign.state.npcs.filter(n => campaign.state.scene.npcIds.includes(n.id) || campaign.state.scene.presentCompanionIds.includes(n.companionId ?? '') || tokens(`${n.name} ${n.aliases.join(' ')}`).some(t => tokens(action).includes(t)));
@@ -94,31 +89,28 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
     if ([...epistemic.beliefs, ...epistemic.knowledge, ...epistemic.beliefsAboutJumper, ...epistemic.suspicions, ...epistemic.opinions].length > 0) add('NPC beliefs and knowledge (not objective reality)', epistemic, [npc.id], {salience: 'required', authority: 'campaign-established', domain: 'npc-epistemic', required: true});
   }
   const terms = new Set(tokens(`${action} ${campaign.state.scene.location} ${campaign.state.scene.threads.join(' ')}`));
-  const optional = records.filter(r => !r.required).map(r => ({r, score: tokens(r.text).reduce((n,t) => n+(terms.has(t) ? 1 : 0),0) + (campaign.state.scene.presentCompanionIds.includes(r.owner) ? 2 : 0) })).sort((a,b) => b.score-a.score || a.r.id.localeCompare(b.r.id));
-  let mechanicsLeft = settings.mechanicsBudget;
-  for (const {r} of optional) {
-    const before = context.estimatedTokens;
+  const optional = records.filter(r => !r.required).map(r => ({r, score: tokens(r.text).reduce((n,t) => n+(terms.has(t) ? 1 : 0),0) + (campaign.state.scene.presentCompanionIds.includes(r.owner) ? 2 : 0) }));
+  for (const {r, score} of optional) {
     // Player notes are player-authored tracker records (player-established), not mechanical
     // claims; their content asserts world/character facts, so they carry world-state domain.
-    add(`Authoritative ${r.category}`, {id: r.id, owner: r.owner, authority: r.category === 'player-note' ? 'player-established' : 'authoritative', value: r.record}, [r.id], {salience: 'relevant', authority: r.category === 'player-note' ? 'player-established' : 'authoritative', domain: r.category === 'player-note' ? 'world-state' : 'mechanics', allowance: mechanicsLeft});
-    mechanicsLeft -= context.estimatedTokens-before;
+    add(`Authoritative ${r.category}`, {id: r.id, owner: r.owner, authority: r.category === 'player-note' ? 'player-established' : 'authoritative', value: r.record}, [r.id], {salience: 'relevant', authority: r.category === 'player-note' ? 'player-established' : 'authoritative', domain: r.category === 'player-note' ? 'world-state' : 'mechanics', pool: 'mechanics', relevance:score, signal:'lexical overlap and scene companion presence'});
   }
   // Small deterministic domain mapping: world lore and reviewed memory records (facts/events) claim
   // objective reality; summaries are inferred narrative material. Authority comes from the record.
-  for (const r of retrieved) add(r.record.sourceType === 'world' ? 'Retrieved world lore' : 'Retrieved campaign memories', { ...r.record, selectionReason: r.reason }, [r.record.id], {salience: 'relevant', authority: r.record.authority, domain: r.record.sourceType === 'summary' ? 'narrative-history' : 'world-state'});
-  let chatLeft = settings.chatBudget;
-  const history: typeof context.messages = [];
-  for (const turn of [...campaign.turns].reverse().filter(t => t.status === 'complete' && t.inContinuity)) {
-    const count = estimateTokens(turn.action)+estimateTokens(turn.narrative)+64;
-    if (count > chatLeft || context.estimatedTokens+count > context.inputBudget) { context.omittedIds.push(turn.id); break; }
-    chatLeft -= count; context.estimatedTokens += count;
-    history.unshift({role:'user',content:turn.action}, {role:'assistant',content:turn.narrative});
-  }
-  const system = context.layers.filter(l => l.name !== 'Current user action').map(l => `${l.name}\n${l.content}`).join('\n\n');
-  context.messages = [{role:'system',content:system}, ...history, {role:'user',content:action}];
-  // Recent conversation is tail-fill material: lowest-salience ('background'), non-mandatory, and
-  // not itself a factual claim (user actions are directives, narration is provisional until reviewed).
-  context.layers.push({name:'Recent conversation',content:stableStringify(history),sourceIds:[],estimatedTokens:settings.chatBudget-chatLeft,salience:'background',authority:null,domain:'narrative-history',mandatory:false});
-  if (context.omittedIds.length) context.diagnostics.push(`${context.omittedIds.length} records omitted by budget; omission does not imply lack of ability.`);
-  return context;
+  for (const r of retrieved) add(r.record.sourceType === 'world' ? 'Retrieved world lore' : 'Retrieved campaign memories', { ...r.record, selectionReason: r.reason }, [r.record.id], {salience: 'relevant', authority: r.record.authority, domain: r.record.sourceType === 'summary' ? 'narrative-history' : 'world-state', relevance:r.score, signal:r.reason, sourceClass:r.record.sourceType, pool:r.record.sourceType === 'world' ? 'lore' : 'memory'});
+  campaign.turns.forEach((turn, sequence) => {
+    if (turn.status !== 'complete' || !turn.inContinuity) return;
+    candidates.push({id:`history/${turn.id}`,name:'Recent conversation',content:stableStringify([{role:'user',content:turn.action},{role:'assistant',content:turn.narrative}]),
+      sourceIds:[turn.id],estimatedTokens:estimateTokens(turn.action)+estimateTokens(turn.narrative)+64,
+      salience:'background',authority:null,domain:'narrative-history',mandatory:false,relevance:0,signal:'recent continuity exchange',sourceClass:'conversation',pool:'chat',section:'history',sequence});
+  });
+  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth},memory:{count:settings.memoryDepth}}});
+  const history = plan.selected.filter(c => c.pool === 'chat').flatMap(c => JSON.parse(c.content) as CompiledContext['messages']);
+  const layers = plan.selected.filter(c => c.pool !== 'chat').map(({id:_id,relevance:_relevance,signal:_signal,sourceClass:_sourceClass,pool:_pool,sequence:_sequence,section:_section,...layer}) => layer);
+  const system = layers.filter(l => l.name !== 'Current user action').map(l => `${l.name}\n${l.content}`).join('\n\n');
+  layers.push({name:'Recent conversation',content:stableStringify(history),sourceIds:plan.selected.filter(c=>c.pool==='chat').flatMap(c=>c.sourceIds),estimatedTokens:plan.selected.filter(c=>c.pool==='chat').reduce((n,c)=>n+c.estimatedTokens,0),salience:'background',authority:null,domain:'narrative-history',mandatory:false});
+  const omittedIds = plan.decisions.filter(d=>!d.included).flatMap(d=>d.candidate.sourceIds);
+  return {messages:[{role:'system',content:system},...history,{role:'user',content:action}], layers,
+    estimatedTokens:plan.estimatedTokens,inputBudget:plan.inputBudget,omittedIds,plan,
+    diagnostics:[...diagnostics,'Conservative UTF-8 token bound; actual model token counts may be lower.',...(omittedIds.length ? [`${omittedIds.length} records omitted by budget; omission does not imply lack of ability.`] : [])],trackerFingerprint:trackerFingerprint(bundle)};
 }

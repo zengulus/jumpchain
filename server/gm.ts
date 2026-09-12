@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { NativeChainBundle } from '../src/domain/save';
-import { compileContext, estimateTokens } from '../src/ai/context';
-import { knowledgeRecords, hybridRetriever, indexFingerprint, type RetrievalFilter, type Retrieved } from '../src/ai/retrieval';
-import { ProposalSchema, SummarySchema, stableStringify, type Campaign, type ProviderConfig, type Turn } from '../src/ai/schema';
+import { compileContext } from '../src/ai/context';
+import { knowledgeRecords, hybridRetriever, indexFingerprint, type RetrievalFilter } from '../src/ai/retrieval';
+import { ProposalSchema, SummarySchema, stableStringify, type Campaign, type Turn } from '../src/ai/schema';
 import { applyProposal, proposalInstructions, validateWorldbookScopes } from '../src/ai/state';
+import { planContext, planMessages, messageCandidates, estimateTokens, type ContextCandidate } from '../src/ai/planner';
 import { LocalStore } from './store';
 import { openAICompatible, parseModelJson, type Message } from './provider';
 
@@ -25,14 +26,12 @@ export class GMService {
       catch (e) { if (signal?.aborted) throw e; diagnostics.push(`Embedding endpoint unavailable: ${(e as Error).message} Using BM25.`); index = undefined; }
     }
     const options = {filter:{jump:campaign.state.scene.stamp.jumpId,before:campaign.state.scene.stamp.elapsedMinutes,...filter},index,queryVector};
-    let results = hybridRetriever.search(query,records,{...options,limit:Math.max(30,campaign.settings.loreDepth+campaign.settings.memoryDepth)});
+    let results = hybridRetriever.search(query,records,{...options,limit:records.length});
     if (config.providers.reranking && results.length) try {
       const scores = await openAICompatible.rerank(config.providers.reranking,query,results.map(r => r.record.text),signal);
       results = results.map((r,i) => ({...r,score:scores[i],reason:`${r.reason}; reranked`})).sort((a,b) => b.score-a.score);
     } catch (e) { if (signal?.aborted) throw e; diagnostics.push(`Reranker unavailable: ${(e as Error).message} Using fused ranking.`); }
-    const lore = results.filter(r => r.record.sourceType === 'world').slice(0,campaign.settings.loreDepth);
-    const memories = results.filter(r => r.record.sourceType !== 'world').slice(0,campaign.settings.memoryDepth);
-    return {results:[...memories,...lore],diagnostics};
+    return {results,diagnostics};
   }
   async rebuild(campaign: Campaign, bundle: NativeChainBundle, signal?: AbortSignal) {
     // Reject worldbooks whose Jump ownership cannot be validated against the supplied tracker
@@ -47,18 +46,24 @@ export class GMService {
   }
   async analyze(campaign: Campaign, bundle: NativeChainBundle, turn: Turn, signal?: AbortSignal) {
     const config = await this.store.config(); const provider = config.providers.extraction ?? config.providers.narrator;
-    const relevant = hybridRetriever.search(`${turn.action} ${turn.narrative}`, knowledgeRecords({...campaign,state:turn.before}), {limit:16,filter:{jump:turn.before.scene.stamp.jumpId,before:turn.before.scene.stamp.elapsedMinutes}});
-    const selectedIds = new Set(relevant.map(r => r.record.sourceId));
-    const previousState = {scene:turn.before.scene, npcs:turn.before.npcs.filter(n => turn.before.scene.npcIds.includes(n.id) || turn.before.scene.presentCompanionIds.includes(n.companionId ?? '') || turn.narrative.toLowerCase().includes(n.name.toLowerCase())), facts:turn.before.facts.filter(f => selectedIds.has(f.id)), events:turn.before.events.filter(e => selectedIds.has(e.id))};
-    const messages: Message[] = [{role:'system',content:proposalInstructions(turn.id,turn.before)+'\nOnly relevant prior memories are included. Omitted history is unknown; never infer that it did not happen.'}, {role:'user',content:stableStringify({previousState,exchange:{user:turn.action,gm:turn.narrative}})}];
+    const records = knowledgeRecords({...campaign,state:turn.before});
+    const relevant = hybridRetriever.search(`${turn.action} ${turn.narrative}`, records, {limit:records.length,filter:{jump:turn.before.scene.stamp.jumpId,before:turn.before.scene.stamp.elapsedMinutes}});
+    const previousState = {scene:turn.before.scene, npcs:turn.before.npcs.filter(n => turn.before.scene.npcIds.includes(n.id) || turn.before.scene.presentCompanionIds.includes(n.companionId ?? '') || turn.narrative.toLowerCase().includes(n.name.toLowerCase()))};
+    const messages: Message[] = [{role:'system',content:proposalInstructions(turn.id,turn.before)+'\nOnly relevant prior memories are included. Omitted history is unknown; never infer that it did not happen.'}, {role:'user',content:stableStringify({previousState,priorMemories:[],exchange:{user:turn.action,gm:turn.narrative}})}];
+    const base = messageCandidates(messages);
+    const candidates: ContextCandidate[] = relevant.filter(r=>r.record.sourceType==='memory').map(r => {
+      const record = turn.before.facts.find(f=>f.id===r.record.sourceId) ?? turn.before.events.find(e=>e.id===r.record.sourceId);
+      if (!record) throw new Error(`Retrieved prior memory is missing: ${r.record.sourceId}`);
+      const content = stableStringify(record);
+      return {id:`memory/${r.record.id}`,name:'Prior memory',content,sourceIds:[r.record.sourceId],estimatedTokens:estimateTokens(content)+1,salience:'relevant',authority:r.record.authority,domain:'world-state',mandatory:false,relevance:r.score,signal:r.reason,sourceClass:'memory',pool:'memory'};
+    });
+    const plan = planContext([...base,...candidates], provider, {pools:{memory:{count:16}}});
+    messages[1].content = stableStringify({...JSON.parse(messages[1].content),priorMemories:plan.selected.filter(c=>c.pool==='memory').map(c=>JSON.parse(c.content))});
     turn.extractionContext = messages;
-    this.checkBudget(provider,messages);
+    turn.extractionPlan = plan;
     const raw = await openAICompatible.generate(provider,messages,() => {},signal,true);
     const proposal = ProposalSchema.parse(parseModelJson(raw));
     applyProposal(turn.before,proposal,bundle,campaign,[turn.id]); return proposal;
-  }
-  checkBudget(provider: ProviderConfig, messages: Message[]) {
-    if (messages.reduce((n,m) => n+estimateTokens(m.content)+32,0)+provider.maxOutput+512 > provider.contextWindow) throw new Error('Structured task context exceeded budget. Assign a larger extraction/summary context or select fewer source events.');
   }
   async generate(id: string, bundle: NativeChainBundle, action: string, expectedRevision: number, emit: (event: unknown) => void, signal?: AbortSignal) {
     const campaign = await this.store.get(id);
@@ -89,7 +94,7 @@ export class GMService {
     if (!events.length || events.length !== new Set(eventIds).size) throw new Error('Select existing, current events for the summary.');
     const config = await this.store.config(); const provider = config.providers.summarization ?? config.providers.narrator;
     const messages: Message[] = [{role:'system',content:'Summarize only these reviewed campaign events. Preserve uncertainty, chronology, and NPC belief versus truth. Reference event IDs. This summary is an inferred retrieval aid, not authoritative state.'},{role:'user',content:stableStringify({level,events})}];
-    this.checkBudget(provider,messages);
+    planMessages(messages,provider);
     const text = await openAICompatible.generate(provider,messages,() => {},signal);
     return SummarySchema.parse({id:randomUUID(),level,title,text,eventIds,stamp:campaign.state.scene.stamp});
   }

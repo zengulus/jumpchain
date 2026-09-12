@@ -4,6 +4,7 @@ import { fingerprint } from './schema';
 export interface KnowledgeRecord {
   id: string; text: string; title: string; authority: Authority; factKey: string;
   sourceType: 'world' | 'memory' | 'summary'; sourceId: string;
+  provenance?: {sourceIds:string[]; source?:string; page?:number; bookId?:string};
   setting: string; jump: string; entities: string[]; character: string[]; location: string; owner: string;
   tags: string[]; time?: number; validTo?: number; superseded: boolean; supersededAt?: number;
 }
@@ -36,24 +37,25 @@ export function knowledgeRecords(campaign: Campaign): KnowledgeRecord[] {
     const jump = book.jumpId;
     chunks(entry.text + (entry.annotation ? `\nPlayer annotation: ${entry.annotation}` : '')).forEach((text, i) => records.push({
       id: `${book.id}/${entry.id}/${i}`, sourceId: entry.id, text, title: entry.title, authority: entry.authority, factKey: entry.factKey,
+      provenance:{sourceIds:[entry.id],source:entry.source,page:entry.page,bookId:book.id},
       sourceType: 'world', setting: book.setting, jump, entities: [...entry.entities, ...entry.aliases], character: entry.entities,
       location: entry.location, owner: entry.owner, tags: [...book.tags, ...entry.tags], time: entry.validFrom, validTo: entry.validTo, superseded: false,
     }));
   }
   for (const fact of campaign.state.facts) records.push({...factRecord(fact), supersededAt:campaign.state.facts.find(f=>f.id===fact.supersededBy && f.stamp.jumpId===fact.stamp.jumpId)?.stamp.elapsedMinutes});
   for (const event of campaign.state.events) records.push({
-    id: event.id, sourceId: event.id, title: event.summary.slice(0, 100), text: JSON.stringify(event), authority: event.authority, factKey: '', sourceType: 'memory', setting: '',
+    id: event.id, sourceId: event.id, title: event.summary.slice(0, 100), text: JSON.stringify(event), authority: event.authority, factKey: '', sourceType: 'memory', provenance:{sourceIds:event.sourceMessageIds}, setting: '',
     jump: event.stamp.jumpId, time: event.stamp.elapsedMinutes, entities: event.entities, character: event.participants, location: event.location,
     owner: '', tags: event.tags, superseded: !!event.supersededBy, supersededAt:campaign.state.events.find(e=>e.id===event.supersededBy && e.stamp.jumpId===event.stamp.jumpId)?.stamp.elapsedMinutes,
   });
   for (const summary of campaign.state.summaries) records.push({
-    id: summary.id, sourceId: summary.id, title: summary.title, text: JSON.stringify(summary), authority: 'inferred', factKey: '', sourceType: 'summary', setting: '',
+    id: summary.id, sourceId: summary.id, title: summary.title, text: JSON.stringify(summary), authority: 'inferred', factKey: '', sourceType: 'summary', provenance:{sourceIds:summary.eventIds}, setting: '',
     jump: summary.stamp.jumpId, time: summary.stamp.elapsedMinutes, entities: [], character: [], location: '', owner: '', tags: [summary.level], superseded: false,
   });
   return records;
 }
 function factRecord(fact: Fact): KnowledgeRecord {
-  return { id: fact.id, sourceId: fact.id, title: fact.key, text: fact.text, authority: fact.authority, factKey: fact.key, sourceType: 'memory', setting: '', jump: fact.stamp.jumpId, time: fact.stamp.elapsedMinutes, entities: fact.entities, character: fact.entities, location: fact.location, owner: '', tags: fact.tags, superseded: !!fact.supersededBy };
+  return { id: fact.id, sourceId: fact.id, title: fact.key, text: fact.text, authority: fact.authority, factKey: fact.key, provenance:{sourceIds:fact.sourceIds}, sourceType: 'memory', setting: '', jump: fact.stamp.jumpId, time: fact.stamp.elapsedMinutes, entities: fact.entities, character: fact.entities, location: fact.location, owner: '', tags: fact.tags, superseded: !!fact.supersededBy };
 }
 export function indexFingerprint(records: KnowledgeRecord[]): string { return fingerprint(records.slice().sort((a,b) => a.id.localeCompare(b.id))); }
 export function cosine(a: number[], b: number[]): number {
@@ -68,7 +70,7 @@ export function eligibleRecords(records: KnowledgeRecord[], filter: RetrievalFil
   const winners = new Map<string, KnowledgeRecord>();
   for (const r of temporal) if (r.factKey) {
     const key = r.factKey.toLocaleLowerCase(); const prev = winners.get(key);
-    if (!prev || authorityRank[r.authority] > authorityRank[prev.authority] || (r.authority === prev.authority && (r.time ?? 0) > (prev.time ?? 0))) winners.set(key, r);
+    if (!prev || authorityRank[r.authority] > authorityRank[prev.authority] || (r.authority === prev.authority && ((r.time ?? 0) > (prev.time ?? 0) || ((r.time ?? 0) === (prev.time ?? 0) && r.id < prev.id)))) winners.set(key, r);
   }
   return temporal.filter(r => {
     const winner = r.factKey ? winners.get(r.factKey.toLocaleLowerCase()) : undefined;
@@ -95,7 +97,7 @@ export const hybridRetriever: Retriever = {
       const tf = docs[i].filter(w => w === t).length;
       return sum + Math.log(1 + (docs.length - df[j] + .5) / (df[j] + .5)) * tf * 2.2 / (tf + 1.2 * (.25 + .75 * docs[i].length / avg));
     }, 0) })).filter(r => r.score > 0).sort((a,b) => b.score-a.score || a.record.id.localeCompare(b.record.id));
-    const dense = queryVector && index ? eligible.map(record => ({ record, score: cosine(queryVector, index.vectors[record.id] ?? []) })).filter(r => r.score > .15).sort((a,b) => b.score-a.score) : [];
+    const dense = queryVector && index ? eligible.map(record => ({ record, score: cosine(queryVector, index.vectors[record.id] ?? []) })).filter(r => r.score > .15).sort((a,b) => b.score-a.score || a.record.id.localeCompare(b.record.id)) : [];
     const scores = new Map<string, Retrieved>();
     [lexical, dense].forEach((ranked, source) => ranked.forEach(({record}, i) => {
       const prev = scores.get(record.id) ?? { record, score: 0, reason: '' };
@@ -103,6 +105,6 @@ export const hybridRetriever: Retriever = {
     }));
     // Empty query is a chronological/history browse, not a failed semantic search.
     if (!terms.length) for (const record of eligible) scores.set(record.id, {record, score: 1/61, reason: 'history'});
-    return [...scores.values()].map(r => ({ ...r, score: r.score + authorityRank[r.record.authority]*.0002 + (r.record.jump === filter.jump && r.record.time !== undefined && filter.before !== undefined ? .001/(1+(filter.before-r.record.time)/1440) : 0), reason: `${r.reason.trim()}; ${r.record.authority}; source ${r.record.sourceId}` })).sort((a,b) => b.score-a.score || a.record.id.localeCompare(b.record.id)).slice(0,limit);
+    return [...scores.values()].map(r => ({ ...r, score: r.score + (r.record.jump === filter.jump && r.record.time !== undefined && filter.before !== undefined ? .001/(1+(filter.before-r.record.time)/1440) : 0), reason: `${r.reason.trim()}; ${r.record.authority}; source ${r.record.sourceId}` })).sort((a,b) => b.score-a.score || a.record.id.localeCompare(b.record.id)).slice(0,limit);
   },
 };

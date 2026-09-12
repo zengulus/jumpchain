@@ -1,14 +1,17 @@
 // @vitest-environment node
-import { afterAll,beforeAll,describe,it,expect } from 'vitest';
+import { afterAll,beforeAll,describe,it,expect,vi } from 'vitest';
 import { mkdtemp,rm,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Server } from 'node:http';
+import { request, type Server } from 'node:http';
 import { LocalStore } from '../../server/store';
 import { createApp } from '../../server/http';
 import { createMockModel } from '../../server/mock';
 import { openAICompatible,parseModelJson,sseData } from '../../server/provider';
 import { CampaignSchema, ProviderSchema, WorldbookSchema, stableStringify, type Campaign } from '../ai/schema';
+import * as planner from '../ai/planner';
+import { GMService } from '../../server/gm';
+import { EventSchema, FactSchema, TurnSchema } from '../ai/schema';
 import { aiFixture } from './aiFixture';
 
 async function listen(server:Server){await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});return `http://127.0.0.1:${(server.address() as {port:number}).port}`;}
@@ -18,6 +21,65 @@ async function post(path:string,data:unknown){const res=await fetch(base+'/api/v
 beforeAll(async()=>{root=await mkdtemp(join(tmpdir(),'jumpchain-ai-test-'));store=new LocalStore(root);await store.init();model=createMockModel();modelUrl=await listen(model.server);await store.saveConfig({providers:{narrator:ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-gm'})}});service=createApp(store);base=await listen(service.server);});
 afterAll(async()=>{if(service)await close(service.server);if(model)await close(model.server);if(store)await store.close();if(root)await rm(root,{recursive:true,force:true});});
 describe('local API and mock model orchestration',()=>{
+  it('routes every finite AI task through shared planning before model invocation (architecture guard)',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='planner-guard';
+    campaign.state.events=[EventSchema.parse({id:'event',summary:'Entered Hogwarts.',stamp:campaign.state.scene.stamp,authority:'campaign-established'})];
+    await store.save(campaign);
+    const gm=new GMService(store);const turn=TurnSchema.parse({id:'guard-turn',createdAt:'now',action:'Enter',narrative:'Entered Hogwarts.',status:'complete',before:campaign.state,baseRevision:0});
+    const before=model.requests.length;
+    const direct=vi.spyOn(planner,'planContext').mockImplementation(()=>{throw new Error('planner sentinel');});
+    const messages=vi.spyOn(planner,'planMessages').mockImplementation(()=>{throw new Error('planner sentinel');});
+    try {
+      await expect(gm.generate(campaign.id,bundle,'Enter',0,()=>{})).rejects.toThrow('planner sentinel');
+      await expect(gm.analyze(campaign,bundle,turn)).rejects.toThrow('planner sentinel');
+      await expect(gm.summarize(campaign,'scene',['event'],'Scene')).rejects.toThrow('planner sentinel');
+      expect((await post('/extract',{sections:[{id:'s',title:'Perks',text:'Fly freely.',page:1,bounds:[{page:1,x:0,y:0,width:1,height:1}]}]})).body.error).toContain('planner sentinel');
+      expect(direct).toHaveBeenCalledTimes(2);expect(messages).toHaveBeenCalledTimes(2);
+      expect(model.requests).toHaveLength(before);
+    } finally {direct.mockRestore();messages.mockRestore();}
+  });
+  it('fails mandatory overflow before narration and persists no attempted turn',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='overflow';campaign.settings.gmPrompt='x'.repeat(30000);await store.save(campaign);
+    const before=model.requests.length;
+    await expect(new GMService(store).generate(campaign.id,bundle,'Enter',0,()=>{})).rejects.toThrow(/Required restrictions/);
+    expect(model.requests).toHaveLength(before);expect((await store.get(campaign.id)).turns).toEqual([]);
+  });
+  it('passes all lexical candidates to the planner, which enforces depth and records omissions',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='planner-retrieval';campaign.settings.loreDepth=1;
+    campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Hogwarts',jumpId:campaign.state.scene.stamp.jumpId,entries:Array.from({length:40},(_,i)=>({id:`e${i}`,title:'Hogwarts',text:'Hogwarts castle.'}))})];
+    await store.save(campaign);const gm=new GMService(store);
+    const config=await store.config();config.providers.embeddings=ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-embedding'});await store.saveConfig(config);
+    try {
+      for(const stale of [false,true]) {
+        if(stale) await store.saveIndex(campaign.id,{version:1,fingerprint:'stale',provider:'old',vectors:{}});
+        const result=await gm.retrieve(campaign,'Hogwarts');expect(result.results).toHaveLength(40);expect(result.diagnostics.join(' ')).toMatch(/BM25/);
+        const {compileContext}=await import('../ai/context');const context=compileContext(bundle,campaign,'Hogwarts',config.providers.narrator,result.results,result.diagnostics);
+        expect(context.plan?.selected.filter(c=>c.pool==='lore')).toHaveLength(1);
+        expect(context.plan?.decisions.filter(d=>d.reason==='pool-count')).toHaveLength(39);
+      }
+    } finally {delete config.providers.embeddings;await store.saveConfig(config);}
+  });
+  it('plans relevant extraction memories and persists inspectable plans through campaign storage',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='planned-extraction';
+    campaign.state.facts=Array.from({length:24},(_,i)=>FactSchema.parse({id:`f${i}`,key:`key${i}`,text:'Hogwarts castle.',authority:'campaign-established',stamp:campaign.state.scene.stamp}));
+    await store.save(campaign);await new GMService(store).generate(campaign.id,bundle,'Enter Hogwarts',0,()=>{});
+    const saved=await store.get(campaign.id);const turn=saved.turns[0];
+    expect(turn.proposalStatus).toBe('pending');expect(turn.extractionPlan?.selected.filter(c=>c.pool==='memory')).toHaveLength(16);
+    expect(turn.extractionPlan?.decisions.some(d=>d.reason==='pool-count')).toBe(true);
+    expect(JSON.parse(turn.extractionContext[1].content).priorMemories).toHaveLength(16);
+    expect(turn.context?.plan).toBeDefined();
+    expect(turn.extractionContext.reduce((n,m)=>n+planner.estimateTokens(m.content)+32,0)).toBeLessThanOrEqual(turn.extractionPlan!.estimatedTokens);
+  });
+  it('summarizes complete reviewed events using shared accounting',async()=>{
+    const {campaign}=aiFixture();campaign.state.events=[EventSchema.parse({id:'summary-event',summary:'Entered Hogwarts.',stamp:campaign.state.scene.stamp,authority:'campaign-established'})];
+    const spy=vi.spyOn(planner,'planMessages');
+    try {
+      const summary=await new GMService(store).summarize(campaign,'scene',['summary-event'],'Arrival');
+      expect(summary.authority).toBe('inferred');expect(summary.eventIds).toEqual(['summary-event']);
+      const plan=spy.mock.results[0].value as planner.ContextPlan;
+      expect(plan.selected.every(c=>c.mandatory)).toBe(true);expect(plan.estimatedTokens).toBeLessThanOrEqual(plan.inputBudget);
+    } finally {spy.mockRestore();}
+  });
   it('streams narrative, separately validates proposals, rejects stale sheet changes, applies and rolls back',async()=>{
     const {bundle,campaign}=aiFixture();campaign.id='vertical';await store.save(campaign);const original=stableStringify(bundle);
     const res=await fetch(`${base}/api/v1/campaigns/vertical/turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bundle,revision:0,action:'Enter Hogwarts'})});
@@ -74,7 +136,7 @@ describe('local API and mock model orchestration',()=>{
   it('rejects stale revisions and hostile browser origins/Host headers',async()=>{
     const c=await store.get('vertical');expect((await post('/campaigns/vertical/settings',{revision:-1,settings:c.settings})).body.error).toMatch(/another window/);
     const origin=await fetch(base+'/api/v1/config',{headers:{Origin:'https://malicious.example'}});expect(origin.status).toBe(403);
-    const host=await fetch(base+'/api/v1/health',{headers:{Host:'malicious.example'}});expect(host.status).toBe(403);
+    const status=await new Promise<number|undefined>((resolve,reject)=>{const req=request(base+'/api/v1/health',{headers:{Host:'malicious.example'}},res=>{res.resume();resolve(res.statusCode);});req.on('error',reject);req.end();});expect(status).toBe(403);
   });
   it('reports missing/unreachable endpoints and truncated streams without mutations',async()=>{
     const unavailable=ProviderSchema.parse({baseUrl:'http://127.0.0.1:1/v1',model:'missing',timeoutMs:1000});await expect(openAICompatible.models(unavailable)).rejects.toThrow(/unreachable/);

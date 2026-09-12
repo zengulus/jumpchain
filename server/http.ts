@@ -1,3 +1,4 @@
+import { planMessages } from '../src/ai/planner';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
@@ -76,7 +77,7 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
         const input = z.object({sections:z.array(PdfSectionSchema).min(1).max(20)}).parse(await body(req));
         const config = await store.config(); const provider = config.providers.extraction ?? config.providers.narrator;
         const messages = [{role:'system' as const,content:extractionInstructions},{role:'user' as const,content:stableStringify(input.sections)}];
-        gm.checkBudget(provider,messages);
+        planMessages(messages,provider);
         const raw = await openAICompatible.generate(provider,messages,() => {},undefined,true);
         json(res,{draft:validateExtraction(parseModelJson(raw),input.sections),context:messages}); return;
       }

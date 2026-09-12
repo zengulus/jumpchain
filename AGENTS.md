@@ -373,3 +373,13 @@ Likely presentation layers include:
 Do not prematurely encode all of these into one integer priority.
 
 Preserve enough structure that conflict resolution and context selection can evolve independently.
+
+# Context policy ownership
+
+Factual conflict resolution and context admission are separate authorities; context admission is planned centrally from typed candidates.
+
+* `src/ai/retrieval.ts` owns source eligibility, chronology, and factual conflict/supersession resolution before relevance ranking. Authority must not add a relevance bonus.
+* `src/ai/planner.ts` owns mandatory reservation, salience ordering, relevance admission, stable ties, pool caps, history tails, omissions, and presentation order.
+* `src/ai/budget.ts` owns the conservative token estimate and input window minus output and safety reserve calculation. Provider validation reuses it.
+* Narration, state analysis, summarization, and document extraction must route finite-context admission/accounting through the planner. Candidate construction and prompt rendering remain task-specific.
+* New focus or source classes extend typed candidates/policies, not a second selection loop. Authority, domain, salience, mandatory status, and relevance stay distinct.
