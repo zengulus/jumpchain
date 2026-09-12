@@ -9,6 +9,8 @@ import { createApp } from '../../server/http';
 import { createMockModel } from '../../server/mock';
 import { openAICompatible,parseModelJson,sseData } from '../../server/provider';
 import { CampaignSchema, ProviderSchema, WorldbookSchema, stableStringify, type Campaign } from '../ai/schema';
+import * as transitions from '../ai/transitions';
+import { compileContext } from '../ai/context';
 import * as planner from '../ai/planner';
 import { GMService } from '../../server/gm';
 import { EventSchema, FactSchema, TurnSchema } from '../ai/schema';
@@ -79,6 +81,58 @@ describe('local API and mock model orchestration',()=>{
       const plan=spy.mock.results[0].value as planner.ContextPlan;
       expect(plan.selected.every(c=>c.mandatory)).toBe(true);expect(plan.estimatedTokens).toBeLessThanOrEqual(plan.inputBudget);
     } finally {spy.mockRestore();}
+  });
+  it('validates initial campaign snapshots through the shared consistency boundary',async()=>{
+    const {bundle,campaign}=aiFixture();const good=await post('/campaigns',{bundle,title:'Created',jumpId:campaign.state.scene.stamp.jumpId});expect(good.status).toBe(201);expect(good.body.audit).toEqual([]);
+    const bad=await post('/campaigns',{bundle,title:'Invalid',jumpId:'missing'});expect(bad.status).toBe(400);expect(bad.body.error).toMatch(/chronology jump/);
+  });
+  it('rejects general-purpose persisted state writes outside transition commit (architecture guard)',async()=>{
+    const {campaign}=aiFixture();campaign.id='mutation-guard';await store.save(campaign);
+    const path=store.path(campaign.id),before=await readFile(path,'utf8');
+    await expect(store.transaction(campaign.id,c=>{c.state.scene.location='Bypassed';})).rejects.toThrow(/must use a validated transition/);
+    expect(await readFile(path,'utf8')).toBe(before);
+    const direct=await store.get(campaign.id);direct.state.facts.push(FactSchema.parse({id:'bypass',key:'x',text:'x',authority:'inferred',stamp:direct.state.scene.stamp}));
+    await expect(store.save(direct)).rejects.toThrow(/must use a validated transition/);expect(await readFile(path,'utf8')).toBe(before);
+  });
+  it('lowers full player edits and operation submissions into one audited transition',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='player-transitions';await store.save(campaign);
+    const desired=structuredClone(campaign.state);desired.scene.location='Corrected';desired.scene.stamp.elapsedMinutes=0;
+    const response=await post(`/campaigns/${campaign.id}/state`,{bundle,revision:0,state:desired});expect(response.status).toBe(200);
+    expect(response.body.state).toEqual(desired);expect(response.body.audit).toHaveLength(1);expect(response.body.audit[0].transition.origin).toBe('player-edit');expect(response.body.audit[0].transition.operations).toEqual([{kind:'scene.correct',value:desired.scene}]);
+    const second=await post(`/campaigns/${campaign.id}/state`,{bundle,revision:response.body.revision,operations:[{kind:'scene.update',value:{title:'New title'}}]});expect(second.status).toBe(200);expect(second.body.audit).toHaveLength(2);
+    const before=await readFile(store.path(campaign.id),'utf8');
+    const invalid=await post(`/campaigns/${campaign.id}/state`,{bundle,revision:second.body.revision,operations:[{kind:'scene.update',value:{location:'Would change'}},{kind:'scene.presence',npcs:[{id:'unknown'}]}]});expect(invalid.status).toBe(400);expect(await readFile(store.path(campaign.id),'utf8')).toBe(before);
+  });
+  it('routes player editing, model review and summary commits through the same transition application',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='transition-routing';
+    campaign.state.events=[EventSchema.parse({id:'e',summary:'Arrival',authority:'campaign-established',stamp:campaign.state.scene.stamp})];
+    await store.save(campaign);await new GMService(store).generate(campaign.id,bundle,'Enter Hogwarts',0,()=>{});const current=await store.get(campaign.id);
+    const before=await readFile(store.path(campaign.id),'utf8');const spy=vi.spyOn(transitions,'applyTransition').mockImplementation(()=>{throw new Error('transition sentinel');});
+    try {
+      const requests=[['state',{bundle,state:{...current.state,scene:{...current.state.scene,location:'New'}}}],['review',{bundle,turnId:current.turns[0].id,accept:true}],['summarize',{eventIds:['e'],level:'scene',title:'Arrival'}]] as const;
+      for(const [operation,payload] of requests) {const result=await post(`/campaigns/${campaign.id}/${operation}`,{revision:current.revision,...payload});expect(result.body.error).toContain('transition sentinel');expect(await readFile(store.path(campaign.id),'utf8')).toBe(before);}
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {spy.mockRestore();}
+  });
+  it('commits generated summaries through audited operations and rejects obsolete sources',async()=>{
+    const {campaign}=aiFixture();campaign.id='summary-transitions';campaign.state.events=[EventSchema.parse({id:'e',summary:'Arrival',authority:'campaign-established',stamp:campaign.state.scene.stamp})];await store.save(campaign);
+    const result=await post(`/campaigns/${campaign.id}/summarize`,{revision:0,eventIds:['e'],level:'scene',title:'Arrival'});expect(result.status).toBe(200);
+    expect(result.body.audit).toHaveLength(1);expect(result.body.audit[0].transition.origin).toBe('generated-summary');expect(result.body.audit[0].transition.operations[0].kind).toBe('summary.create');
+    expect(result.body.state.summaries[0].id).toBe(result.body.audit[0].transition.created[0].id);
+    const before=await readFile(store.path(campaign.id),'utf8');expect((await post(`/campaigns/${campaign.id}/summarize`,{revision:result.body.revision,eventIds:['missing'],level:'scene',title:'Invalid'})).status).toBe(400);expect(await readFile(store.path(campaign.id),'utf8')).toBe(before);
+  });
+  it('keeps created identities stable from persisted preview to review and rejects replay',async()=>{
+    const {campaign,bundle}=aiFixture();campaign.id='stable-review';const operations=[{kind:'fact.create',handle:'gate',value:{key:'gate',text:'Open',authority:'inferred'}}];
+    const turn=TurnSchema.parse({id:'stable-turn',createdAt:'now',status:'complete',action:'Open',narrative:'Opened',before:campaign.state,baseRevision:0,context:compileContext(bundle,campaign,'Open',ProviderSchema.parse({})),proposal:{version:2,rationale:'Observed',operations},proposalStatus:'pending'});
+    turn.transitionPlan=transitions.planTransition(campaign.state,operations,{origin:'model-proposal',campaign,bundle,sourceTurnId:turn.id},'stable-preview');campaign.turns.push(turn);await store.save(campaign);
+    const before=await store.get(campaign.id);const identity=before.turns[0].transitionPlan!.created[0].id;
+    const accepted=await post(`/campaigns/${campaign.id}/review`,{revision:0,bundle,turnId:turn.id,accept:true});expect(accepted.status).toBe(200);expect(accepted.body.state.facts[0].id).toBe(identity);expect(accepted.body.audit[0].transition).toEqual(before.turns[0].transitionPlan);
+    expect((await post(`/campaigns/${campaign.id}/review`,{revision:accepted.body.revision,bundle,turnId:turn.id,accept:true})).body.error).toMatch(/No pending/);
+  });
+  it('loads legacy pending proposals without losing history and supports fresh analysis',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='legacy-proposal';campaign.turns=[TurnSchema.parse({id:'legacy-turn',createdAt:'then',status:'complete',action:'Enter',narrative:'Enter Hogwarts',before:campaign.state,baseRevision:0,context:compileContext(bundle,campaign,'Enter',ProviderSchema.parse({})),proposal:{rationale:'Legacy',changes:[{kind:'scene',value:{...campaign.state.scene,location:'Great Hall'}}]},proposalStatus:'pending'})];
+    await store.save(campaign);const loaded=await store.get(campaign.id);expect(loaded.turns[0].proposalStatus).toBe('rejected');expect(loaded.turns[0].error).toMatch(/Legacy/);expect(loaded.turns[0].proposal).toEqual(campaign.turns[0].proposal);
+    const retried=await post(`/campaigns/${campaign.id}/analyze`,{revision:0,bundle,turnId:'legacy-turn'});expect(retried.status).toBe(200);expect(retried.body.turns[0].proposal.version).toBe(2);expect(retried.body.turns[0].transitionPlan.validation).toBe('valid');expect(retried.body.state).toEqual(campaign.state);
   });
   it('streams narrative, separately validates proposals, rejects stale sheet changes, applies and rolls back',async()=>{
     const {bundle,campaign}=aiFixture();campaign.id='vertical';await store.save(campaign);const original=stableStringify(bundle);

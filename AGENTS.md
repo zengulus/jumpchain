@@ -383,3 +383,16 @@ Factual conflict resolution and context admission are separate authorities; cont
 * `src/ai/budget.ts` owns the conservative token estimate and input window minus output and safety reserve calculation. Provider validation reuses it.
 * Narration, state analysis, summarization, and document extraction must route finite-context admission/accounting through the planner. Candidate construction and prompt rendering remain task-specific.
 * New focus or source classes extend typed candidates/policies, not a second selection loop. Authority, domain, salience, mandatory status, and relevance stay distinct.
+
+# Campaign-state transition ownership
+
+Campaign-state evolution is expressed as typed semantic operations. One transition authority validates capabilities and invariants and computes the resulting state. Callers may construct different operations and possess different capabilities, but they do not independently mutate persisted `CampaignState`.
+
+* `src/ai/transitions.ts` owns pure planning/replay, typed local-reference resolution, stable generated identities, actor capabilities, and state invariants. `validateState` checks whole-state consistency; it is not authorization to commit arbitrary state.
+* Model proposals use narrow version-2 operations. Creation IDs and exchange provenance come from trusted context. Models cannot invoke player corrections/deletions, rewrite history, change Jump, reverse time, or reassign companion identity. Narration/analysis only proposes; explicit player review commits.
+* Player editors lower desired state into typed corrections/deletions/order operations, preserving their broader corrective powers. `/state` fixes the trusted origin to player; payloads cannot select capabilities.
+* Generated summaries have only the `summary.create` capability. Source events must exist and be current. They do not acquire general system mutation powers.
+* `src/ai/state.ts::commitTransition` is the one forward state assignment/audit pathway. It revalidates the exact preview and checks stale campaign/tracker state. Existing-record storage writes require its process-local receipt; do not bypass this through file writes or another mutation API.
+* Rollback remains a specialist in `state.ts`: restore an audited snapshot only after divergence/consistency checks, mark that audit rolled back, invalidate subsequent turn continuity where applicable, and reject pending proposals. It is not a forward model operation.
+* Initial campaign creation, import/backup remapping, fork initialization, and deserialization/migration may construct historical/new snapshots. They must validate before storage, and copied pending proposals cannot be accepted against a new campaign identity. Settings/worldbooks remain separate configuration boundaries.
+* Legacy proposal bodies and audit snapshots stay inspectable. Legacy pending whole-object proposals are rejected with an explicit retry-analysis message on migration. New plans are always revalidated before acceptance; persisted validation labels are not trusted authorization.

@@ -2,11 +2,12 @@ import { describe,it,expect } from 'vitest';
 import { compileContext, mechanicalRecords, trackerFingerprint } from '../ai/context';
 import { ContextSchema, FactSchema, NpcSchema, ProviderSchema, ProposalSchema, TurnSchema, WorldbookSchema, stableStringify, migrateCampaign } from '../ai/schema';
 import { eligibleRecords, hybridRetriever, indexFingerprint, knowledgeRecords } from '../ai/retrieval';
-import { applyProposal, auditChange, rollbackLatest, validateState, validateWorldbookScopes } from '../ai/state';
+import { reviewProposal, rollbackLatest, validateState, validateWorldbookScopes } from '../ai/state';
 import { exportSillyTavernWorldbook, isSillyTavernWorldInfo } from '../ai/sillyTavern';
 import { extractedJumpDoc, importWorldbook, validateExtraction } from '../ai/documents';
 import { createBlankJumpDoc } from '../features/workspace/records';
 import { normalizeParticipationSelections } from '../domain/jump/selection';
+import { planTransition } from '../ai/transitions';
 import { aiFixture } from './aiFixture';
 
 describe('AI context and mechanical authority',()=>{
@@ -144,17 +145,18 @@ describe('hybrid retrieval, chronology, provenance, and disposable indices',()=>
 describe('proposals, validation, audit, and rollback',()=>{
   it('rejects mechanical operations, forged provenance, reverse time, and unknown companions',()=>{
     const {bundle,campaign}=aiFixture();expect(()=>ProposalSchema.parse({rationale:'',changes:[{kind:'perk',value:{}}]})).toThrow();
-    const fact=FactSchema.parse({id:'new',key:'fact',text:'x',authority:'authoritative',stamp:campaign.state.scene.stamp,sourceIds:['turn']});
-    expect(()=>applyProposal(campaign.state,{rationale:'',changes:[{kind:'fact',value:fact}]},bundle,campaign,['turn'])).toThrow(/authority/);
-    fact.authority='inferred';fact.sourceIds=['invented'];expect(()=>applyProposal(campaign.state,{rationale:'',changes:[{kind:'fact',value:fact}]},bundle,campaign,['turn'])).toThrow(/provenance/);
-    const scene=structuredClone(campaign.state.scene);scene.stamp.elapsedMinutes=0;expect(()=>applyProposal(campaign.state,{rationale:'',changes:[{kind:'scene',value:scene}]},bundle,campaign,[])).toThrow(/reverse/);
-    scene.stamp.elapsedMinutes=110;scene.presentCompanionIds=['fake'];expect(()=>applyProposal(campaign.state,{rationale:'',changes:[{kind:'scene',value:scene}]},bundle,campaign,[])).toThrow(/not active/);
+    const context={origin:'model-proposal' as const,campaign,bundle,sourceTurnId:'turn'};
+    expect(()=>planTransition(campaign.state,[{kind:'fact.create',handle:'fact',value:{key:'fact',text:'x',authority:'authoritative'}}],context,'t')).toThrow(/authority/);
+    expect(()=>planTransition(campaign.state,[{kind:'fact.create',handle:'fact',value:{key:'fact',text:'x',authority:'inferred',sourceIds:['forged']}}],context,'t')).toThrow(/sourceIds/);
+    expect(()=>planTransition(campaign.state,[{kind:'scene.advance',minutes:-1}],context,'t')).toThrow();
+    expect(()=>planTransition(campaign.state,[{kind:'scene.presence',companionIds:['fake']}],context,'t')).toThrow(/not active/);
   });
   it('audits accepted state, rolls back, and excludes rolled-back narrative from future context',()=>{
     const {bundle,campaign}=aiFixture();const before=stableStringify(bundle);const scene={...campaign.state.scene,location:'Great Hall'};
-    const turn=TurnSchema.parse({id:'turn',createdAt:'now',action:'enter',narrative:'The troll dies.',status:'complete',before:campaign.state,baseRevision:0});campaign.turns.push(turn);
-    const next=applyProposal(campaign.state,{rationale:'The player entered',changes:[{kind:'scene',value:scene}]},bundle,campaign,['turn']);
-    expect(campaign.state.scene.location).toBe('Hogwarts');auditChange(campaign,next,'Accepted','turn','audit');expect(campaign.state.scene.location).toBe('Great Hall');
+    const operations=[{kind:'scene.update' as const,value:{location:scene.location}}];
+    const turn=TurnSchema.parse({id:'turn',createdAt:'now',action:'enter',narrative:'The troll dies.',status:'complete',before:campaign.state,baseRevision:0,context:compileContext(bundle,campaign,'enter',ProviderSchema.parse({})),proposal:{version:2,rationale:'Entered',operations},proposalStatus:'pending'});campaign.turns.push(turn);
+    turn.transitionPlan=planTransition(campaign.state,operations,{origin:'model-proposal',campaign,bundle,sourceTurnId:turn.id},'audit');
+    expect(campaign.state.scene.location).toBe('Hogwarts');reviewProposal(campaign,bundle,turn.id,true,'now');expect(campaign.state.scene.location).toBe('Great Hall');
     rollbackLatest(campaign);expect(campaign.state.scene.location).toBe('Hogwarts');expect(campaign.audit[0].rolledBack).toBe(true);expect(stableStringify(bundle)).toBe(before);
     expect(compileContext(bundle,campaign,'Look around',ProviderSchema.parse({})).messages.some(m=>m.content==='The troll dies.')).toBe(false);
   });

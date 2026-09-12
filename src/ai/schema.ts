@@ -129,8 +129,51 @@ export const ChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('event'), value: EventSchema }).strict(),
   z.object({ kind: z.literal('supersede'), target: z.enum(['fact', 'event']), id: z.string(), replacementId: z.string() }).strict(),
 ]);
-export const ProposalSchema = z.object({ rationale: z.string().max(20000), changes: z.array(ChangeSchema).max(100) }).strict();
+export const LegacyProposalSchema = z.object({ rationale: z.string().max(20000), changes: z.array(ChangeSchema).max(100) }).strict();
+// Version 2 model operations have no persistent IDs or caller-controlled provenance.
+export const RecordRefSchema = z.union([z.object({id:z.string().min(1)}).strict(),z.object({local:z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/)}).strict()]);
+const handle = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
+export const SceneUpdateSchema = SceneSchema.omit({stamp:true,presentCompanionIds:true,npcIds:true}).partial();
+export const NpcUpdateSchema = NpcSchema.pick({name:true,setting:true,background:true,location:true,relationship:true,lastInteraction:true}).partial();
+export const NpcListSchema = z.enum(['aliases','opinions','beliefs','knowledge','beliefsAboutJumper','suspicions','goals','resources','plans']);
+export const NewFactSchema = FactSchema.omit({id:true,sourceIds:true,supersededBy:true}).extend({stamp:StampSchema.optional()});
+export const NewEventSchema = EventSchema.omit({id:true,sourceMessageIds:true,supersededBy:true}).extend({stamp:StampSchema.optional()});
+export const ModelOperationSchema = z.discriminatedUnion('kind', [
+  z.object({kind:z.literal('scene.update'),value:SceneUpdateSchema}).strict().describe('Change only supplied scene fields; omitted fields remain unchanged.'),
+  z.object({kind:z.literal('scene.advance'),minutes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),absoluteDate:z.string().max(100).optional()}).strict().describe('Advance minutes within this Jump; optional absoluteDate is a calendar label.'),
+  z.object({kind:z.literal('scene.presence'),npcs:z.array(RecordRefSchema).max(500).optional(),companionIds:strings.optional()}).strict().describe('Set only supplied presence lists. NPC references may use earlier local handles.'),
+  z.object({kind:z.literal('npc.create'),handle,value:NpcSchema.omit({id:true,eventIds:true})}).strict().describe('Create an NPC with a local handle and name; other fields have empty defaults.'),
+  z.object({kind:z.literal('npc.update'),npc:RecordRefSchema,value:NpcUpdateSchema}).strict().describe('Change only supplied NPC scalar fields; never change companion identity.'),
+  z.object({kind:z.literal('npc.list'),npc:RecordRefSchema,list:NpcListSchema,add:strings,remove:strings}).strict().describe('Add/remove exact strings in one named NPC list; preserve all other fields.'),
+  z.object({kind:z.literal('npc.events'),npc:RecordRefSchema,events:z.array(RecordRefSchema).max(500)}).strict().describe('Attach existing or earlier local event references to an NPC.'),
+  z.object({kind:z.literal('fact.create'),handle,value:NewFactSchema}).strict().describe('Create a fact; application assigns ID and exchange provenance. Optional stamp defaults to current scene.'),
+  z.object({kind:z.literal('event.create'),handle,value:NewEventSchema}).strict().describe('Create an event; application assigns ID and exchange provenance. Optional stamp defaults to current scene.'),
+  z.object({kind:z.literal('memory.supersede'),target:z.enum(['fact','event']),record:RecordRefSchema,replacement:RecordRefSchema}).strict().describe('Supersede a current fact/event with a current record of the same type. Never supersede player declarations.'),
+]);
+export const PlayerOperationSchema = z.discriminatedUnion('kind', [
+  z.object({kind:z.literal('scene.correct'),value:SceneSchema}).strict(),
+  z.object({kind:z.literal('npc.correct'),value:NpcSchema}).strict(),
+  z.object({kind:z.literal('fact.correct'),value:FactSchema}).strict(),
+  z.object({kind:z.literal('event.correct'),value:EventSchema}).strict(),
+  z.object({kind:z.literal('summary.correct'),value:SummarySchema}).strict(),
+  z.object({kind:z.literal('record.delete'),target:z.enum(['npc','fact','event','summary']),id:z.string().min(1)}).strict(),
+  z.object({kind:z.literal('records.order'),target:z.enum(['npc','fact','event','summary']),ids:z.array(z.string())}).strict(),
+]);
+export const SummaryOperationSchema = z.object({kind:z.literal('summary.create'),handle,value:SummarySchema.omit({id:true})}).strict();
+export const CampaignOperationSchema = z.union([ModelOperationSchema,PlayerOperationSchema,SummaryOperationSchema]);
+export type CampaignOperation = z.infer<typeof CampaignOperationSchema>;
+export const ModelProposalSchema = z.object({version:z.literal(2),rationale:z.string().max(20000),operations:z.array(ModelOperationSchema).max(100)}).strict();
+export const ProposalSchema = z.union([ModelProposalSchema,LegacyProposalSchema]);
 export type Proposal = z.infer<typeof ProposalSchema>;
+export const TransitionOriginSchema = z.enum(['model-proposal','player-edit','generated-summary']);
+export const TransitionPlanSchema = z.object({
+  version:z.literal(1),id:z.string().min(1),campaignId:z.string(),chainId:z.string(),branchId:z.string(),
+  origin:TransitionOriginSchema,sourceTurnId:z.string().nullable(),trackerFingerprint:z.string().nullable(),
+  operations:z.array(CampaignOperationSchema),before:StateSchema,after:StateSchema,
+  created:z.array(z.object({handle:z.string(),kind:z.enum(['npc','fact','event','summary']),id:z.string()})),
+  affectedIds:z.array(z.string()),validation:z.literal('valid'),
+}).strict();
+export type TransitionPlan = z.infer<typeof TransitionPlanSchema>;
 export const ContextSalienceSchema = z.enum(['directive', 'focused', 'required', 'relevant', 'background']);
 export type ContextSalience = z.infer<typeof ContextSalienceSchema>;
 // Context authority is the Authority model plus null: null marks a layer that is not itself a
@@ -180,6 +223,7 @@ export const TurnSchema = z.object({
   context: ContextSchema.nullable().default(null), proposal: ProposalSchema.nullable().default(null),
   proposalStatus: z.enum(['none', 'pending', 'accepted', 'rejected']).default('none'),
   before: StateSchema, baseRevision: z.number().int(),
+  transitionPlan: TransitionPlanSchema.optional(),
   extractionPlan: ContextPlanSchema.optional(),
   extractionContext: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() })).default([]),
 });
@@ -189,7 +233,7 @@ export const CampaignSchema = z.object({
   revision: z.number().int().nonnegative(), createdAt: z.string(), updatedAt: z.string(),
   parentCampaignId: z.string().nullable().default(null), settings: SettingsSchema,
   state: StateSchema, worldbooks: z.array(WorldbookSchema).default([]), turns: z.array(TurnSchema).default([]),
-  audit: z.array(z.object({ id: z.string(), at: z.string(), action: z.string(), turnId: z.string().nullable(), before: StateSchema, after: StateSchema, rolledBack: z.boolean().default(false) })).default([]),
+  audit: z.array(z.object({ id: z.string(), at: z.string(), action: z.string(), turnId: z.string().nullable(), before: StateSchema, after: StateSchema, rolledBack: z.boolean().default(false), transition:TransitionPlanSchema.optional() })).default([]),
 }).strict();
 export type Campaign = z.infer<typeof CampaignSchema>;
 function migrateLegacyWorldbookScope(book: unknown, currentJumpId: string): Record<string, unknown> {
@@ -226,7 +270,12 @@ export function migrateCampaign(raw: unknown): Campaign {
     });
     if (changed) raw = { ...obj, worldbooks };
   }
-  return CampaignSchema.parse(raw);
+  const campaign = CampaignSchema.parse(raw);
+  for (const turn of campaign.turns) if (turn.proposalStatus === 'pending' && turn.proposal && !('version' in turn.proposal)) {
+    turn.proposalStatus = 'rejected';
+    turn.error = 'Legacy whole-object proposal preserved for inspection. Retry state analysis before review.';
+  }
+  return campaign;
 }
 export function stableStringify(value: unknown): string {
   return JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);

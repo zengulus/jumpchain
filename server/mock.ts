@@ -15,7 +15,7 @@ export function createMockModel() {
         content=JSON.stringify({title:'Mock Jump',author:'Fixture Author',source:'Local PDF',currencies:{'0':{name:'Choice Points',abbrev:'CP',budget:1000,essential:true}},entries:[{kind:'perk',title:'Flight',description:sections[0].text,sectionId:sections[0].id,costs:[{amount:100,currencyKey:'0'}]}],warnings:[]});
       }else{
         const previous=JSON.parse(body.messages[1].content).previousState;
-        content=JSON.stringify({rationale:'The player entered the hall.',changes:[{kind:'scene',value:{...previous.scene,location:'Great Hall',stamp:{...previous.scene.stamp,elapsedMinutes:previous.scene.stamp.elapsedMinutes+5}}}]});
+        content=JSON.stringify({version:2,rationale:'The player entered the hall.',operations:[{kind:'scene.update',value:{location:'Great Hall'}},{kind:'scene.advance',minutes:5}]});
       }
       if(mode==='malformed')content='{not JSON';
     }

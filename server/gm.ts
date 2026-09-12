@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { NativeChainBundle } from '../src/domain/save';
 import { compileContext } from '../src/ai/context';
 import { knowledgeRecords, hybridRetriever, indexFingerprint, type RetrievalFilter } from '../src/ai/retrieval';
-import { ProposalSchema, SummarySchema, stableStringify, type Campaign, type Turn } from '../src/ai/schema';
-import { applyProposal, proposalInstructions, validateWorldbookScopes } from '../src/ai/state';
+import { ModelProposalSchema, SummarySchema, stableStringify, type Campaign, type Turn } from '../src/ai/schema';
+import { proposalInstructions, validateWorldbookScopes } from '../src/ai/state';
 import { planContext, planMessages, messageCandidates, estimateTokens, type ContextCandidate } from '../src/ai/planner';
+import { planTransition, summaryEvents } from '../src/ai/transitions';
 import { LocalStore } from './store';
 import { openAICompatible, parseModelJson, type Message } from './provider';
 
@@ -62,8 +63,9 @@ export class GMService {
     turn.extractionContext = messages;
     turn.extractionPlan = plan;
     const raw = await openAICompatible.generate(provider,messages,() => {},signal,true);
-    const proposal = ProposalSchema.parse(parseModelJson(raw));
-    applyProposal(turn.before,proposal,bundle,campaign,[turn.id]); return proposal;
+    const proposal = ModelProposalSchema.parse(parseModelJson(raw));
+    turn.transitionPlan = planTransition(turn.before,proposal.operations,{origin:'model-proposal',campaign,bundle,sourceTurnId:turn.id},`${turn.id}/proposal`);
+    return proposal;
   }
   async generate(id: string, bundle: NativeChainBundle, action: string, expectedRevision: number, emit: (event: unknown) => void, signal?: AbortSignal) {
     const campaign = await this.store.get(id);
@@ -90,12 +92,11 @@ export class GMService {
     emit({type:'done',turn});
   }
   async summarize(campaign: Campaign, level: 'scene'|'chapter'|'arc'|'jump'|'chain', eventIds: string[], title: string, signal?: AbortSignal) {
-    const events = campaign.state.events.filter(e => eventIds.includes(e.id) && !e.supersededBy);
-    if (!events.length || events.length !== new Set(eventIds).size) throw new Error('Select existing, current events for the summary.');
+    const events = summaryEvents(campaign.state,eventIds);
     const config = await this.store.config(); const provider = config.providers.summarization ?? config.providers.narrator;
     const messages: Message[] = [{role:'system',content:'Summarize only these reviewed campaign events. Preserve uncertainty, chronology, and NPC belief versus truth. Reference event IDs. This summary is an inferred retrieval aid, not authoritative state.'},{role:'user',content:stableStringify({level,events})}];
     planMessages(messages,provider);
     const text = await openAICompatible.generate(provider,messages,() => {},signal);
-    return SummarySchema.parse({id:randomUUID(),level,title,text,eventIds,stamp:campaign.state.scene.stamp});
+    return SummarySchema.omit({id:true}).parse({level,title,text,eventIds,stamp:campaign.state.scene.stamp});
   }
 }

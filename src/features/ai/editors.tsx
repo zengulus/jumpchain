@@ -1,5 +1,6 @@
+import { playerEditOperations } from '../../ai/transitions';
 import { useEffect, useState } from 'react';
-import { NpcSchema, SceneSchema, SettingsSchema, StateSchema, type Campaign, type CampaignState } from '../../ai/schema';
+import { NpcSchema, SceneSchema, SettingsSchema, StateSchema, type Campaign, type CampaignOperation } from '../../ai/schema';
 import type { NativeChainBundle } from '../../domain/save';
 export function JsonReview({value,onSave,label='Review JSON'}:{value:unknown;onSave:(raw:unknown)=>Promise<void>;label?:string}) {
   const [text,setText]=useState(()=>JSON.stringify(value,null,2));const [error,setError]=useState('');const [busy,setBusy]=useState(false);
@@ -18,7 +19,7 @@ export function SettingsPanel({campaign,onSave}:{campaign:Campaign;onSave:(setti
     <button onClick={async()=>{try{await onSave(SettingsSchema.parse(settings));setNotice('GM settings saved.');}catch(e){setNotice((e as Error).message);}}}>Save GM settings</button><p role="status">{notice}</p>
   </section>;
 }
-export function SceneEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:NativeChainBundle;onSave:(state:CampaignState)=>Promise<void>}) {
+export function SceneEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:NativeChainBundle;onSave:(operations:CampaignOperation[])=>Promise<void>}) {
   const [scene,setScene]=useState(campaign.state.scene);const [notice,setNotice]=useState('');
   useEffect(()=>setScene(campaign.state.scene),[campaign.state.scene]);
   const companions=bundle.companions.filter(c=>bundle.companionParticipations.some(p=>p.companionId===c.id&&p.jumpId===scene.stamp.jumpId&&p.status==='active'));
@@ -31,11 +32,11 @@ export function SceneEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:N
     <fieldset><legend>Companions in this scene</legend>{companions.length?companions.map(c=><label key={c.id}><input type="checkbox" checked={scene.presentCompanionIds.includes(c.id)} onChange={e=>setScene({...scene,presentCompanionIds:e.target.checked?[...scene.presentCompanionIds,c.id]:scene.presentCompanionIds.filter(id=>id!==c.id)})}/>{c.name}</label>):<p>Add active companion participations in the tracker to include them here.</p>}</fieldset>
     <fieldset><legend>NPCs in this scene</legend>{campaign.state.npcs.map(n=><label key={n.id}><input type="checkbox" checked={scene.npcIds.includes(n.id)} onChange={e=>setScene({...scene,npcIds:e.target.checked?[...scene.npcIds,n.id]:scene.npcIds.filter(id=>id!==n.id)})}/>{n.name}</label>)}</fieldset>
     {(['threads','plans'] as const).map(key=><label key={key}>{key==='threads'?'Unresolved threads':'Ongoing plans'}<textarea value={scene[key].join('\n')} onChange={e=>setScene({...scene,[key]:e.target.value.split('\n').filter(Boolean)})}/></label>)}
-    <button onClick={async()=>{try{await onSave({...campaign.state,scene:SceneSchema.parse(scene)});setNotice('Scene saved to campaign history.');}catch(e){setNotice((e as Error).message);}}}>Save scene</button><p role="status">{notice}</p>
-    <details><summary>Status, injuries, resources, and temporary objects</summary><JsonReview value={campaign.state.scene} onSave={raw=>onSave({...campaign.state,scene:SceneSchema.parse(raw)})}/></details>
+    <button onClick={async()=>{try{await onSave(playerEditOperations(campaign.state,{...campaign.state,scene:SceneSchema.parse(scene)}));setNotice('Scene saved to campaign history.');}catch(e){setNotice((e as Error).message);}}}>Save scene</button><p role="status">{notice}</p>
+    <details><summary>Status, injuries, resources, and temporary objects</summary><JsonReview value={campaign.state.scene} onSave={raw=>onSave(playerEditOperations(campaign.state,{...campaign.state,scene:SceneSchema.parse(raw)}))}/></details>
   </section>;
 }
-export function NpcEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:NativeChainBundle;onSave:(state:CampaignState)=>Promise<void>}) {
+export function NpcEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:NativeChainBundle;onSave:(operations:CampaignOperation[])=>Promise<void>}) {
   const [selected,setSelected]=useState('');const [draft,setDraft]=useState(NpcSchema.parse({id:crypto.randomUUID(),name:'New NPC'}));const [notice,setNotice]=useState('');
   useEffect(()=>{const npc=campaign.state.npcs.find(n=>n.id===selected);if(npc)setDraft(npc);},[selected,campaign.state.npcs]);
   return <section className="ai-panel stack"><h2>NPCs & companion continuity</h2><p>Knowledge and beliefs describe this character’s perspective. Objective facts belong in campaign memory.</p>
@@ -43,6 +44,6 @@ export function NpcEditor({campaign,bundle,onSave}:{campaign:Campaign;bundle:Nat
     <div className="ai-fields">{(['name','setting','location','relationship','background'] as const).map(key=><label key={key}>{key}<input value={draft[key]} onChange={e=>setDraft({...draft,[key]:e.target.value})}/></label>)}
     <label>Tracker companion link<select value={draft.companionId??''} onChange={e=>setDraft({...draft,companionId:e.target.value||null})}><option value="">Independent NPC</option>{bundle.companions.filter(c=>c.branchId===campaign.branchId).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div>
     <div className="ai-fields">{(['aliases','opinions','beliefs','knowledge','beliefsAboutJumper','suspicions','goals','resources','plans'] as const).map(key=><label key={key}>{key==='beliefsAboutJumper'?'Beliefs about the Jumper':key}<textarea rows={3} value={draft[key].join('\n')} onChange={e=>setDraft({...draft,[key]:e.target.value.split('\n').filter(Boolean)})}/></label>)}</div>
-    <button onClick={async()=>{try{const npc=NpcSchema.parse(draft);await onSave({...campaign.state,npcs:[...campaign.state.npcs.filter(n=>n.id!==npc.id),npc]});setSelected(npc.id);setNotice('NPC saved.');}catch(e){setNotice((e as Error).message);}}}>Save NPC</button><p role="status">{notice}</p>
+    <button onClick={async()=>{try{const npc=NpcSchema.parse(draft);await onSave(playerEditOperations(campaign.state,{...campaign.state,npcs:[...campaign.state.npcs.filter(n=>n.id!==npc.id),npc]}));setSelected(npc.id);setNotice('NPC saved.');}catch(e){setNotice((e as Error).message);}}}>Save NPC</button><p role="status">{notice}</p>
   </section>;
 }

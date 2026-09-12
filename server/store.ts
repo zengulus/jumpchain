@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CampaignSchema, ServiceConfigSchema, ProviderSchema, stableStringify, type Campaign, type ServiceConfig } from '../src/ai/schema';
 import type { VectorIndex } from '../src/ai/retrieval';
-import { validateCampaign } from '../src/ai/state';
+import { assertStateWrite, validateCampaign } from '../src/ai/state';
 
 export class LocalStore {
   private locks = new Map<string, Promise<unknown>>();
@@ -35,7 +35,7 @@ export class LocalStore {
     if (!/^[a-zA-Z0-9_-]{1,160}$/.test(id)) throw new Error('Invalid campaign identifier.');
     return join(this.root,index ? 'indexes':'campaigns',`${id}.json`);
   }
-  async atomic(path: string, value: unknown) {
+  private async atomic(path: string, value: unknown) {
     const temp = `${path}.${randomUUID()}.tmp`;
     try {
       const file = await open(temp,'wx',0o600);
@@ -44,7 +44,12 @@ export class LocalStore {
     } finally { await rm(temp,{force:true}); }
   }
   async get(id: string): Promise<Campaign> { return validateCampaign(JSON.parse(await readFile(this.path(id),'utf8'))); }
-  async save(campaign: Campaign) { await this.atomic(this.path(campaign.id), validateCampaign(campaign)); }
+  async save(campaign: Campaign) {
+    // Existing campaign state cannot bypass transition commit through this low-level save API.
+    try {const previous=await this.get(campaign.id);assertStateWrite(campaign,previous.state);}
+    catch(e) {if ((e as NodeJS.ErrnoException).code!=='ENOENT') throw e;}
+    await this.atomic(this.path(campaign.id), validateCampaign(campaign));
+  }
   async list(): Promise<Campaign[]> {
     const names = (await readdir(join(this.root,'campaigns'))).filter(n => n.endsWith('.json'));
     return Promise.all(names.sort().map(n => this.get(n.slice(0,-5))));

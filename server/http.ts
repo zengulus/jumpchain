@@ -5,9 +5,9 @@ import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { NativeChainBundleSchema } from '../src/schemas/save';
-import { CampaignSchema, SettingsSchema, ServiceConfigSchema, ProviderSchema, RoleSchema, SceneSchema, StateSchema, WorldbookSchema, SummarySchema, migrateCampaign, stableStringify, type Campaign } from '../src/ai/schema';
-import { applyProposal, auditChange, rollbackLatest, validateState, validateWorldbookScopes } from '../src/ai/state';
-import { trackerFingerprint } from '../src/ai/context';
+import { CampaignSchema, SettingsSchema, ServiceConfigSchema, ProviderSchema, RoleSchema, SceneSchema, StateSchema, CampaignOperationSchema, WorldbookSchema, SummarySchema, migrateCampaign, stableStringify, type Campaign } from '../src/ai/schema';
+import { commitTransition, reviewProposal, assertTurnCurrent, rollbackLatest, validateState, validateWorldbookScopes } from '../src/ai/state';
+import { planTransition, playerEditOperations } from '../src/ai/transitions';
 import { PdfSectionSchema, extractionInstructions, validateExtraction } from '../src/ai/documents';
 import { LocalStore } from './store';
 import { GMService } from './gm';
@@ -58,9 +58,9 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/campaigns') {
         const input = z.object({bundle:NativeChainBundleSchema,title:z.string().min(1),jumpId:z.string()}).parse(await body(req));
-        if (!input.bundle.jumps.some(j => j.id === input.jumpId && j.branchId === input.bundle.chain.activeBranchId)) throw new Error('Select a jump in this branch before starting Play.');
         const now = new Date().toISOString();
         const c = CampaignSchema.parse({schemaVersion:1,id:id(),title:input.title,chainId:input.bundle.chain.id,branchId:input.bundle.chain.activeBranchId,revision:0,createdAt:now,updatedAt:now,settings:SettingsSchema.parse({}),state:{scene:SceneSchema.parse({stamp:{jumpId:input.jumpId,elapsedMinutes:0}})}});
+        validateState(c.state,input.bundle,c);
         await store.save(c); json(res,c,201); return;
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/import') {
@@ -117,22 +117,22 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
             const fork = structuredClone(c);fork.id=id();fork.title=input.title;fork.parentCampaignId=c.id;fork.revision=0;
             fork.createdAt=fork.updatedAt=new Date().toISOString();
             if (pos < c.turns.length) {fork.state=structuredClone(c.turns[pos].before);fork.turns=fork.turns.slice(0,pos);fork.audit=[];}
+            for (const t of fork.turns) if (t.proposalStatus==='pending') {t.proposalStatus='rejected';t.error='Proposal belongs to the parent campaign. Retry state analysis in this branch.';}
             await store.save(fork);json(res,fork,201);return;
           }
           if (operation === 'analyze') {
             const input = BodySchema.extend({turnId:z.string()}).parse(raw);revision(c,input.revision);
             const turn = c.turns.find(t => t.id === input.turnId);
-            if (!turn || turn.status !== 'complete' || turn.proposalStatus === 'accepted') throw new Error('Only completed, unapplied turns can be analyzed.');
-            if (stableStringify(c.state) !== stableStringify(turn.before)) throw new Error('State changed since this turn. Fork it before retrying analysis.');
-            if (trackerFingerprint(input.bundle) !== turn.context?.trackerFingerprint) throw new Error('Tracker changed since generation. Fork and regenerate this turn.');
+            if (!turn) throw new Error('Turn not found.');
+            assertTurnCurrent(c,input.bundle,turn);
             try {turn.proposal=await gm.analyze(c,input.bundle,turn,signal);turn.proposalStatus='pending';turn.error='';}
-            catch(e) {turn.error=(e as Error).message;turn.proposal=null;turn.proposalStatus='none';}
+            catch(e) {turn.error=(e as Error).message;turn.proposal=null;turn.proposalStatus='none';delete turn.transitionPlan;}
             await store.transaction(campaignId,latest => {latest.turns[latest.turns.findIndex(t => t.id === turn.id)]=turn;});json(res,await store.get(campaignId));return;
           }
           if (operation === 'summarize') {
             const input = z.object({revision:z.number().int(),level:SummarySchema.shape.level,eventIds:z.array(z.string()),title:z.string().min(1)}).parse(raw);revision(c,input.revision);
             const summary = await gm.summarize(c,input.level,input.eventIds,input.title,signal);
-            await store.transaction(campaignId,latest => {const next=structuredClone(latest.state);next.summaries.push(summary);auditChange(latest,next,`Summarize ${input.level}`,null,id());});json(res,await store.get(campaignId));return;
+            await store.transaction(campaignId,latest => {revision(latest,input.revision);const context={origin:'generated-summary' as const,campaign:latest};const plan=planTransition(latest.state,[{kind:'summary.create',handle:'summary',value:summary}],context,id());commitTransition(latest,plan,context,`Summarize ${input.level}`,new Date().toISOString());});json(res,await store.get(campaignId));return;
           }
           await store.transaction(campaignId,latest => {
             const input = z.object({revision:z.number().int()}).passthrough().parse(raw);revision(latest,input.revision);
@@ -146,19 +146,15 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
               latest.worldbooks = parsed.worldbooks;
             }
             else if (operation === 'state') {
-              const parsed=BodySchema.extend({state:StateSchema}).parse(raw);validateState(parsed.state,parsed.bundle,latest);
-              auditChange(latest,parsed.state,'Player edited campaign state',null,id());
+              const parsed=z.union([BodySchema.extend({state:StateSchema}).strict(),BodySchema.extend({operations:z.array(CampaignOperationSchema)}).strict()]).parse(raw);
+              const operations='state' in parsed ? playerEditOperations(latest.state,parsed.state) : parsed.operations;
+              const context={origin:'player-edit' as const,campaign:latest,bundle:parsed.bundle};
+              const plan=planTransition(latest.state,operations,context,id());
+              commitTransition(latest,plan,context,'Player edited campaign state',new Date().toISOString());
               for (const t of latest.turns) if (t.proposalStatus === 'pending') t.proposalStatus='rejected';
             } else if (operation === 'review') {
               const parsed=BodySchema.extend({turnId:z.string(),accept:z.boolean()}).parse(raw);
-              const turn=latest.turns.find(t => t.id === parsed.turnId);
-              if (!turn || turn.proposalStatus !== 'pending' || !turn.proposal) throw new Error('No pending proposal on this turn.');
-              if (parsed.accept) {
-                if (trackerFingerprint(parsed.bundle) !== turn.context?.trackerFingerprint) throw new Error('Tracker changed since generation. Reject, fork, and regenerate using current state.');
-                if (stableStringify(latest.state) !== stableStringify(turn.before)) throw new Error('Campaign state changed since generation.');
-                const next=applyProposal(latest.state,turn.proposal,parsed.bundle,latest,[turn.id]);auditChange(latest,next,'Accepted model proposal',turn.id,id());
-              }
-              turn.proposalStatus=parsed.accept ? 'accepted':'rejected';
+              reviewProposal(latest,parsed.bundle,parsed.turnId,parsed.accept,new Date().toISOString());
             } else if (operation === 'rollback') rollbackLatest(latest);
             else throw new Error('Unknown campaign operation.');
           });json(res,await store.get(campaignId));
