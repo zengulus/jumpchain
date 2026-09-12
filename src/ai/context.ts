@@ -2,7 +2,7 @@ import type { NativeChainBundle } from '../domain/save';
 import { buildBranchWorkspace, getEffectiveCurrentJumpState } from '../domain/chain/selectors';
 import type { Campaign, CompiledContext, ContextAuthority, ContextDomain, ContextSalience, ProviderConfig } from './schema';
 import { fingerprint, stableStringify } from './schema';
-import { tokens, type Retrieved } from './retrieval';
+import { tokens, narrationLoreQuery, type Retrieved } from './retrieval';
 import { estimateTokens, planContext, type ContextCandidate } from './planner';
 export { estimateTokens } from './budget';
 
@@ -88,7 +88,9 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
     const epistemic = { beliefs: npc.beliefs, knowledge: npc.knowledge, beliefsAboutJumper: npc.beliefsAboutJumper, suspicions: npc.suspicions, opinions: npc.opinions };
     if ([...epistemic.beliefs, ...epistemic.knowledge, ...epistemic.beliefsAboutJumper, ...epistemic.suspicions, ...epistemic.opinions].length > 0) add('NPC beliefs and knowledge (not objective reality)', epistemic, [npc.id], {salience: 'required', authority: 'campaign-established', domain: 'npc-epistemic', required: true});
   }
-  const terms = new Set(tokens(`${action} ${campaign.state.scene.location} ${campaign.state.scene.threads.join(' ')}`));
+  // Same canonical scene-aware query the lore/memory retrieval path builds, so mechanics-pool
+  // salience and retrieval admission read the scene consistently. Duplicates nothing.
+  const terms = new Set(tokens(narrationLoreQuery(action, campaign.state.scene)));
   const optional = records.filter(r => !r.required).map(r => ({r, score: tokens(r.text).reduce((n,t) => n+(terms.has(t) ? 1 : 0),0) + (campaign.state.scene.presentCompanionIds.includes(r.owner) ? 2 : 0) }));
   for (const {r, score} of optional) {
     // Player notes are player-authored tracker records (player-established), not mechanical

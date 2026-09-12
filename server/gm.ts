@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { NativeChainBundle } from '../src/domain/save';
 import { compileContext } from '../src/ai/context';
-import { knowledgeRecords, hybridRetriever, indexFingerprint, type RetrievalFilter } from '../src/ai/retrieval';
+import { knowledgeRecords, hybridRetriever, indexFingerprint, searchableText, narrationLoreQuery, type RetrievalFilter } from '../src/ai/retrieval';
 import { ModelProposalSchema, SummarySchema, stableStringify, type Campaign, type Turn } from '../src/ai/schema';
 import { proposalInstructions, validateWorldbookScopes } from '../src/ai/state';
 import { planContext, planMessages, messageCandidates, estimateTokens, type ContextCandidate } from '../src/ai/planner';
@@ -29,7 +29,7 @@ export class GMService {
     const options = {filter:{jump:campaign.state.scene.stamp.jumpId,before:campaign.state.scene.stamp.elapsedMinutes,...filter},index,queryVector};
     let results = hybridRetriever.search(query,records,{...options,limit:records.length});
     if (config.providers.reranking && results.length) try {
-      const scores = await openAICompatible.rerank(config.providers.reranking,query,results.map(r => r.record.text),signal);
+      const scores = await openAICompatible.rerank(config.providers.reranking,query,results.map(r => searchableText(r.record)),signal);
       results = results.map((r,i) => ({...r,score:scores[i],reason:`${r.reason}; reranked`})).sort((a,b) => b.score-a.score);
     } catch (e) { if (signal?.aborted) throw e; diagnostics.push(`Reranker unavailable: ${(e as Error).message} Using fused ranking.`); }
     return {results,diagnostics};
@@ -41,7 +41,9 @@ export class GMService {
     const config = (await this.store.config()).providers.embeddings;
     if (!config) throw new Error('No embeddings model assigned. Lexical retrieval already works without an index.');
     const records = knowledgeRecords(campaign);
-    const vectors = await openAICompatible.embed(config,records.map(r => `${r.title}\n${r.text}`),signal);
+    // Embed the canonical searchable projection (title, entities/aliases, tags, text) — the same
+    // representation lexical retrieval scores — so retrieval metadata helps dense ranking too.
+    const vectors = await openAICompatible.embed(config,records.map(r => searchableText(r)),signal);
     await this.store.saveIndex(campaign.id,{version:1,fingerprint:indexFingerprint(records),provider:`${config.baseUrl}|${config.model}`,vectors:Object.fromEntries(records.map((r,i) => [r.id,vectors[i]]))});
     return {count:records.length};
   }
@@ -75,7 +77,10 @@ export class GMService {
     // worldbook names a Jump outside this branch. Fail loudly with the actionable scope error.
     validateWorldbookScopes(campaign, bundle);
     const config = await this.store.config();
-    const {results,diagnostics} = await this.retrieve(campaign,action,{},signal);
+    // Scene-aware lore query: the bare action alone (“I look around.”) carries little retrieval
+    // signal; the established location and active threads are stable, causally relevant signals.
+    // A precise action is unchanged in effect — its own terms still dominate the query.
+    const {results,diagnostics} = await this.retrieve(campaign,narrationLoreQuery(action,campaign.state.scene),{},signal);
     const context = compileContext(bundle,campaign,action,config.providers.narrator,results,diagnostics);
     const turn: Turn = {id:randomUUID(),createdAt:new Date().toISOString(),action,narrative:'',inContinuity:true,status:'generating',error:'',context,proposal:null,proposalStatus:'none',before:structuredClone(campaign.state),baseRevision:campaign.revision,extractionContext:[]};
     await this.store.transaction(id,c => { c.turns.push(turn); });

@@ -1,7 +1,7 @@
 import { describe,it,expect } from 'vitest';
 import { compileContext, mechanicalRecords, trackerFingerprint } from '../ai/context';
-import { ContextSchema, FactSchema, NpcSchema, ProviderSchema, ProposalSchema, TurnSchema, WorldbookSchema, stableStringify, migrateCampaign } from '../ai/schema';
-import { eligibleRecords, hybridRetriever, indexFingerprint, knowledgeRecords } from '../ai/retrieval';
+import { ContextSchema, FactSchema, NpcSchema, ProviderSchema, ProposalSchema, TurnSchema, WorldbookSchema, stableStringify, migrateCampaign, type Worldbook } from '../ai/schema';
+import { eligibleRecords, hybridRetriever, indexFingerprint, knowledgeRecords, narrationLoreQuery, searchableText, tokens } from '../ai/retrieval';
 import { reviewProposal, rollbackLatest, validateState, validateWorldbookScopes } from '../ai/state';
 import { exportSillyTavernWorldbook, isSillyTavernWorldInfo } from '../ai/sillyTavern';
 import { extractedJumpDoc, importWorldbook, validateExtraction } from '../ai/documents';
@@ -141,6 +141,112 @@ describe('hybrid retrieval, chronology, provenance, and disposable indices',()=>
   it('does not promote speculation over a source and filters entities, tags, authority, and location',()=>{const c=fixture();c.state.facts[0].authority='speculative';const records=knowledgeRecords(c);expect(hybridRetriever.search('Snape',records,{limit:10})[0].record.sourceId).toBe('canon');expect(eligibleRecords(records,{entity:'Unknown'})).toEqual([]);expect(eligibleRecords(records,{tags:['missing']})).toEqual([]);expect(eligibleRecords(records,{location:'Mars'})).toEqual([]);});
   it('surfaces historical facts before their superseding event and excludes future facts',()=>{const c=fixture();c.state.facts[0].supersededBy='new';c.state.facts.push(FactSchema.parse({...c.state.facts[0],id:'new',supersededBy:null,text:'Snape changed his mind.',stamp:{...c.state.scene.stamp,elapsedMinutes:200}}));const records=knowledgeRecords(c);expect(eligibleRecords(records,{jump:c.state.scene.stamp.jumpId,before:150}).map(r=>r.id)).toContain('learned');expect(eligibleRecords(records,{jump:c.state.scene.stamp.jumpId,before:250}).map(r=>r.id)).not.toContain('learned');});
   it('fuses dense and lexical candidates and rebuild fingerprints change only with source changes',()=>{const c=fixture();const records=knowledgeRecords(c);const fp=indexFingerprint(records);const index={version:1 as const,fingerprint:fp,provider:'test',vectors:Object.fromEntries(records.map(r=>[r.id,[1,0]]))};expect(hybridRetriever.search('unrelated query',records,{limit:2,index,queryVector:[1,0]}).length).toBeGreaterThan(0);expect(indexFingerprint(records.slice().reverse())).toBe(fp);delete index.vectors.learned;expect(c.state.facts).toHaveLength(1);c.state.facts[0].text='Changed';expect(indexFingerprint(knowledgeRecords(c))).not.toBe(fp);});
+});
+describe('canonical search projection and scene-aware lore queries',()=>{
+  function loreCampaign(entries: Record<string,unknown>[]) {
+    const {campaign}=aiFixture();
+    campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Canon',jumpId:campaign.state.scene.stamp.jumpId,entries})];
+    return campaign;
+  }
+  it('builds the narration lore query from the action plus scene location and threads only',()=>{
+    expect(narrationLoreQuery('I look around.',{location:'Great Hall',threads:['The feast is about to begin.','Investigate the owlery']})).toBe('I look around. Great Hall The feast is about to begin. Investigate the owlery');
+    expect(narrationLoreQuery('Act',{threads:['a','b']})).toBe('Act a b');
+    expect(narrationLoreQuery('Act',{location:'  '})).toBe('Act');
+    expect(narrationLoreQuery('Act')).toBe('Act');
+    expect(narrationLoreQuery('  Act  ',{location:' Hall '})).toBe('Act Hall');
+  });
+  it('projects retrieval metadata into one canonical searchable text used by every retrieval surface',()=>{
+    const campaign=loreCampaign([{id:'e1',title:'Great Hall',aliases:["Mage's Association"],tags:['defense'],entities:['Ron'],text:'Hall text body.'}]);
+    const record=knowledgeRecords(campaign)[0];
+    const projection=searchableText(record);
+    expect(projection).toContain('Great Hall');
+    expect(projection).toContain("Mage's Association");
+    expect(projection).toContain('defense');
+    expect(projection).toContain('Hall text body.');
+    expect(projection.split('Ron').length-1).toBe(1);
+    // The index fingerprint covers the exact projection, so metadata edits invalidate dense indexes.
+    const before=indexFingerprint(knowledgeRecords(campaign));
+    campaign.worldbooks[0].entries[0].aliases=["Mage's Association",'Order of the Phoenix'];
+    expect(indexFingerprint(knowledgeRecords(campaign))).not.toBe(before);
+    campaign.worldbooks[0].entries[0].tags=['defense','transfiguration'];
+    expect(indexFingerprint(knowledgeRecords(campaign))).not.toBe(before);
+  });
+  it('retrieves a named scene location from a vague action, where the bare action retrieves nothing',()=>{
+    const campaign=loreCampaign([
+      {id:'great-hall',title:'Great Hall',text:'Enchanted ceiling above four long tables.'},
+      {id:'library',title:'Library',text:'Restricted tomes wait behind a rope.'},
+      {id:'pitch',title:'Quidditch pitch',text:'Rings stand at the edge of the grounds.'}]);
+    campaign.state.scene.location='Great Hall';
+    const records=knowledgeRecords(campaign);
+    const results=hybridRetriever.search(narrationLoreQuery('I look around.',campaign.state.scene),records,{limit:3});
+    expect(results[0].record.sourceId).toBe('great-hall');
+    expect(hybridRetriever.search('I look around.',records,{limit:3})).toEqual([]);
+  });
+  it('lets active scene threads contribute retrieval signal without changing eligibility',()=>{
+    const campaign=loreCampaign([
+      {id:'great-hall',title:'Great Hall',text:'Enchanted ceiling above four long tables.'},
+      {id:'kitchens',title:'Kitchens',text:'House elves prepare the feast in the undercroft.'}]);
+    campaign.state.scene.location='Great Hall';
+    campaign.state.scene.threads=['The feast is about to begin.'];
+    const records=knowledgeRecords(campaign);
+    const withThreads=hybridRetriever.search(narrationLoreQuery('I look around.',campaign.state.scene),records,{limit:4}).map(r=>r.record.sourceId);
+    expect(withThreads).toContain('kitchens');
+    const withoutThreads=hybridRetriever.search(narrationLoreQuery('I look around.',{location:'Great Hall'}),records,{limit:4}).map(r=>r.record.sourceId);
+    expect(withoutThreads).not.toContain('kitchens');
+  });
+  it('keeps a precise action stronger than scene location for action-relevant lore elsewhere',()=>{
+    const campaign=loreCampaign([
+      {id:'great-hall',title:'Great Hall',text:'Enchanted ceiling above four long tables.'},
+      {id:'library',title:'Library',text:'Restricted tomes wait behind a rope in the library.'}]);
+    campaign.state.scene.location='Great Hall';
+    const results=hybridRetriever.search(narrationLoreQuery('I ask the librarian about the restricted tomes.',campaign.state.scene),knowledgeRecords(campaign),{limit:2});
+    expect(results[0].record.sourceId).toBe('library');
+  });
+  it('treats scene location as a signal, never a hard location filter',()=>{
+    const campaign=loreCampaign([
+      {id:'great-hall',title:'Great Hall',text:'Enchanted ceiling above four long tables.'},
+      {id:'dungeon',title:'Dungeons',location:'Dungeons',text:'Potions class simmers in the dungeons.'}]);
+    campaign.state.scene.location='Great Hall';
+    const records=knowledgeRecords(campaign);
+    const results=hybridRetriever.search(narrationLoreQuery('I head to potions class.',campaign.state.scene),records,{limit:2});
+    // The action-relevant entry is retrieved alongside the location match — location is a ranking
+    // signal, never an eligibility filter.
+    expect(results.map(r=>r.record.sourceId).sort()).toEqual(['dungeon','great-hall']);
+    expect(eligibleRecords(records).map(r=>r.sourceId)).toEqual(['great-hall','dungeon']);
+    // Contrast: without the action terms, the location signal alone still retrieves only hall lore.
+    expect(hybridRetriever.search(narrationLoreQuery('I look around.',campaign.state.scene),records,{limit:2}).every(r=>r.record.sourceId==='great-hall')).toBe(true);
+  });
+  it('keeps authority a label: flipping lore authority does not move relevance scores',()=>{
+    const campaign=loreCampaign([
+      {id:'a',title:'Moon',text:'Silver light lore.'},
+      {id:'b',title:'Sun',text:'Golden light lore.'}]);
+    const records=knowledgeRecords(campaign);
+    const base=hybridRetriever.search('light',records,{limit:10}).map(r=>[r.record.id,r.score]);
+    const flipped=records.map(r=>({...r,authority:r.authority==='canonical-source'?'speculative' as const:'canonical-source' as const}));
+    expect(base).toEqual(hybridRetriever.search('light',flipped,{limit:10}).map(r=>[r.record.id,r.score]));
+  });
+  it('gives SillyTavern activation metadata zero retrieval effect',()=>{
+    const campaign=loreCampaign([{id:'e1',title:'Kirei',text:'Kirei is a priest at the church.',aliases:['Kirei','Kotomine']}]);
+    const plain=campaign.worldbooks[0];
+    const decorated=WorldbookSchema.parse({...plain,id:'b2',entries:[{...plain.entries[0],interop:{sillyTavern:{uid:7,entryKey:'7',secondaryKeys:['Church'],metadata:{constant:true,order:9999,position:6,probability:5,vectorized:true,selective:true,depth:12}}}}]}) as Worldbook;
+    const rank=(book:Worldbook)=>hybridRetriever.search('priest at the church',knowledgeRecords({...campaign,worldbooks:[book]}),{limit:5}).map(r=>[r.record.sourceId,r.score]);
+    expect(rank(decorated)).toEqual(rank(plain));
+    expect(rank(decorated)[0][0]).toBe('e1');
+    const projection=searchableText(knowledgeRecords({...campaign,worldbooks:[decorated]})[0]);
+    expect(projection).not.toContain('9999');
+    expect(projection).not.toContain('constant');
+  });
+  it('ranks projection-built dense vectors by alias signal even without lexical text overlap elsewhere',()=>{
+    const campaign=loreCampaign([
+      {id:'alias-only',title:'The Keeper',aliases:['Kirei'],text:'He tends the temple altar.'},
+      {id:'plain',title:'Villager',text:'He tends the temple altar altar.'}]);
+    const records=knowledgeRecords(campaign);
+    const embed=(text:string)=>[tokens(text).includes('kirei')?1:0, tokens(text).includes('altar')?1:0];
+    const index={version:1 as const,fingerprint:indexFingerprint(records),provider:'test',vectors:Object.fromEntries(records.map(r=>[r.id,embed(searchableText(r))]))};
+    const results=hybridRetriever.search('Kirei',records,{limit:2,index,queryVector:embed('Kirei')});
+    expect(results[0].record.sourceId).toBe('alias-only');
+    expect(results[0].reason).toContain('dense');
+  });
 });
 describe('proposals, validation, audit, and rollback',()=>{
   it('rejects mechanical operations, forged provenance, reverse time, and unknown companions',()=>{

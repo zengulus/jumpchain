@@ -154,6 +154,31 @@ describe('local API and mock model orchestration',()=>{
   it('regenerates into an isolated branch before the chosen turn and preserves its parent',async()=>{
     const parent=await store.get('vertical');const res=await post('/campaigns/vertical/fork',{revision:parent.revision,turnId:parent.turns[0].id,title:'Alternate'});expect(res.status).toBe(201);expect(res.body.turns).toHaveLength(0);expect(res.body.state).toEqual(parent.turns[0].before);expect((await store.get('vertical')).turns).toHaveLength(1);
   });
+  it('embeds the canonical searchable projection so aliases and tags influence dense retrieval, and embeds the scene-aware narration query at turn time',async()=>{
+    const {bundle,campaign}=aiFixture();campaign.id='projection';
+    const hall=WorldbookSchema.parse({id:'book',title:'Great Hall',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'entry',title:'Great Hall',aliases:["Mage's Association"],tags:['defense'],text:'Enchanted ceiling above four long tables.'}]});
+    const library=WorldbookSchema.parse({id:'book2',title:'Library',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'entry2',title:'Library',text:'Restricted tomes wait behind a rope.'}]});
+    campaign.worldbooks=[hall,library];
+    await store.save(campaign);const gm=new GMService(store);
+    const config=await store.config();config.providers.embeddings=ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-embedding'});await store.saveConfig(config);
+    try {
+      expect((await post('/campaigns/projection/rebuild-index',{bundle})).body.count).toBe(2);
+      // The mock endpoint embeds the literal text; inspect the recorded embedding bodies to verify
+      // the canonical projection (title, aliases, tags, text) was embedded, not just title+text.
+      const texts=((model.requests.filter((r:any)=>Array.isArray(r.input)).at(-1)?.input ?? []) as string[]);
+      expect(texts.some(t=>t.includes("Mage's Association"))).toBe(true);
+      expect(texts.some(t=>t.includes('defense'))).toBe(true);
+      expect(texts.filter(t=>t.includes('Great Hall')).length).toBe(1);
+      // Turn generation embeds the scene-aware query (action + location), not the bare action.
+      model.requests.length=0;
+      await new GMService(store).generate(campaign.id,bundle,'I look around.',0,()=>{});
+      const turnEmbeds=model.requests.filter((r:any)=>Array.isArray(r.input));
+      expect(turnEmbeds.length).toBeGreaterThan(0);
+      const lastQuery=((turnEmbeds.at(-1)!.input) as string[]).at(-1) as string;
+      expect(lastQuery).toContain('I look around.');
+      expect(lastQuery).toContain('Hogwarts');
+    } finally {delete config.providers.embeddings;await store.saveConfig(config);}
+  });
   it('rebuilds and deletes disposable indexes without deleting world knowledge',async()=>{
     const {bundle,campaign}=aiFixture();campaign.id='index';campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Hogwarts',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'entry',title:'Hogwarts',text:'Hogwarts castle has moving stairs.'}]})];await store.save(campaign);
     const config=await store.config();config.providers.embeddings=ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-embedding'});await store.saveConfig(config);
