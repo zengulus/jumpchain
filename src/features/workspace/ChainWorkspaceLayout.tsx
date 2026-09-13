@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type Dispatch,
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Navigate, NavLink, Outlet, matchPath, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useUiPreferences } from '../../app/UiPreferencesContext';
+import { useAiEnabled } from '../../app/operatingMode';
 import { usePageShellNav } from '../../components/PageShell';
 import type { BranchWorkspace } from '../../domain/chain/selectors';
 import { buildBranchWorkspace } from '../../domain/chain/selectors';
@@ -274,6 +275,9 @@ export function ChainWorkspaceLayout() {
   const [searchParams] = useSearchParams();
   const { simpleMode } = useUiPreferences();
   const { navOpen: sidebarOpen, closeNav, registerWorkspaceDrawer } = usePageShellNav();
+  // Experimental narrative-AI cluster (campaign AI GM, worldbooks/knowledge, setup).
+  // Declared before any early return so hook order stays stable across gate flips.
+  const narrativeAiAvailable = useAiEnabled();
   const [headerAttachment, setHeaderAttachment] = useState<ReactNode | null>(null);
   const [presentationOverride, setPresentationOverride] = useState<WorkspacePresentationOverride>(null);
   const activeModuleKey = getActiveModuleKey(location.pathname);
@@ -326,6 +330,12 @@ export function ChainWorkspaceLayout() {
 
   if (!chainId) {
     return <Navigate to="/" replace />;
+  }
+
+  // Direct navigation to the experimental narrative-AI route while the gate is off falls
+  // back to the workspace overview: the route simply does not exist for the user.
+  if (!narrativeAiAvailable && activeModuleKey === 'play') {
+    return <Navigate to="overview" replace />;
   }
 
   if (!state) {
@@ -595,11 +605,13 @@ export function ChainWorkspaceLayout() {
   const threeBoonsAvailability = getAltChainTrackedSupplementAvailability(workspace.chain, 'three-boons');
 
   const moduleGroups: WorkspaceModuleGroup[] = [
-    {
-      id: 'campaign',
+    // The narrative-AI campaign module is an experimental, gated surface: hidden entirely
+    // while the flag is off so ordinary navigation presents only mature functionality.
+    ...(narrativeAiAvailable ? [{
+      id: 'campaign' as const,
       title: 'Optional campaign play',
-      items: [{key:'play',label:'Play / AI Setup',to:getModulePath('play'),description:'Keep Sheet Only or enable a persistent local AI GM.',readiness:'optional'}],
-    },
+      items: [{key:'play' as const,label:'Play / AI Setup',to:getModulePath('play'),description:'Keep Sheet Only or enable a persistent local AI GM.',readiness:'optional' as const}],
+    }] : []),
     {
       id: 'core',
       title: simpleMode ? 'Core setup' : 'Core Flow',

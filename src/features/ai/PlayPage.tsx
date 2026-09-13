@@ -16,8 +16,11 @@ const KnowledgePanel=lazy(()=>import('./KnowledgePanel').then(m=>({default:m.Kno
 type CampaignList=Array<Pick<Campaign,'id'|'title'|'revision'|'updatedAt'>>;
 export function PlayPage() {
   const enabled=useAiEnabled();
-  return <div className="ai-workspace stack"><header className="ai-heading"><div><p className="eyebrow">Jumpchain campaign</p><h1>{enabled?'AI GM':'Sheet Only'}</h1></div><button onClick={()=>setAiEnabled(!enabled)}>{enabled?'Switch to Sheet Only':'Enable AI GM'}</button></header>
-    {enabled?<EnabledPlay/>:<section className="ai-panel stack"><h2>Your tracker is ready</h2><p>Sheet Only uses the existing tracker and saves. You can manage your entire chain without a model, AI service, or search index.</p><p>Enable AI GM to add campaign play, world knowledge, and persistent memory. Switching modes preserves your chain and campaigns.</p></section>}
+  // The narrative-AI cluster is experimental and gated: when off this page is unreachable
+  // from navigation (the workspace layout redirects it), so it never teases an enable
+  // switch for functionality the product does not currently offer.
+  return <div className="ai-workspace stack"><header className="ai-heading"><div><p className="eyebrow">Jumpchain campaign</p><h1>{enabled?'AI GM':'Sheet Only'}</h1></div>{enabled&&<button onClick={()=>setAiEnabled(false)}>Switch to Sheet Only</button>}</header>
+    {enabled?<EnabledPlay/>:<section className="ai-panel stack"><h2>Your tracker is ready</h2><p>Sheet Only uses the existing tracker and saves. You can manage your entire chain without a model, AI service, or search index.</p></section>}
   </div>;
 }
 function ContextInspector({context,extraction}:{context:CompiledContext|null;extraction?:Turn['extractionContext']}) {

@@ -25,6 +25,15 @@ function json(res: ServerResponse, data: unknown, status = 200) { res.writeHead(
 function revision(c: Campaign, expected: number) { if (c.revision !== expected) throw new Error('Campaign changed in another window. Reload to avoid overwriting it.'); }
 export function createApp(store: LocalStore, options: {port?:number; staticDir?:string; allowedOrigins?:string[]} = {}) {
   const gm = new GMService(store);
+  // Single backend-authoritative feature gate for the experimental narrative-AI cluster
+  // (campaign AI GM turns/analysis/summaries, worldbooks, retrieval diagnostics, indexing).
+  // One check at the API boundary: internal pure subsystems (retrieval, planner, transitions,
+  // schema utilities) stay gate-free so they remain individually testable with the feature
+  // off. Every model/index request must pass through here, so nothing experimental can run
+  // because a hidden button was reached or a request was hand-crafted.
+  const assertNarrativeAiEnabled = async () => {
+    if (!(await store.config()).experimentalNarrativeAI) throw new Error('Experimental narrative AI is disabled in the service configuration.');
+  };
   const server = createServer(async (req,res) => {
     res.setHeader('X-Content-Type-Options','nosniff');
     let url: URL;
@@ -49,6 +58,8 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
         await store.saveConfig(next); json(res,{ok:true}); return;
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/models') {
+        // Model discovery is an AI-service operation; keep it behind the same gate.
+        await assertNarrativeAiEnabled();
         const input = z.object({role:RoleSchema}).parse(await body(req)); const config = await store.config();
         const provider = config.providers[input.role] ?? config.providers.narrator;
         const models = await openAICompatible.models(provider); json(res,{models,selectedAvailable:models.includes(provider.model)}); return;
@@ -74,6 +85,8 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
         await store.save(c); json(res,c,201); return;
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/extract') {
+        // Model-backed source extraction is experimental narrative-AI functionality.
+        await assertNarrativeAiEnabled();
         const input = z.object({sections:z.array(PdfSectionSchema).min(1).max(20)}).parse(await body(req));
         const config = await store.config(); const provider = config.providers.extraction ?? config.providers.narrator;
         const messages = [{role:'system' as const,content:extractionInstructions},{role:'user' as const,content:stableStringify(input.sections)}];
@@ -84,6 +97,10 @@ export function createApp(store: LocalStore, options: {port?:number; staticDir?:
       const match = url.pathname.match(/^\/api\/v1\/campaigns\/([\w-]+)(?:\/([\w-]+))?$/);
       if (match) {
         const [,campaignId,operation] = match;
+        // Every campaign-scoped route serves the experimental AI-campaign subsystem
+        // (campaigns, turns, worldbooks, memory queries, indexing, analysis, rollback).
+        // Gate the whole namespace once, before any body parsing or GM work.
+        await assertNarrativeAiEnabled();
         if (req.method === 'GET' && !operation) {json(res,await store.get(campaignId));return;}
         if (req.method !== 'POST') {json(res,{error:'Method not allowed'},405);return;}
         const raw = await body(req);

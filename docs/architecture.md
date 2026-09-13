@@ -10,6 +10,30 @@ This repo now starts from an importer-first foundation:
 
 The current implementation intentionally favors schema safety and preservation of unmapped source data over polished module screens.
 
+## Experimental narrative-AI gate (incubating, not deprecated)
+
+The entire narrative-AI/worldbook subsystem — AI GM campaigns, narration and state analysis,
+worldbook/Knowledge tools, embedding/index controls, retrieval diagnostics, and the SillyTavern
+interchange UI — currently exists behind an explicit experimental feature gate while its
+end-to-end experience for ordinary users matures.
+
+- The gate is backend-authoritative: the `experimentalNarrativeAI` flag in the local service
+  configuration (`ServiceConfigSchema`, persisted in the sidecar's `config.json`) defaults to
+  `false`, and the sidecar's API boundary rejects all campaign/AI/worldbook operations while
+  it is off. No model call or embedding/index generation can occur through the service.
+- The browser mirrors the same flag through the existing local `jumpchain.ai.enabled` operating
+  mode: the Play/AI Setup workspace module, its routes, and all AI client calls are hidden while
+  off, and direct navigation redirects to the workspace overview. The backend remains the
+  authority — the frontend flag only removes reachable surfaces.
+- Disablement is a product gate, not data loss: worldbooks, campaign AI state, memories, context
+  plans, index metadata, AI settings, and SillyTavern interchange metadata are all preserved in
+  existing saves and service storage, and reappear unchanged when the gate is re-enabled.
+- Internal retrieval/planning/worldbook/transitions architecture remains fully retained and
+  individually testable with the gate off; low-level pure functions never consult the gate.
+- The subsystem is under active development behind this gate. This is an incubation decision,
+  not a deprecation: do not remove the technology, schemas, or stored data because access is
+  hidden.
+
 ## SillyTavern World Info interoperability
 
 Jumpchain can import and export SillyTavern World Info / lorebook JSON files as worldbooks (`src/ai/sillyTavern.ts`):

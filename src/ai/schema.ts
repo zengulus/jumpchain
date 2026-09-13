@@ -17,6 +17,12 @@ export const ProviderSchema = z.object({
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
 export const ServiceConfigSchema = z.object({
   schemaVersion: z.literal(1).default(1),
+  // Backend-authoritative incubation gate for the whole experimental narrative-AI cluster
+  // (campaign AI GM, worldbooks/knowledge tools, retrieval diagnostics). Defaults to false:
+  // absent field, fresh installs, and migrated legacy configs all keep the cluster hidden
+  // while the ordinary tracker remains fully functional. Disablement is purely a product
+  // gate: persisted campaign/worldbook/index data is never deleted or normalized when off.
+  experimentalNarrativeAI: z.boolean().default(false),
   providers: z.object({ narrator: ProviderSchema, extraction: ProviderSchema.optional(), summarization: ProviderSchema.optional(), embeddings: ProviderSchema.optional(), reranking: ProviderSchema.optional() }).strict(),
 }).strict();
 export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;

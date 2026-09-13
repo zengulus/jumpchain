@@ -20,7 +20,7 @@ async function listen(server:Server){await new Promise<void>((resolve,reject)=>{
 async function close(server:Server){server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}
 let root:string,store:LocalStore,service:ReturnType<typeof createApp>,base:string,model:ReturnType<typeof createMockModel>,modelUrl:string;
 async function post(path:string,data:unknown){const res=await fetch(base+'/api/v1'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});return {status:res.status,body:await res.json()};}
-beforeAll(async()=>{root=await mkdtemp(join(tmpdir(),'jumpchain-ai-test-'));store=new LocalStore(root);await store.init();model=createMockModel();modelUrl=await listen(model.server);await store.saveConfig({providers:{narrator:ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-gm'})}});service=createApp(store);base=await listen(service.server);});
+beforeAll(async()=>{root=await mkdtemp(join(tmpdir(),'jumpchain-ai-test-'));store=new LocalStore(root);await store.init();model=createMockModel();modelUrl=await listen(model.server);await store.saveConfig({experimentalNarrativeAI:true,providers:{narrator:ProviderSchema.parse({baseUrl:modelUrl+'/v1',model:'mock-gm'})}});service=createApp(store);base=await listen(service.server);});
 afterAll(async()=>{if(service)await close(service.server);if(model)await close(model.server);if(store)await store.close();if(root)await rm(root,{recursive:true,force:true});});
 describe('local API and mock model orchestration',()=>{
   it('routes every finite AI task through shared planning before model invocation (architecture guard)',async()=>{
