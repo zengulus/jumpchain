@@ -18,7 +18,7 @@ export interface ContextCandidate extends ContextLayer {
 }
 export interface ContextPolicy {
   sections?: string[];
-  pools?: Record<string, { tokens?: number; count?: number; groupCount?: number; tail?: boolean }>;
+  pools?: Record<string, { tokens?: number; count?: number; groupCount?: number; groupMarginal?: { diminishing: boolean }; tail?: boolean }>;
 }
 export interface ContextDecision {
   candidate: ContextCandidate;
@@ -49,15 +49,39 @@ export function planContext(candidates: ContextCandidate[], provider: Pick<Provi
     for (const value of [cap.tokens,cap.count,cap.groupCount]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) throw new Error(`Invalid context pool cap: ${pool}`);
     const members = candidates.filter(c=>c.pool===pool);
     if (cap.tail && (members.some(c=>c.mandatory || !Number.isFinite(c.sequence)) || new Set(members.map(c=>c.salience)).size > 1 || new Set(members.map(c=>c.section)).size > 1)) throw new Error(`Tail pool requires optional candidates with one salience/section and explicit chronology: ${pool}`);
+    if (cap.groupMarginal !== undefined && cap.groupCount !== undefined) throw new Error(`Pool ${pool} cannot combine groupCount and groupMarginal policies.`);
+    if (cap.groupMarginal !== undefined && cap.groupMarginal.diminishing !== true) throw new Error(`Pool ${pool} groupMarginal requires diminishing admission.`);
   }
   const compare = (a: ContextCandidate, b: ContextCandidate) => {
     const aTail = !!(a.pool && policy.pools?.[a.pool]?.tail);
     const bTail = !!(b.pool && policy.pools?.[b.pool]?.tail);
+    const eff = (c: ContextCandidate) => c.pool && policy.pools?.[c.pool]?.groupMarginal ? effRank.get(c.id) : undefined;
+    const aEff = eff(a), bEff = eff(b);
     return salience[a.salience] - salience[b.salience]
       || Number(aTail)-Number(bTail)
       || (aTail && bTail ? key(a.pool!,b.pool!) || (b.sequence ?? 0)-(a.sequence ?? 0) : 0)
+      || (a.pool === b.pool && aEff !== undefined && bEff !== undefined ? aEff - bEff || (ordinal.get(a.id)! - ordinal.get(b.id)!) : 0)
       || b.relevance-a.relevance || key(a.id,b.id);
   };
+  // Soft source diversity for groupMarginal pools: rank the pool's optional candidates by raw
+  // relevance (1 = best; fusion, reranker and overlap scores are incomparable in magnitude, so
+  // only order is used) and demote each further chunk of one logical source by a fifth of a rank:
+  // effective value 5·rank + (k−1) for the k-th chunk of its group. Admission then follows this
+  // effective order and ordinary caps do the excluding — fresh relevant sources usually precede
+  // redundant repeats, a strong repeat still beats a weak fresh source, unused capacity fills
+  // from one source, and no candidate is ever vetoed for repetition alone.
+  const ordinal = new Map<string, number>();
+  const effRank = new Map<string, number>();
+  for (const [pool, cap] of Object.entries(policy.pools ?? {})) if (cap.groupMarginal) {
+    let rank = 0;
+    const groupSeq = new Map<string, number>();
+    for (const c of candidates.filter(c => c.pool === pool && !c.mandatory).sort(compare)) {
+      ordinal.set(c.id, ++rank);
+      const k = c.groupKey ? (groupSeq.get(c.groupKey) ?? 0) + 1 : 1;
+      if (c.groupKey) groupSeq.set(c.groupKey, k);
+      effRank.set(c.id, 5*rank + (k - 1));
+    }
+  }
   const ordered = [...candidates].sort((a,b) => Number(b.mandatory)-Number(a.mandatory) || compare(a,b));
   const usage = new Map<string, {tokens:number;count:number;closed:boolean;groups:Map<string,number>}>();
   const decisions: ContextDecision[] = []; const selected: ContextCandidate[] = []; let total = 0;
@@ -70,9 +94,10 @@ export function planContext(candidates: ContextCandidate[], provider: Pick<Provi
     else if (total + candidate.estimatedTokens > budget) { reason = 'input-budget'; affected = 'input'; }
     else if (cap?.tokens !== undefined && used.tokens + candidate.estimatedTokens > cap.tokens) { reason = 'pool-tokens'; affected = pool; }
     else if (cap?.count !== undefined && used.count + 1 > cap.count) { reason = 'pool-count'; affected = pool; }
-    // Source diversity: cap how many candidates of one logical source a pool may admit. Ordering
-    // is untouched — diversity is a quota, never a rank change or a round-robin rotation — and a
-    // candidate beyond the quota is skipped, so later candidates from other sources still fit.
+    // Source diversity as admission policy, never a rank rewrite. groupCount is a hard per-source
+    // quota (skipped candidates do not consume pool slots). groupMarginal is soft: repetition only
+    // demotes a candidate's admission order (see effRank above), so ordinary caps exclude it and
+    // unused capacity can still be filled by further chunks of the same source.
     else if (!candidate.mandatory && cap?.groupCount !== undefined && candidate.groupKey && (used.groups.get(candidate.groupKey) ?? 0) + 1 > cap.groupCount) { reason = 'pool-group'; affected = pool; }
     const included = reason === 'mandatory' || reason === 'selected';
     if (!included && candidate.mandatory) throw new Error(`Context exceeded budget in ${candidate.name} (${affected}, ${reason}). Required restrictions are never silently dropped.`);

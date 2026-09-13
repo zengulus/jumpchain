@@ -274,30 +274,43 @@ describe('lore source diversity for long chunked entries',()=>{
     expect(service).toHaveLength(4);
     expect(results.slice(0,4).filter(r=>r.record.sourceId==='services').length).toBeGreaterThanOrEqual(3);
   });
-  it('admits other independent sources before redundant chunks of one long entry',()=>{
+  it('bounds a long entry without a hard quota, still admitting fresh lore',()=>{
     const {bundle,campaign}=crowdingCampaign();
     const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
     const selected=context.plan?.selected.filter(c=>c.pool==='lore').map(c=>c.groupKey) ?? [];
-    // Pre-fix behavior would admit all four near-duplicate services chunks; the quota leaves
-    // room for three of the four independent sources within the same small lore budget.
+    // Services chunks rank 1, 2, 4 and 5 of 8; their marginal value still beats the fresh
+    // sources at ranks 6-8, so three chunks are admitted — one fewer than without diversity
+    // and one more than the old hard quota allowed — and norms takes the last slot.
     expect(selected).toHaveLength(4);
-    expect(selected.filter(g=>g==='book/services')).toHaveLength(2);
-    expect(selected.filter(g=>g!=='book/services')).toHaveLength(2);
-    // Chunks 1 and 2 rank at the top; chunk 0 (and 3) fall to the quota even though chunk 0
-    // outranks two of the independent sources that take the remaining slots.
-    expect(context.plan?.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.sourceIds[0]).sort()).toEqual(['book/services/0','book/services/3']);
+    expect(selected.filter(g=>g==='book/services')).toHaveLength(3);
+    expect(selected).toContain('book/norms');
+    expect(context.plan?.decisions.filter(d=>d.reason==='pool-group')).toEqual([]);
+    expect(context.plan?.decisions.filter(d=>!d.included).map(d=>d.candidate.sourceIds[0]).sort()).toEqual(['book/fainting/0','book/medical/0','book/regulations/0','book/services/3']);
   });
   it('qualifies group keys by owning book so identical entry ids never merge',()=>{
     const {bundle,campaign}=crowdingCampaign();
     campaign.worldbooks.push(WorldbookSchema.parse({id:'book2',title:'Other',jumpId:campaign.state.scene.stamp.jumpId,entries:[{id:'services',title:'Battle healing services',text:'Battle healing services: battle healing battle healing.'}]}));
     const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
     const lore=context.plan?.decisions.filter(d=>d.candidate.pool==='lore').map(d=>[d.candidate.groupKey,d.included]) ?? [];
-    // The same entry id in two books stays two logical sources, each counted against its own
-    // quota: two book/services chunks and the book2 chunk are all admitted together.
+    // The same entry id in two books stays two logical sources: the distinct strong book2 chunk
+    // outranks all book/services chunks, and three logical sources share four admitted slots.
     expect(lore.filter(([g])=>g==='book/services')).toHaveLength(4);
     expect(lore.filter(([g])=>g==='book2/services')).toHaveLength(1);
     expect(lore.filter(([g,included])=>g==='book/services'&&included)).toHaveLength(2);
     expect(lore.filter(([g,included])=>g==='book2/services'&&included)).toHaveLength(1);
+  });
+  it('changes only admission order, never the retriever ranking it was given',()=>{
+    const {bundle,campaign}=crowdingCampaign();
+    const results=hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100});
+    const before=results.map(r=>r.record.id);
+    const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),results);
+    // The retriever's answer is consumed read-only, and the recorded raw relevance of the lore
+    // candidates is non-increasing in retriever order — diversity reordered admission, not search.
+    expect(results.map(r=>r.record.id)).toEqual(before);
+    const byRetrieverOrder=context.plan?.decisions.filter(d=>d.candidate.pool==='lore')
+      .sort((a,b)=>results.findIndex(r=>r.record.id===a.candidate.sourceIds[0])-results.findIndex(r=>r.record.id===b.candidate.sourceIds[0]))
+      .map(d=>d.candidate.relevance) ?? [];
+    expect([...byRetrieverOrder].sort((a,b)=>b-a)).toEqual(byRetrieverOrder);
   });
   it('fingerprints exactly the embedding inputs, not unrelated record metadata',()=>{
     const {campaign}=crowdingCampaign();const records=knowledgeRecords(campaign);const before=indexFingerprint(records);

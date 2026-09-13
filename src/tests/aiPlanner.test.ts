@@ -80,35 +80,65 @@ describe('central context planning',()=>{
     expect(context.messages.slice(1,-1).map(m=>m.content)).toEqual(['action0','reply0','action1','reply1','action2','reply2']);
     expect(context.messages.reduce((n,m)=>n+estimateTokens(m.content)+32,0)).toBeLessThanOrEqual(context.estimatedTokens);
   });
-  it('caps chunks per logical source with a quota, never a rank change or rotation',()=>{
-    const candidates=[...Array.from({length:5},(_,i)=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:100})),...Array.from({length:5},(_,i)=>candidate(`other/${i}`,{pool:'lore',groupKey:`other/${i}`,relevance:1}))];
-    const policy={pools:{lore:{count:8,groupCount:2}}};
-    const plan=planContext(candidates,windowFor(100),policy);
-    // The quota skips candidates beyond two per source so weaker independent sources still fit,
-    // while admission order (relevance, then stable id) is untouched and one slot stays unused.
-    expect(plan.selected.map(c=>c.id)).toEqual(['chunk/0','chunk/1','other/0','other/1','other/2','other/3','other/4']);
-    expect(plan.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.id)).toEqual(['chunk/2','chunk/3','chunk/4']);
-    expect(planContext([...candidates].reverse(),windowFor(100),policy).selected.map(c=>c.id)).toEqual(plan.selected.map(c=>c.id));
+  it('lets one source fill all lore slots when no fresh source competes (unused capacity is not wasted)',()=>{
+    const candidates=[0,1,2,3,4].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:5-i}));
+    const policy={pools:{lore:{count:5,groupMarginal:{diminishing:true}}}};
+    const plan=planContext(candidates,windowFor(50),policy);
+    expect(plan.selected.map(c=>c.id)).toEqual(['chunk/0','chunk/1','chunk/2','chunk/3','chunk/4']);
+    expect(planContext([...candidates].reverse(),windowFor(50),policy).selected.map(c=>c.id)).toEqual(plan.selected.map(c=>c.id));
   });
-  it('admits a materially relevant second chunk ahead of a weak unrelated source',()=>{
-    const plan=planContext([
-      candidate('chunk-1',{pool:'lore',groupKey:'entry',relevance:100}),
-      candidate('chunk-2',{pool:'lore',groupKey:'entry',relevance:90}),
-      candidate('weak-unrelated',{pool:'lore',groupKey:'other',relevance:1}),
-    ],windowFor(30),{pools:{lore:{count:3,groupCount:2}}});
-    expect(plan.selected.map(c=>c.id)).toEqual(['chunk-1','chunk-2','weak-unrelated']);
-    expect(plan.decisions.find(d=>d.candidate.id==='chunk-2')?.reason).toBe('selected');
+  it('demotes further repeats a fifth of a rank, so a strong repeated chunk still beats a weak fresh source',()=>{
+    const strong=[0,1,2,3,4].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:100-i}));
+    const weak=[1,0.5].map(r=>candidate(`weak/${r}`,{pool:'lore',groupKey:'other',relevance:r}));
+    const policy={pools:{lore:{count:6,groupMarginal:{diminishing:true}}}};
+    // The 5th repeat (5·5+4=29) is admitted ahead of the rank-6 fresh source (5·6+0=30), which
+    // loses its slot; under the old hard half-depth quota both later chunks would be vetoed.
+    const plan=planContext([...strong,...weak],windowFor(60),policy);
+    expect(plan.selected.map(c=>c.id)).toEqual(['chunk/0','chunk/1','chunk/2','chunk/3','chunk/4','weak/1']);
+    expect(plan.decisions.filter(d=>d.reason==='pool-group')).toEqual([]);
+    expect(planContext([...strong,...weak].reverse(),windowFor(60),policy).selected.map(c=>c.id)).toEqual(plan.selected.map(c=>c.id));
   });
-  it('never excludes mandatory candidates via the group quota',()=>{
+  it('admits fresh relevant sources before redundant later chunks of one entry',()=>{
+    const chunks=[0,1,2,3,4,5,6].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:100-i}));
+    const fresh=candidate('fresh',{pool:'lore',groupKey:'other',relevance:93.5});
+    const plan=planContext([...chunks,fresh],windowFor(80),{pools:{lore:{count:7,groupMarginal:{diminishing:true}}}});
+    // The 7th repeat (5·7+6=41) now ranks behind the fresh source (5·8+0=40) despite its higher
+    // raw relevance, so the fresh source takes the last slot and chunk/6 is excluded.
+    expect(plan.selected.map(c=>c.id)).toEqual(['chunk/0','chunk/1','chunk/2','chunk/3','chunk/4','chunk/5','fresh']);
+    const decisions=plan.decisions.map(d=>d.candidate.id);
+    expect(decisions.indexOf('fresh')).toBeLessThan(decisions.indexOf('chunk/6'));
+  });
+  it('keeps repetition penalties monotonic within one logical source',()=>{
+    const candidates=[0,1,2,3,4].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:10-i}));
+    const policy={pools:{lore:{count:5,groupMarginal:{diminishing:true}}}};
+    const ranks=planContext(candidates,windowFor(50),policy).selected.map(c=>candidates.findIndex(c2=>c2.id===c.id));
+    expect(ranks).toEqual([...ranks].sort((a,b)=>a-b));
+    // A later chunk never outranks an earlier one of the same source unless raw relevance says so.
+    const equal=planContext([0,1,2,3].map(i=>candidate(`eq/${i}`,{pool:'lore',groupKey:'entry',relevance:5})),windowFor(50),policy);
+    expect(equal.selected.map(c=>c.id)).toEqual(['eq/0','eq/1','eq/2','eq/3']);
+  });
+  it('still respects count, token and input caps under soft diversity',()=>{
+    const chunks=[0,1,2,3,4].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:10-i}));
+    expect(planContext(chunks,windowFor(60),{pools:{lore:{count:3,groupMarginal:{diminishing:true}}}}).selected).toHaveLength(3);
+    const tokened=planContext(chunks,windowFor(60),{pools:{lore:{tokens:25,groupMarginal:{diminishing:true}}}});
+    expect(tokened.selected).toHaveLength(2);expect(tokened.decisions[2].reason).toBe('pool-tokens');
+    expect(planContext(chunks,windowFor(19),{pools:{lore:{groupMarginal:{diminishing:true}}}}).selected).toHaveLength(1);
+    // Pools without the policy keep raw-relevance admission: groupKey alone changes nothing.
+    expect(planContext(chunks,windowFor(60),{pools:{lore:{count:5}}}).selected.map(c=>c.id)).toEqual(chunks.map(c=>c.id));
+  });
+  it('never excludes mandatory candidates via diversity and keeps ungrouped candidates unranked',()=>{
     const hard=candidate('hard',{pool:'lore',groupKey:'other',mandatory:true,salience:'required',relevance:0});
-    const plan=planContext([hard,...[0,1,2,3].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:10}))],windowFor(50),{pools:{lore:{count:4,groupCount:2}}});
-    expect(plan.selected.map(c=>c.id)).toEqual(['hard','chunk/0','chunk/1']);
-    expect(plan.decisions.filter(d=>d.reason==='pool-group').map(d=>d.candidate.id)).toEqual(['chunk/2','chunk/3']);
+    const plan=planContext([hard,...[0,1,2,3,4].map(i=>candidate(`chunk/${i}`,{pool:'lore',groupKey:'entry',relevance:10-i}))],windowFor(60),{pools:{lore:{count:6,groupMarginal:{diminishing:true}}}});
+    expect(plan.selected[0].id).toBe('hard');
+    expect(plan.selected).toHaveLength(6);
   });
-  it('rejects invalid group caps and persists pool-group decisions through the context schema',()=>{
+  it('hard groupCount quotas still work and persist pool-group decisions through the context schema',()=>{
     expect(()=>planContext([candidate('a',{pool:'lore'})],windowFor(10),{pools:{lore:{groupCount:-1}}})).toThrow(/Invalid/);
+    expect(()=>planContext([candidate('a',{pool:'lore'})],windowFor(10),{pools:{lore:{groupCount:1,groupMarginal:{diminishing:true}}}})).toThrow(/cannot combine/);
     const plan=planContext([candidate('a',{pool:'lore',groupKey:'g'}),candidate('b',{pool:'lore',groupKey:'g'}),candidate('c',{pool:'lore',groupKey:'h'})],windowFor(30),{pools:{lore:{count:2,groupCount:1}}});
     expect(plan.decisions.find(d=>d.candidate.id==='b')?.reason).toBe('pool-group');
     expect(ContextPlanSchema.parse(JSON.parse(JSON.stringify(plan))).decisions.map(d=>d.reason)).toEqual(plan.decisions.map(d=>d.reason));
+    const soft=planContext([candidate('a',{pool:'lore',groupKey:'g'}),candidate('b',{pool:'lore',groupKey:'g'})],windowFor(30),{pools:{lore:{count:2,groupMarginal:{diminishing:true}}}});
+    expect(ContextPlanSchema.parse(JSON.parse(JSON.stringify(soft))).policy).toEqual(soft.policy);
   });
 });

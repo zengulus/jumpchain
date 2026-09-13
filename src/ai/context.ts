@@ -113,10 +113,10 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
       sourceIds:[turn.id],estimatedTokens:estimateTokens(turn.action)+estimateTokens(turn.narrative)+64,
       salience:'background',authority:null,domain:'narrative-history',mandatory:false,relevance:0,signal:'recent continuity exchange',sourceClass:'conversation',pool:'chat',section:'history',sequence});
   });
-  // loreDepth stays the count of admitted lore records; groupCount bounds chunks per logical
-  // entry at half the budget so one long source cannot monopolize lore while several genuinely
-  // needed chunks of it remain admissible when competitors are weaker.
-  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth,groupCount:Math.max(1,Math.ceil(settings.loreDepth/2))},memory:{count:settings.memoryDepth}}});
+  // loreDepth stays the count of admitted lore records. Soft diminishing returns by logical
+  // source: later chunks of one entry lose admission order to fresher sources but can still be
+  // admitted when they outrank the competition — no hard quota leaves lore capacity unused.
+  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth,groupMarginal:{diminishing:true}},memory:{count:settings.memoryDepth}}});
   const history = plan.selected.filter(c => c.pool === 'chat').flatMap(c => JSON.parse(c.content) as CompiledContext['messages']);
   const layers = plan.selected.filter(c => c.pool !== 'chat').map(({id:_id,relevance:_relevance,signal:_signal,sourceClass:_sourceClass,pool:_pool,sequence:_sequence,section:_section,groupKey:_groupKey,...layer}) => layer);
   const system = layers.filter(l => l.name !== 'Current user action').map(l => `${l.name}\n${l.content}`).join('\n\n');
