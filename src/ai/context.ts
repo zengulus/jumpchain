@@ -100,8 +100,8 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
   }
   // Small deterministic domain mapping: world lore and reviewed memory records (facts/events) claim
   // objective reality; summaries are inferred narrative material. Authority comes from the record.
-  // World chunks share the sourceId of their logical WorldEntry, so the lore pool's groupCount cap
-  // can bound how many chunks of one entry the small lore budget may consume. Facts/events/
+  // World chunks share the sourceId of their logical WorldEntry, so the lore pool's soft
+  // groupMarginal diversity can demote further chunks of one entry at admission. Facts/events/
   // summaries are one record per source and carry no groupKey (they cannot be diversified).
   // Only world records carry a groupKey: chunks of one WorldEntry share its sourceId, qualified by
   // the owning book so identical entry ids in different books never merge into one logical source.
@@ -113,10 +113,12 @@ export function compileContext(bundle: NativeChainBundle, campaign: Campaign, ac
       sourceIds:[turn.id],estimatedTokens:estimateTokens(turn.action)+estimateTokens(turn.narrative)+64,
       salience:'background',authority:null,domain:'narrative-history',mandatory:false,relevance:0,signal:'recent continuity exchange',sourceClass:'conversation',pool:'chat',section:'history',sequence});
   });
-  // loreDepth stays the count of admitted lore records. Soft diminishing returns by logical
-  // source: later chunks of one entry lose admission order to fresher sources but can still be
-  // admitted when they outrank the competition — no hard quota leaves lore capacity unused.
-  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth,groupMarginal:{diminishing:true}},memory:{count:settings.memoryDepth}}});
+  // loreDepth stays the count of admitted lore records. Soft diversity with an explicit strength:
+  // each further chunk of one entry is demoted two raw-rank positions per same-source chunk ranked
+  // ahead of it — calibrated for 4–8-slot lore budgets, where near-duplicate chunks would
+  // otherwise crowd out independently relevant sources — while a genuinely strong repeat can
+  // still outrank a weak fresh source and unused capacity can fill from one source.
+  const plan = planContext(candidates, provider, {sections:['system','history','action'],pools:{mechanics:{tokens:settings.mechanicsBudget},chat:{tokens:settings.chatBudget,tail:true},lore:{count:settings.loreDepth,groupMarginal:{rankPenalty:2}},memory:{count:settings.memoryDepth}}});
   const history = plan.selected.filter(c => c.pool === 'chat').flatMap(c => JSON.parse(c.content) as CompiledContext['messages']);
   const layers = plan.selected.filter(c => c.pool !== 'chat').map(({id:_id,relevance:_relevance,signal:_signal,sourceClass:_sourceClass,pool:_pool,sequence:_sequence,section:_section,groupKey:_groupKey,...layer}) => layer);
   const system = layers.filter(l => l.name !== 'Current user action').map(l => `${l.name}\n${l.content}`).join('\n\n');

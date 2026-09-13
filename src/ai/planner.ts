@@ -18,7 +18,9 @@ export interface ContextCandidate extends ContextLayer {
 }
 export interface ContextPolicy {
   sections?: string[];
-  pools?: Record<string, { tokens?: number; count?: number; groupCount?: number; groupMarginal?: { diminishing: boolean }; tail?: boolean }>;
+  /** groupMarginal is soft per-source diversity: each optional candidate is demoted
+   * `rankPenalty` raw-rank positions per same-source candidate ranked ahead of it. */
+  pools?: Record<string, { tokens?: number; count?: number; groupCount?: number; groupMarginal?: { rankPenalty: number }; tail?: boolean }>;
 }
 export interface ContextDecision {
   candidate: ContextCandidate;
@@ -50,38 +52,54 @@ export function planContext(candidates: ContextCandidate[], provider: Pick<Provi
     const members = candidates.filter(c=>c.pool===pool);
     if (cap.tail && (members.some(c=>c.mandatory || !Number.isFinite(c.sequence)) || new Set(members.map(c=>c.salience)).size > 1 || new Set(members.map(c=>c.section)).size > 1)) throw new Error(`Tail pool requires optional candidates with one salience/section and explicit chronology: ${pool}`);
     if (cap.groupMarginal !== undefined && cap.groupCount !== undefined) throw new Error(`Pool ${pool} cannot combine groupCount and groupMarginal policies.`);
-    if (cap.groupMarginal !== undefined && cap.groupMarginal.diminishing !== true) throw new Error(`Pool ${pool} groupMarginal requires diminishing admission.`);
+    if (cap.groupMarginal !== undefined) {
+      const penalty: unknown = cap.groupMarginal.rankPenalty;
+      if (typeof penalty !== 'number' || !Number.isFinite(penalty) || penalty <= 0) throw new Error(`Pool ${pool} groupMarginal requires a positive finite rankPenalty (raw-rank positions demoted per same-source candidate ranked ahead); legacy diminishing plans are inspectable but not executable.`);
+    }
   }
-  const compare = (a: ContextCandidate, b: ContextCandidate) => {
-    const aTail = !!(a.pool && policy.pools?.[a.pool]?.tail);
-    const bTail = !!(b.pool && policy.pools?.[b.pool]?.tail);
-    const eff = (c: ContextCandidate) => c.pool && policy.pools?.[c.pool]?.groupMarginal ? effRank.get(c.id) : undefined;
-    const aEff = eff(a), bEff = eff(b);
-    return salience[a.salience] - salience[b.salience]
-      || Number(aTail)-Number(bTail)
-      || (aTail && bTail ? key(a.pool!,b.pool!) || (b.sequence ?? 0)-(a.sequence ?? 0) : 0)
-      || (a.pool === b.pool && aEff !== undefined && bEff !== undefined ? aEff - bEff || (ordinal.get(a.id)! - ordinal.get(b.id)!) : 0)
-      || b.relevance-a.relevance || key(a.id,b.id);
-  };
-  // Soft source diversity for groupMarginal pools: rank the pool's optional candidates by raw
-  // relevance (1 = best; fusion, reranker and overlap scores are incomparable in magnitude, so
-  // only order is used) and demote each further chunk of one logical source by a fifth of a rank:
-  // effective value 5·rank + (k−1) for the k-th chunk of its group. Admission then follows this
-  // effective order and ordinary caps do the excluding — fresh relevant sources usually precede
-  // redundant repeats, a strong repeat still beats a weak fresh source, unused capacity fills
-  // from one source, and no candidate is ever vetoed for repetition alone.
+  const tailOf = (c: ContextCandidate) => !!(c.pool && policy.pools?.[c.pool]?.tail);
+  // Shared ordering prefix: salience, then tail pools after everything optional, then within
+  // tail pools by pool and reverse chronology.
+  const orderPrefix = (a: ContextCandidate, b: ContextCandidate) =>
+    salience[a.salience] - salience[b.salience]
+    || Number(tailOf(a))-Number(tailOf(b))
+    || (tailOf(a) && tailOf(b) ? key(a.pool!,b.pool!) || (b.sequence ?? 0)-(a.sequence ?? 0) : 0);
+  const baseOrder = (a: ContextCandidate, b: ContextCandidate) => orderPrefix(a,b) || b.relevance-a.relevance || key(a.id,b.id);
+  // Soft source diversity for groupMarginal pools. Only the pool's raw-relevance ORDER is used —
+  // fusion, reranker and overlap scores are incomparable in magnitude, so ranks keep the policy
+  // score-scale-independent. Each optional candidate is demoted `rankPenalty` raw-rank positions
+  // per same-source candidate ranked ahead of it: effective value rank + rankPenalty·(k−1) for
+  // the k-th candidate of its group. The count is retrieval redundancy, not admission history —
+  // that keeps the effective order a pure precomputed total order (deterministic, permutation-
+  // invariant, auditable in plan.decisions), where counting admitted chunks would reorder the
+  // remaining pool after every admission. Ties at equal effective value favor the less redundant
+  // candidate: a fresh source over a repeat, an earlier chunk over a later one. Admission then
+  // follows this effective order and ordinary caps do the excluding — fresh relevant sources
+  // usually precede redundant repeats, a strong repeat still beats a weak fresh source, unused
+  // capacity can fill from one source, and no candidate is ever vetoed for repetition alone.
   const ordinal = new Map<string, number>();
+  const occ = new Map<string, number>();
   const effRank = new Map<string, number>();
   for (const [pool, cap] of Object.entries(policy.pools ?? {})) if (cap.groupMarginal) {
     let rank = 0;
     const groupSeq = new Map<string, number>();
-    for (const c of candidates.filter(c => c.pool === pool && !c.mandatory).sort(compare)) {
+    for (const c of candidates.filter(c => c.pool === pool && !c.mandatory).sort(baseOrder)) {
       ordinal.set(c.id, ++rank);
       const k = c.groupKey ? (groupSeq.get(c.groupKey) ?? 0) + 1 : 1;
       if (c.groupKey) groupSeq.set(c.groupKey, k);
-      effRank.set(c.id, 5*rank + (k - 1));
+      occ.set(c.id, k);
+      effRank.set(c.id, rank + cap.groupMarginal.rankPenalty * (k - 1));
     }
   }
+  const compare = (a: ContextCandidate, b: ContextCandidate) => {
+    const eff = (c: ContextCandidate) => c.pool && policy.pools?.[c.pool]?.groupMarginal ? effRank.get(c.id) : undefined;
+    const aEff = eff(a), bEff = eff(b);
+    return orderPrefix(a,b)
+      || (a.pool === b.pool && aEff !== undefined && bEff !== undefined
+        ? aEff - bEff || occ.get(a.id)! - occ.get(b.id)! || (ordinal.get(a.id)! - ordinal.get(b.id)!)
+        : 0)
+      || b.relevance-a.relevance || key(a.id,b.id);
+  };
   const ordered = [...candidates].sort((a,b) => Number(b.mandatory)-Number(a.mandatory) || compare(a,b));
   const usage = new Map<string, {tokens:number;count:number;closed:boolean;groups:Map<string,number>}>();
   const decisions: ContextDecision[] = []; const selected: ContextCandidate[] = []; let total = 0;

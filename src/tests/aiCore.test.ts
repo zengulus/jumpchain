@@ -255,8 +255,8 @@ describe('canonical search projection and scene-aware lore queries',()=>{
 describe('lore source diversity for long chunked entries',()=>{
   // One long entry produces four near-duplicate chunks; four independent entries are also
   // relevant. Search must stay rank-neutral; diversity is enforced only at lore admission.
-  // A small loreDepth (4) keeps the groupCount quota (2) below the long entry's chunk count,
-  // so the pre-fix behavior (3-4 services chunks admitted) is directly observable.
+  // A small loreDepth (4) makes soft-diversity crowding directly observable: without it the
+  // long entry's chunks occupy three of the four top raw ranks and took 3-4 of the 4 slots.
   function crowdingCampaign(){const {bundle,campaign}=aiFixture();const filler=Array.from({length:60},(_,i)=>`Center paragraph ${i}: healing machines hum while trainers wait for their pokemon to recover.`).join('\n\n');
     campaign.settings.loreDepth=4;
     campaign.worldbooks=[WorldbookSchema.parse({id:'book',title:'Canon',jumpId:campaign.state.scene.stamp.jumpId,entries:[
@@ -274,18 +274,51 @@ describe('lore source diversity for long chunked entries',()=>{
     expect(service).toHaveLength(4);
     expect(results.slice(0,4).filter(r=>r.record.sourceId==='services').length).toBeGreaterThanOrEqual(3);
   });
-  it('bounds a long entry without a hard quota, still admitting fresh lore',()=>{
+  it('diversifies a four-record lore budget away from one long entry without a hard quota',()=>{
     const {bundle,campaign}=crowdingCampaign();
     const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
-    const selected=context.plan?.selected.filter(c=>c.pool==='lore').map(c=>c.groupKey) ?? [];
-    // Services chunks rank 1, 2, 4 and 5 of 8; their marginal value still beats the fresh
-    // sources at ranks 6-8, so three chunks are admitted — one fewer than without diversity
-    // and one more than the old hard quota allowed — and norms takes the last slot.
-    expect(selected).toHaveLength(4);
-    expect(selected.filter(g=>g==='book/services')).toHaveLength(3);
-    expect(selected).toContain('book/norms');
+    const lore=context.plan?.decisions.filter(d=>d.candidate.pool==='lore') ?? [];
+    // Raw BM25 order: services/1, norms, services/2, services/0, services/3, regulations,
+    // medical, fainting — three of the first five raw ranks are one entry's near-duplicates.
+    // rankPenalty 2 demotes the k-th chunk 2(k−1) raw-rank positions: the 2nd chunk (eff 5)
+    // falls behind regulations, the 3rd (eff 8) ties fainting and loses the less-redundant
+    // tie-break, and the 4th (eff 11) lands behind every fresh source. The four-record budget
+    // now admits two independent fresh sources (norms, regulations) alongside the entry's two
+    // best chunks instead of the three near-duplicates it used to take.
+    expect(lore.filter(d=>d.included).map(d=>d.candidate.sourceIds[0])).toEqual(['book/services/1','book/norms/0','book/services/2','book/regulations/0']);
+    expect(context.plan?.decisions.filter(d=>!d.included).map(d=>d.candidate.sourceIds[0]).sort()).toEqual(['book/fainting/0','book/medical/0','book/services/0','book/services/3']);
+    // Soft policy: repetition only demoted admission order; nothing was vetoed for repetition.
     expect(context.plan?.decisions.filter(d=>d.reason==='pool-group')).toEqual([]);
-    expect(context.plan?.decisions.filter(d=>!d.included).map(d=>d.candidate.sourceIds[0]).sort()).toEqual(['book/fainting/0','book/medical/0','book/regulations/0','book/services/3']);
+  });
+  it('interleaves fresh sources before later chunks at the default loreDepth 8',()=>{
+    const {bundle,campaign}=crowdingCampaign();campaign.settings.loreDepth=8;
+    const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
+    const included=context.plan?.decisions.filter(d=>d.candidate.pool==='lore'&&d.included).map(d=>d.candidate.sourceIds[0]) ?? [];
+    // The same rank-space strength scales with the budget: the admission order shows the
+    // remaining fresh sources (regulations, medical, fainting) ahead of the long entry's
+    // 3rd/4th chunks — services/0 (eff 8) ties fainting and loses the less-redundant
+    // tie-break, services/3 (eff 11) lands last. The oversized 3rd chunk then misses the
+    // remaining input budget while the smaller closing chunk still fits: repetition lost
+    // marginal value without wasting any slot — no hard quota, nothing vetoed for repetition.
+    expect(included).toEqual(['book/services/1','book/norms/0','book/services/2','book/regulations/0','book/medical/0','book/fainting/0','book/services/3']);
+  });
+  it('still admits repeated chunks of a strong entry over truly weak fresh competitors',()=>{
+    const {bundle,campaign}=crowdingCampaign();campaign.settings.loreDepth=6;
+    campaign.worldbooks[0].entries.push(WorldbookSchema.shape.entries.element.parse({id:'laundry',title:'Laundry schedule',text:`A weathered notice mentions healing once.\n\n${Array.from({length:15},(_,i)=>`Laundry row ${i}: sheets and towels are washed, dried, and folded by the house elves every evening.`).join('\n\n')}`}));
+    const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
+    const lore=context.plan?.decisions.filter(d=>d.candidate.pool==='lore') ?? [];
+    const included=lore.filter(d=>d.included).map(d=>d.candidate.groupKey);
+    // The laundry entry only grazes the query (one stray 'healing' in long filler) and ranks
+    // far below every services chunk. Diversity demoted the later chunks behind the relevant
+    // fresh sources, yet the entry's two best chunks still hold half the budget and the weak
+    // fresh source is excluded — repetition lost marginal value, not all value.
+    expect(included.filter(g=>g==='book/services')).toHaveLength(2);
+    expect(included).toContain('book/norms');expect(included).toContain('book/regulations');expect(included).toContain('book/medical');expect(included).toContain('book/fainting');
+    const excluded=lore.filter(d=>!d.included).map(d=>d.candidate.sourceIds[0]);
+    expect(excluded).toHaveLength(3);expect(excluded).toContain('book/laundry/0');expect(excluded.filter(id=>id.startsWith('book/services'))).toHaveLength(2);
+    // Excluded by ordinary capacity (its long text busts the input budget), never by a
+    // diversity veto: softness preserved.
+    expect(lore.find(d=>d.candidate.sourceIds[0]==='book/laundry/0')?.reason).not.toBe('pool-group');
   });
   it('qualifies group keys by owning book so identical entry ids never merge',()=>{
     const {bundle,campaign}=crowdingCampaign();
@@ -293,7 +326,8 @@ describe('lore source diversity for long chunked entries',()=>{
     const context=compileContext(bundle,campaign,'battle healing',ProviderSchema.parse({}),hybridRetriever.search(narrationLoreQuery('battle healing',campaign.state.scene),knowledgeRecords(campaign),{limit:100}));
     const lore=context.plan?.decisions.filter(d=>d.candidate.pool==='lore').map(d=>[d.candidate.groupKey,d.included]) ?? [];
     // The same entry id in two books stays two logical sources: the distinct strong book2 chunk
-    // outranks all book/services chunks, and three logical sources share four admitted slots.
+    // outranks all book/services chunks, and three logical sources share four admitted slots
+    // (two book/services chunks, the book2 chunk, and one independent fresh source).
     expect(lore.filter(([g])=>g==='book/services')).toHaveLength(4);
     expect(lore.filter(([g])=>g==='book2/services')).toHaveLength(1);
     expect(lore.filter(([g,included])=>g==='book/services'&&included)).toHaveLength(2);

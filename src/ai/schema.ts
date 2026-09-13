@@ -198,8 +198,8 @@ export type ContextLayer = z.infer<typeof ContextLayerSchema>;
 export const ContextCandidateSchema = ContextLayerSchema.extend({
   id:z.string().min(1), relevance:z.number().finite(), signal:z.string(), sourceClass:z.string(),
   estimatedTokens:z.number().int().nonnegative(), pool:z.string().optional(),
-  // Logical source identity used by pool diversity policies (groupCount quota or groupMarginal
-  // soft diminishing returns); worldbook entry chunks share one book-qualified key.
+  // Logical source identity used by pool diversity policies (groupCount hard quota or groupMarginal
+  // soft rank demotion); worldbook entry chunks share one book-qualified key.
   groupKey:z.string().optional(), section:z.string().optional(), sequence:z.number().finite().optional(),
 });
 export const ContextPlanSchema = z.object({
@@ -208,7 +208,12 @@ export const ContextPlanSchema = z.object({
     candidate: ContextCandidateSchema,
     included:z.boolean(), reason:z.enum(['mandatory','selected','input-budget','pool-tokens','pool-count','pool-group','history-tail']), budget:z.string().optional(),
   })),
-  policy:z.object({sections:z.array(z.string()).optional(),pools:z.record(z.object({tokens:z.number().int().nonnegative().optional(),count:z.number().int().nonnegative().optional(),groupCount:z.number().int().nonnegative().optional(),groupMarginal:z.object({diminishing:z.boolean()}).optional(),tail:z.boolean().optional()})).optional()}),
+  // groupMarginal rankPenalty: raw-rank positions an optional candidate is demoted per same-source
+  // candidate ranked ahead of it (rank-based, so it survives any score scale). Any positive finite
+  // value is valid, mirroring the planner's runtime check, so produced plans always re-parse.
+  // Legacy {diminishing:true} plans stay readable under their historical key for audit only; the
+  // planner refuses to execute them because the strength they relied on was never recorded.
+  policy:z.object({sections:z.array(z.string()).optional(),pools:z.record(z.object({tokens:z.number().int().nonnegative().optional(),count:z.number().int().nonnegative().optional(),groupCount:z.number().int().nonnegative().optional(),groupMarginal:z.union([z.object({rankPenalty:z.number().positive().finite()}).strict(),z.object({diminishing:z.boolean()}).strict()]).optional(),tail:z.boolean().optional()})).optional()}),
   inputBudget:z.number().int().nonnegative(), estimatedTokens:z.number().int().nonnegative(),
 });
 export const ContextSchema = z.object({
